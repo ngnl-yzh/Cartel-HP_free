@@ -86,6 +86,19 @@ function fillCompetitionForm(data) {
   document.querySelectorAll('input[name="tags"]').forEach((checkbox) => {
     checkbox.checked = selectedTags.includes(checkbox.value);
   });
+
+  // GPT 이미지 파싱 시 대표 이미지 자동 설정
+  if (data._image_path) {
+    const hiddenPath = document.getElementById("comp_image_path");
+    if (hiddenPath) hiddenPath.value = data._image_path;
+
+    const wrap = document.getElementById("imagePreviewWrap");
+    const preview = document.getElementById("imagePreview");
+    if (wrap && preview) {
+      preview.src = `/uploads/${data._image_path}`;
+      wrap.style.display = "flex";
+    }
+  }
 }
 
 async function parseWithText() {
@@ -175,6 +188,24 @@ document.addEventListener("DOMContentLoaded", () => {
         setParseStatus(error.message, "error");
       } finally {
         parseImageButton.disabled = false;
+      }
+    });
+  }
+
+  // 직접 이미지 업로드 시 미리보기
+  const compImageInput = document.getElementById("comp_image_input");
+  if (compImageInput) {
+    compImageInput.addEventListener("change", () => {
+      const file = compImageInput.files[0];
+      if (!file) return;
+      const wrap = document.getElementById("imagePreviewWrap");
+      const preview = document.getElementById("imagePreview");
+      if (wrap && preview) {
+        preview.src = URL.createObjectURL(file);
+        wrap.style.display = "flex";
+        // 직접 업로드 시 hidden path 초기화 (새 파일이 우선)
+        const hiddenPath = document.getElementById("comp_image_path");
+        if (hiddenPath) hiddenPath.value = "";
       }
     });
   }

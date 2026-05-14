@@ -20,6 +20,14 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def init_db():
     Base.metadata.create_all(bind=engine)
+    # 기존 DB에 image 컬럼이 없으면 추가 (마이그레이션)
+    from sqlalchemy import inspect, text
+    with engine.connect() as conn:
+        inspector = inspect(engine)
+        existing_cols = [c["name"] for c in inspector.get_columns("competitions")]
+        if "image" not in existing_cols:
+            conn.execute(text("ALTER TABLE competitions ADD COLUMN image VARCHAR(500)"))
+            conn.commit()
 
 
 def get_db():

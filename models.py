@@ -21,5 +21,6 @@ class Competition(Base):
     description = Column(Text, default="")
     files = Column(Text, default="[]")
     view_count = Column(Integer, default=0)
+    image = Column(String(500), nullable=True)       # 대표 이미지 파일명
     is_featured = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.now)

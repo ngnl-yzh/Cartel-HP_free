@@ -33,6 +33,12 @@
 <main class="container detail-body">
   <div class="detail-grid">
     <div class="detail-main">
+      {% if comp.image %}
+      <section class="detail-section">
+        <img src="/uploads/{{ comp.image }}" alt="{{ comp.title }} 대표 이미지" class="detail-image">
+      </section>
+      {% endif %}
+
       {% if comp.description %}
       <section class="detail-section">
         <h2 class="section-title">공모전 소개</h2>

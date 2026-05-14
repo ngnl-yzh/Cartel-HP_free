@@ -308,6 +308,18 @@ select {
 
 .comp-card {
   min-height: 250px;
+  overflow: hidden;
+}
+
+/* 카드 대표 이미지 썸네일 */
+.card-thumb {
+  width: calc(100% + 36px);
+  height: 160px;
+  margin: -18px -18px 14px -18px;
+  background-size: cover;
+  background-position: center;
+  background-color: var(--line);
+  flex-shrink: 0;
 }
 
 .comp-dates {
@@ -451,6 +463,40 @@ select {
 .text-soon {
   color: #b45309;
   font-weight: 800;
+}
+
+/* 상세 페이지 대표 이미지 */
+.detail-image {
+  width: 100%;
+  max-height: 480px;
+  object-fit: contain;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--surface-soft);
+}
+
+/* 관리자 폼 이미지 미리보기 */
+.image-preview-wrap {
+  margin-top: .5rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--surface-soft);
+  max-height: 280px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.image-preview-wrap img {
+  width: 100%;
+  max-height: 280px;
+  object-fit: contain;
+}
+
+.field-hint {
+  margin: .3rem 0 0;
+  color: var(--muted);
+  font-size: .8rem;
 }
 
 .file-list {

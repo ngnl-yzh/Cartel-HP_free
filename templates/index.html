@@ -75,6 +75,9 @@
     <div class="competition-grid">
       {% for comp in competitions %}
       <a href="/competition/{{ comp.id }}" class="comp-card status-{{ comp.status }}">
+        {% if comp.image %}
+        <div class="card-thumb" style="background-image:url('/uploads/{{ comp.image }}')"></div>
+        {% endif %}
         <div class="comp-card-tags">
           {% for tag in comp.tags | fromjson %}
             <span class="tag-chip tag-small">{{ tag }}</span>

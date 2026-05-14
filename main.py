@@ -247,12 +247,16 @@ async def admin_add(
     link: str = Form(""),
     description: str = Form(""),
     is_featured: bool = Form(False),
+    comp_image_path: Optional[str] = Form(None),   # GPT 파싱 시 자동 저장된 경로
+    comp_image: Optional[UploadFile] = File(None),  # 직접 업로드한 이미지
     files: List[UploadFile] = File(default=[]),
     db: Session = Depends(get_db),
 ):
     redirect = _admin_redirect(request)
     if redirect:
         return redirect
+
+    image = await _save_image(comp_image) or comp_image_path or None
 
     competition = Competition(
         title=title,
@@ -264,6 +268,7 @@ async def admin_add(
         prize=prize,
         link=link,
         description=description,
+        image=image,
         is_featured=is_featured,
         files=json.dumps(await _save_files(files), ensure_ascii=False),
     )
@@ -312,6 +317,8 @@ async def admin_edit(
     link: str = Form(""),
     description: str = Form(""),
     is_featured: bool = Form(False),
+    comp_image_path: Optional[str] = Form(None),
+    comp_image: Optional[UploadFile] = File(None),
     files: List[UploadFile] = File(default=[]),
     db: Session = Depends(get_db),
 ):
@@ -323,6 +330,7 @@ async def admin_edit(
     if not competition:
         raise HTTPException(status_code=404)
 
+    new_image = await _save_image(comp_image)
     existing_files = _from_json(competition.files)
     competition.title = title
     competition.organizer = organizer
@@ -334,6 +342,8 @@ async def admin_edit(
     competition.link = link
     competition.description = description
     competition.is_featured = is_featured
+    # 새 이미지 > GPT 파싱 이미지 > 기존 이미지 순으로 우선
+    competition.image = new_image or comp_image_path or competition.image
     competition.files = json.dumps(existing_files + await _save_files(files), ensure_ascii=False)
     db.commit()
     return RedirectResponse(url="/admin", status_code=303)
@@ -390,9 +400,30 @@ async def api_parse_image(request: Request, image: UploadFile = File(...)):
     if not _is_admin(request):
         raise HTTPException(status_code=401)
     try:
-        return JSONResponse(await parse_image_file(await image.read(), image.content_type))
+        data = await image.read()
+        # 이미지를 파싱하면서 동시에 uploads/에 저장
+        ext = Path(image.filename).suffix.lower() if image.filename else ".jpg"
+        stored_name = f"{uuid.uuid4().hex}{ext}"
+        (UPLOAD_DIR / stored_name).write_bytes(data)
+
+        result = await parse_image_file(data, image.content_type)
+        result["_image_path"] = stored_name   # 폼에서 대표 이미지로 사용
+        return JSONResponse(result)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+async def _save_image(upload: Optional[UploadFile]) -> Optional[str]:
+    """대표 이미지 1장을 저장하고 파일명을 반환. 없으면 None."""
+    if not upload or not upload.filename:
+        return None
+    content = await upload.read()
+    if not content:
+        return None
+    ext = Path(upload.filename).suffix.lower()
+    stored_name = f"{uuid.uuid4().hex}{ext}"
+    (UPLOAD_DIR / stored_name).write_bytes(content)
+    return stored_name
 
 
 async def _save_files(files: List[UploadFile]) -> list[dict[str, str]]:

@@ -106,6 +106,29 @@
         </section>
 
         <section class="form-section">
+          <h2>대표 이미지</h2>
+          {# GPT 이미지 파싱 시 자동 저장된 경로를 hidden으로 전달 #}
+          <input type="hidden" name="comp_image_path" id="comp_image_path"
+                 value="{{ comp.image if comp and comp.image else '' }}">
+
+          {% if comp and comp.image %}
+          <div class="image-preview-wrap" id="imagePreviewWrap">
+            <img id="imagePreview" src="/uploads/{{ comp.image }}" alt="대표 이미지">
+          </div>
+          {% else %}
+          <div class="image-preview-wrap" id="imagePreviewWrap" style="display:none">
+            <img id="imagePreview" src="" alt="대표 이미지">
+          </div>
+          {% endif %}
+
+          <label class="field" style="margin-top:.75rem">
+            <span>이미지 직접 업로드 (선택)</span>
+            <input type="file" name="comp_image" id="comp_image_input" accept="image/*">
+          </label>
+          <p class="field-hint">GPT 이미지 파싱 시 자동으로 대표 이미지로 지정됩니다.</p>
+        </section>
+
+        <section class="form-section">
           <h2>첨부 파일</h2>
           {% if comp and comp.files_list %}
           <ul class="file-list admin-files">

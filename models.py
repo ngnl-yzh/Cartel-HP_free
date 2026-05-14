@@ -35,12 +35,24 @@ class Competition(Base):
     created_at = Column(DateTime, default=datetime.now)
 
 
+class Team(Base):
+    __tablename__ = "teams"
+    id             = Column(Integer, primary_key=True, index=True)
+    competition_id = Column(Integer, nullable=False, index=True)
+    name           = Column(String(100), nullable=False)
+    description    = Column(String(300), default="")
+    submitted      = Column(Boolean, default=False)
+    submitted_at   = Column(DateTime, nullable=True)
+    created_at     = Column(DateTime, default=datetime.now)
+
+
 class TeamMember(Base):
     __tablename__ = "team_members"
 
-    id = Column(Integer, primary_key=True, index=True)
-    competition_id = Column(Integer, nullable=False, index=True)
-    nickname = Column(String(100), nullable=False)
+    id             = Column(Integer, primary_key=True, index=True)
+    team_id        = Column(Integer, nullable=True, index=True)
+    competition_id = Column(Integer, nullable=True, index=True)
+    nickname       = Column(String(100), nullable=False)
     password_hash = Column(String(300), nullable=False)
     role = Column(String(50), default="기타")
     memo = Column(String(500), default="")

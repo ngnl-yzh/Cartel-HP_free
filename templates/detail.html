@@ -113,143 +113,217 @@
   </div>
 </main>
 
-{# ── 팀 구성 섹션 ───────────────────────────────────── #}
+{# ── 팀 구성 섹션 ───────────────────────────────────────────────────────── #}
 <section class="team-section" id="team">
   <div class="container">
+
     <div class="team-header">
-      <h2 class="team-title">
-        👥 팀 구성
-        <span class="team-count">{{ members | length }}{% if comp.max_members %} / {{ comp.max_members }}{% endif %}명</span>
-        {% if comp.max_members and members | length >= comp.max_members %}
-          <span class="deadline-badge closed">모집 완료</span>
-        {% elif comp.status == 'closed' %}
-          <span class="deadline-badge closed">마감된 공모전</span>
-        {% else %}
-          <span class="deadline-badge open">모집 중</span>
-        {% endif %}
-      </h2>
+      <h2 class="team-title">👥 팀 구성</h2>
+      {% if comp.max_members %}
+      <span class="muted" style="font-size:.85rem">팀당 최대 {{ comp.max_members }}명</span>
+      {% endif %}
     </div>
 
-    {% if members %}
-    <div class="member-grid">
-      {% for m in members %}
-      <div class="member-card {% if m.is_leader %}is-leader{% endif %}">
-        <div class="member-top">
-          <div class="member-avatar">{{ m.nickname[0] | upper }}</div>
-          <div class="member-info">
-            <div class="member-name-row">
-              {% if m.is_leader %}<span class="leader-crown">👑</span>{% endif %}
-              <span class="member-name">{{ m.nickname }}</span>
-            </div>
-            <span class="member-role role-{{ m.role }}">{{ m.role }}</span>
+    {# ── 팀 카드들 ─────────────────────────────────────────────── #}
+    {% if teams %}
+    <div class="teams-grid">
+      {% for team in teams %}
+      <div class="team-card" id="team-{{ team.id }}">
+
+        <div class="team-card-header">
+          <div>
+            <h3 class="team-card-name">{{ team.name }}</h3>
+            {% if team.description %}
+            <p class="team-card-desc">{{ team.description }}</p>
+            {% endif %}
           </div>
-          <div class="member-actions">
-            {% if is_admin %}
-              {% if not m.is_leader %}
-              <form method="post" action="/admin/competition/{{ comp.id }}/set-leader/{{ m.id }}" style="display:inline">
-                <button type="submit" class="btn btn-ghost btn-xs" title="팀장으로 지정">👑</button>
-              </form>
-              {% endif %}
-              <button class="btn btn-ghost btn-xs leave-trigger"
-                data-member-id="{{ m.id }}" data-comp-id="{{ comp.id }}"
-                data-nickname="{{ m.nickname }}" data-admin="true">✕</button>
+          <div style="display:flex;gap:6px;align-items:center">
+            <span class="team-count">{{ team.members | length }}{% if comp.max_members %}/{{ comp.max_members }}{% endif %}명</span>
+            {% if comp.max_members and team.members | length >= comp.max_members %}
+            <span class="deadline-badge closed">모집 완료</span>
             {% else %}
-              <button class="btn btn-ghost btn-xs leave-trigger"
-                data-member-id="{{ m.id }}" data-comp-id="{{ comp.id }}"
-                data-nickname="{{ m.nickname }}" data-admin="false">탈퇴</button>
+            <span class="deadline-badge open">모집 중</span>
+            {% endif %}
+            {% if team.submitted %}
+            <span class="submit-badge submitted">✅ 신청완료</span>
             {% endif %}
           </div>
         </div>
-        {% if m.memo %}
-        <p class="member-memo">"{{ m.memo }}"</p>
+
+        {# 팀원 목록 #}
+        {% if team.members %}
+        <div class="member-grid" style="margin-top:12px">
+          {% for m in team.members %}
+          <div class="member-card {% if m.is_leader %}is-leader{% endif %}">
+            <div class="member-top">
+              <div class="member-avatar">{{ m.nickname[0] | upper }}</div>
+              <div class="member-info">
+                <div class="member-name-row">
+                  {% if m.is_leader %}<span class="leader-crown">👑</span>{% endif %}
+                  <span class="member-name">{{ m.nickname }}</span>
+                </div>
+                <span class="member-role role-{{ m.role }}">{{ m.role }}</span>
+              </div>
+              <div class="member-actions">
+                {% if is_admin %}
+                  {% if not m.is_leader %}
+                  <form method="post" action="/admin/competition/{{ comp.id }}/team/{{ team.id }}/set-leader/{{ m.id }}" style="display:inline">
+                    <button type="submit" class="btn btn-ghost btn-xs" title="팀장으로 지정">👑</button>
+                  </form>
+                  {% endif %}
+                  <button class="btn btn-ghost btn-xs leave-trigger"
+                    data-member-id="{{ m.id }}" data-team-id="{{ team.id }}" data-comp-id="{{ comp.id }}"
+                    data-nickname="{{ m.nickname }}" data-admin="true">✕</button>
+                {% else %}
+                  <button class="btn btn-ghost btn-xs leave-trigger"
+                    data-member-id="{{ m.id }}" data-team-id="{{ team.id }}" data-comp-id="{{ comp.id }}"
+                    data-nickname="{{ m.nickname }}" data-admin="false">탈퇴</button>
+                {% endif %}
+              </div>
+            </div>
+            {% if m.memo %}
+            <p class="member-memo">"{{ m.memo }}"</p>
+            {% endif %}
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <p class="team-empty">아직 팀원이 없습니다.</p>
         {% endif %}
-      </div>
+
+        {# 제출 현황 기록 #}
+        {% if is_privileged and submission_window %}
+        <div class="submission-box" style="margin-top:12px">
+          {% if team.submitted %}
+          <div class="submission-done">
+            <span class="submit-check">✅</span>
+            <div>
+              <strong>제출 완료</strong> — {{ team.submitted_at.strftime('%Y년 %m월 %d일 %H:%M') }} 기록
+              <div class="participant-list">
+                참여 팀원:
+                {% for m in team.members if m.is_participant %}
+                  <span class="part-chip">{{ m.nickname }}</span>
+                {% else %}
+                  <span class="muted">기록 없음</span>
+                {% endfor %}
+              </div>
+            </div>
+            <a href="#" class="btn btn-ghost btn-sm"
+               onclick="this.closest('.submission-done').nextElementSibling.style.display='block';return false;">수정</a>
+          </div>
+          {% endif %}
+          <div {% if team.submitted %}style="display:none;margin-top:1rem"{% endif %}>
+            <h4 class="submission-title">📋 제출 현황 기록</h4>
+            <form method="post" action="/competition/{{ comp.id }}/team/{{ team.id }}/submit">
+              <div class="participant-check-grid">
+                {% for m in team.members %}
+                <label class="check-pill">
+                  <input type="checkbox" name="participant_ids" value="{{ m.id }}"
+                    {% if m.is_participant %}checked{% endif %}>
+                  <span>{% if m.is_leader %}👑{% endif %}{{ m.nickname }}</span>
+                </label>
+                {% endfor %}
+              </div>
+              <button type="submit" class="btn btn-primary" style="margin-top:.75rem">제출 완료로 기록</button>
+            </form>
+          </div>
+        </div>
+        {% elif team.submitted %}
+        <div class="submission-done" style="margin-top:10px">
+          <span class="submit-check">✅</span>
+          <div>
+            <strong>제출 완료</strong> — {{ team.submitted_at.strftime('%Y년 %m월 %d일') }}
+            <div class="participant-list">
+              참여:
+              {% for m in team.members if m.is_participant %}
+                <span class="part-chip">{{ m.nickname }}</span>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+        {% endif %}
+
+        {# 팀 참여 신청 폼 #}
+        {% if (not comp.max_members or team.members | length < comp.max_members) and comp.status != 'closed' %}
+        <details class="join-details" style="margin-top:12px">
+          <summary class="btn btn-outline btn-sm" style="cursor:pointer;display:inline-block">+ 이 팀에 참여</summary>
+          <form method="post" action="/competition/{{ comp.id }}/team/{{ team.id }}/join" class="join-form" style="margin-top:10px">
+            <div class="join-grid">
+              <label class="field">
+                <span>닉네임</span>
+                <input type="text" name="nickname" placeholder="본인 닉네임" required maxlength="30">
+              </label>
+              <label class="field">
+                <span>비밀번호 <small>(탈퇴 시 필요)</small></span>
+                <input type="password" name="password" placeholder="비밀번호 설정" required minlength="4">
+              </label>
+              <label class="field">
+                <span>역할</span>
+                <select name="role">
+                  {% for r in roles %}<option value="{{ r }}">{{ r }}</option>{% endfor %}
+                </select>
+              </label>
+              <label class="field">
+                <span>한마디 <small>(선택)</small></span>
+                <input type="text" name="memo" placeholder="한마디 남기기" maxlength="100">
+              </label>
+            </div>
+            <button type="submit" class="btn btn-primary">참여 신청</button>
+          </form>
+        </details>
+        {% endif %}
+
+      </div>{# /team-card #}
       {% endfor %}
     </div>
     {% else %}
-    <p class="team-empty">아직 팀원이 없습니다. 첫 번째로 참여해보세요! 🙌</p>
+    <p class="team-empty">아직 팀이 없습니다. 첫 번째 팀을 만들어보세요! 🙌</p>
     {% endif %}
 
-    {# ── 제출 현황 기록 (마감 후 7일 이내, 관리자/중간관리자) ── #}
-    {% if is_privileged and submission_window %}
-    <div class="submission-box">
-      {% if comp.submitted %}
-      <div class="submission-done">
-        <span class="submit-check">✅</span>
-        <div>
-          <strong>제출 완료</strong> — {{ comp.submitted_at.strftime('%Y년 %m월 %d일 %H:%M') }} 기록
-          <div class="participant-list">
-            참여 팀원:
-            {% for m in members if m.is_participant %}
-              <span class="part-chip">{{ m.nickname }}</span>
-            {% else %}
-              <span class="muted">기록 없음</span>
-            {% endfor %}
-          </div>
-        </div>
-        <a href="#" class="btn btn-ghost btn-sm" onclick="document.getElementById('resubmitForm').style.display='block';return false;">수정</a>
-      </div>
-      {% endif %}
-      <div id="resubmitForm" {% if comp.submitted %}style="display:none;margin-top:1rem"{% endif %}>
-        <h3 class="submission-title">📋 제출 현황 기록</h3>
-        <p class="muted" style="font-size:.85rem;margin-bottom:.75rem">실제로 공모전을 제출한 팀원을 선택하세요.</p>
-        <form method="post" action="/competition/{{ comp.id }}/submit">
-          <div class="participant-check-grid">
-            {% for m in members %}
-            <label class="check-pill">
-              <input type="checkbox" name="participant_ids" value="{{ m.id }}"
-                {% if m.is_participant %}checked{% endif %}>
-              <span>{% if m.is_leader %}👑{% endif %}{{ m.nickname }}</span>
+    {# ── 새 팀 만들기 ─────────────────────────────────────────── #}
+    {% if comp.status != 'closed' %}
+    <details class="new-team-details" style="margin-top:24px">
+      <summary class="btn btn-primary">🆕 새 팀 만들기</summary>
+      <div class="new-team-form-wrap">
+        <form method="post" action="/competition/{{ comp.id }}/team/create" class="join-form">
+          <h3 style="margin:0 0 12px;font-size:1rem">팀 정보</h3>
+          <div class="join-grid">
+            <label class="field">
+              <span>팀 이름 <small>(필수)</small></span>
+              <input type="text" name="team_name" placeholder="예) 카르텔 1팀" required maxlength="50">
             </label>
-            {% endfor %}
+            <label class="field">
+              <span>팀 소개 <small>(선택)</small></span>
+              <input type="text" name="team_desc" placeholder="팀을 한 줄로 소개해주세요" maxlength="100">
+            </label>
           </div>
-          <button type="submit" class="btn btn-primary" style="margin-top:.75rem">제출 완료로 기록</button>
+          <h3 style="margin:16px 0 12px;font-size:1rem">내 정보 (팀장으로 자동 등록)</h3>
+          <div class="join-grid">
+            <label class="field">
+              <span>닉네임</span>
+              <input type="text" name="nickname" placeholder="본인 닉네임" required maxlength="30">
+            </label>
+            <label class="field">
+              <span>비밀번호 <small>(탈퇴 시 필요)</small></span>
+              <input type="password" name="password" placeholder="비밀번호 설정" required minlength="4">
+            </label>
+            <label class="field">
+              <span>역할</span>
+              <select name="role">
+                {% for r in roles %}<option value="{{ r }}">{{ r }}</option>{% endfor %}
+              </select>
+            </label>
+            <label class="field">
+              <span>한마디 <small>(선택)</small></span>
+              <input type="text" name="memo" placeholder="한마디 남기기" maxlength="100">
+            </label>
+          </div>
+          <button type="submit" class="btn btn-primary" style="margin-top:8px">팀 만들기</button>
         </form>
       </div>
-    </div>
-    {% elif comp.submitted %}
-    <div class="submission-done">
-      <span class="submit-check">✅</span>
-      <div>
-        <strong>제출 완료</strong> — {{ comp.submitted_at.strftime('%Y년 %m월 %d일') }} 기록
-        <div class="participant-list">
-          참여:
-          {% for m in members if m.is_participant %}
-            <span class="part-chip">{{ m.nickname }}</span>
-          {% endfor %}
-        </div>
-      </div>
-    </div>
+    </details>
     {% endif %}
 
-    {% if (not comp.max_members or members | length < comp.max_members) and comp.status != 'closed' %}
-    <div class="join-box">
-      <h3 class="join-title">팀 참여 신청</h3>
-      <form method="post" action="/competition/{{ comp.id }}/join" class="join-form">
-        <div class="join-grid">
-          <label class="field">
-            <span>닉네임</span>
-            <input type="text" name="nickname" placeholder="본인 닉네임" required maxlength="30">
-          </label>
-          <label class="field">
-            <span>비밀번호 <small>(탈퇴 시 필요)</small></span>
-            <input type="password" name="password" placeholder="비밀번호 설정" required minlength="4">
-          </label>
-          <label class="field">
-            <span>역할</span>
-            <select name="role">
-              {% for r in roles %}<option value="{{ r }}">{{ r }}</option>{% endfor %}
-            </select>
-          </label>
-          <label class="field">
-            <span>한마디 <small>(선택)</small></span>
-            <input type="text" name="memo" placeholder="한마디 남기기" maxlength="100">
-          </label>
-        </div>
-        <button type="submit" class="btn btn-primary">참여 신청</button>
-      </form>
-    </div>
-    {% endif %}
   </div>
 </section>
 

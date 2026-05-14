@@ -30,13 +30,15 @@ from models import (
     Comment, CommentLike,
     Competition, InviteCode, Member,
     Post, PostLike,
-    TeamMember,
+    Team, TeamMember,
 )
 
 app = FastAPI(title="공모전 보드")
 
-UPLOAD_DIR = BASE_DIR / os.getenv("UPLOAD_DIR", "uploads")
-UPLOAD_DIR.mkdir(exist_ok=True)
+UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", "uploads"))
+if not UPLOAD_DIR.is_absolute():
+    UPLOAD_DIR = BASE_DIR / UPLOAD_DIR
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
@@ -52,6 +54,15 @@ def _from_json(value) -> list:
         return parsed if isinstance(parsed, list) else []
     except json.JSONDecodeError:
         return []
+
+
+def _optional_int(value, field_name: str) -> Optional[int]:
+    if value is None or value == "":
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=f"{field_name} 값이 올바른 숫자가 아닙니다.") from exc
 
 
 templates.env.filters["fromjson"] = _from_json
@@ -271,12 +282,25 @@ async def detail(request: Request, comp_id: int, db: Session = Depends(get_db)):
     comp.status = _urgency(comp.deadline)
     comp.days_left = _days_left(comp.deadline)
 
-    members = (
-        db.query(TeamMember)
-        .filter(TeamMember.competition_id == comp_id)
-        .order_by(TeamMember.created_at.asc())
+    teams = (
+        db.query(Team)
+        .filter(Team.competition_id == comp_id)
+        .order_by(Team.created_at.asc())
         .all()
     )
+    team_ids = [t.id for t in teams]
+    all_tm = (
+        db.query(TeamMember)
+        .filter(TeamMember.team_id.in_(team_ids))
+        .order_by(TeamMember.created_at.asc())
+        .all()
+    ) if team_ids else []
+    # team별 멤버 맵
+    tm_by_team: dict = {}
+    for tm in all_tm:
+        tm_by_team.setdefault(tm.team_id, []).append(tm)
+    for t in teams:
+        t.members = tm_by_team.get(t.id, [])
 
     today = date.today()
     submission_window = comp.deadline < today <= comp.deadline + timedelta(days=7)
@@ -286,7 +310,7 @@ async def detail(request: Request, comp_id: int, db: Session = Depends(get_db)):
         _ctx(request, db,
              comp=comp, files=_from_json(comp.files),
              tags_list=_from_json(comp.tags),
-             members=members, roles=ROLES,
+             teams=teams, roles=ROLES,
              submission_window=submission_window, today=today),
     )
 
@@ -358,7 +382,7 @@ async def admin_add(
     link: str = Form(""),
     description: str = Form(""),
     is_featured: bool = Form(False),
-    max_members: Optional[int] = Form(None),
+    max_members: Optional[str] = Form(None),
     comp_image_path: Optional[str] = Form(None),
     comp_image: Optional[UploadFile] = File(None),
     files: List[UploadFile] = File(default=[]),
@@ -374,7 +398,7 @@ async def admin_add(
         deadline=date.fromisoformat(deadline),
         announcement_date=date.fromisoformat(announcement_date) if announcement_date else None,
         prize=prize, link=link, description=description,
-        image=image, max_members=max_members, is_featured=is_featured,
+        image=image, max_members=_optional_int(max_members, "최대 팀 인원"), is_featured=is_featured,
         files=json.dumps(await _save_files(files), ensure_ascii=False),
     )
     db.add(comp)
@@ -405,7 +429,7 @@ async def admin_edit(
     start_date: Optional[str] = Form(None), deadline: str = Form(...),
     announcement_date: Optional[str] = Form(None),
     prize: str = Form(""), link: str = Form(""), description: str = Form(""),
-    is_featured: bool = Form(False), max_members: Optional[int] = Form(None),
+    is_featured: bool = Form(False), max_members: Optional[str] = Form(None),
     comp_image_path: Optional[str] = Form(None),
     comp_image: Optional[UploadFile] = File(None),
     files: List[UploadFile] = File(default=[]),
@@ -425,7 +449,7 @@ async def admin_edit(
     comp.deadline = date.fromisoformat(deadline)
     comp.announcement_date = date.fromisoformat(announcement_date) if announcement_date else None
     comp.prize = prize; comp.link = link; comp.description = description
-    comp.is_featured = is_featured; comp.max_members = max_members
+    comp.is_featured = is_featured; comp.max_members = _optional_int(max_members, "최대 팀 인원")
     comp.image = new_image or comp_image_path or comp.image
     comp.files = json.dumps(existing_files + await _save_files(files), ensure_ascii=False)
     db.commit()
@@ -730,9 +754,48 @@ async def profile_edit(
 #  팀 구성
 # ════════════════════════════════════════════════════════════════════════════
 
-@app.post("/competition/{comp_id}/join")
-async def team_join(
+@app.post("/competition/{comp_id}/team/create")
+async def create_team(
     request: Request, comp_id: int,
+    team_name: str = Form(...),
+    team_desc: str = Form(""),
+    nickname: str = Form(...),
+    password: str = Form(...),
+    role: str = Form("기타"),
+    memo: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    comp = db.query(Competition).filter(Competition.id == comp_id).first()
+    if not comp:
+        raise HTTPException(status_code=404)
+    if comp.status == "closed":
+        if date.today() > comp.deadline:
+            raise HTTPException(status_code=400, detail="마감된 공모전입니다.")
+    # 팀 이름 중복 체크
+    existing = db.query(Team).filter(Team.competition_id == comp_id, Team.name == team_name).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="같은 이름의 팀이 이미 있습니다.")
+    team = Team(competition_id=comp_id, name=team_name, description=team_desc)
+    db.add(team)
+    db.flush()  # team.id 확보
+    cm = _current_member(request, db)
+    db.add(TeamMember(
+        team_id=team.id,
+        competition_id=comp_id,
+        nickname=nickname,
+        password_hash=_hash_pw(password),
+        role=role if role in ROLES else "기타",
+        memo=memo,
+        is_leader=True,
+        member_id=cm.id if cm else None,
+    ))
+    db.commit()
+    return RedirectResponse(url=f"/competition/{comp_id}#team", status_code=303)
+
+
+@app.post("/competition/{comp_id}/team/{team_id}/join")
+async def team_join(
+    request: Request, comp_id: int, team_id: int,
     nickname: str = Form(...), password: str = Form(...),
     role: str = Form("기타"), memo: str = Form(""),
     db: Session = Depends(get_db),
@@ -740,30 +803,39 @@ async def team_join(
     comp = db.query(Competition).filter(Competition.id == comp_id).first()
     if not comp:
         raise HTTPException(status_code=404)
-    members = db.query(TeamMember).filter(TeamMember.competition_id == comp_id).all()
+    team = db.query(Team).filter(Team.id == team_id, Team.competition_id == comp_id).first()
+    if not team:
+        raise HTTPException(status_code=404)
+    members = db.query(TeamMember).filter(TeamMember.team_id == team_id).all()
     if comp.max_members and len(members) >= comp.max_members:
         raise HTTPException(status_code=400, detail="팀 인원이 가득 찼습니다.")
-    if db.query(TeamMember).filter(TeamMember.competition_id == comp_id, TeamMember.nickname == nickname).first():
+    if db.query(TeamMember).filter(TeamMember.team_id == team_id, TeamMember.nickname == nickname).first():
         raise HTTPException(status_code=400, detail="이미 같은 닉네임으로 참여 중입니다.")
     cm = _current_member(request, db)
     db.add(TeamMember(
-        competition_id=comp_id, nickname=nickname,
+        team_id=team_id,
+        competition_id=comp_id,
+        nickname=nickname,
         password_hash=_hash_pw(password),
         role=role if role in ROLES else "기타",
-        memo=memo, is_leader=len(members) == 0,
+        memo=memo,
+        is_leader=len(members) == 0,
         member_id=cm.id if cm else None,
     ))
     db.commit()
     return RedirectResponse(url=f"/competition/{comp_id}#team", status_code=303)
 
 
-@app.post("/competition/{comp_id}/leave/{member_id}")
+@app.post("/competition/{comp_id}/team/{team_id}/leave/{member_id}")
 async def team_leave(
-    request: Request, comp_id: int, member_id: int,
+    request: Request, comp_id: int, team_id: int, member_id: int,
     nickname: str = Form(...), password: str = Form(...),
     db: Session = Depends(get_db),
 ):
-    member = db.query(TeamMember).filter(TeamMember.id == member_id, TeamMember.competition_id == comp_id).first()
+    member = db.query(TeamMember).filter(
+        TeamMember.id == member_id,
+        TeamMember.team_id == team_id,
+    ).first()
     if not member:
         raise HTTPException(status_code=404)
     if not _is_privileged(request, db):
@@ -772,19 +844,24 @@ async def team_leave(
     was_leader = member.is_leader
     db.delete(member)
     db.commit()
-    if was_leader:
-        next_leader = db.query(TeamMember).filter(TeamMember.competition_id == comp_id).order_by(TeamMember.created_at.asc()).first()
-        if next_leader:
-            next_leader.is_leader = True
+    # 남은 팀원 있으면 리더 재배정, 없으면 팀 삭제
+    remaining = db.query(TeamMember).filter(TeamMember.team_id == team_id).order_by(TeamMember.created_at.asc()).all()
+    if not remaining:
+        team = db.query(Team).filter(Team.id == team_id).first()
+        if team:
+            db.delete(team)
             db.commit()
+    elif was_leader:
+        remaining[0].is_leader = True
+        db.commit()
     return RedirectResponse(url=f"/competition/{comp_id}#team", status_code=303)
 
 
-@app.post("/admin/competition/{comp_id}/set-leader/{member_id}")
-async def set_leader(request: Request, comp_id: int, member_id: int, db: Session = Depends(get_db)):
+@app.post("/admin/competition/{comp_id}/team/{team_id}/set-leader/{member_id}")
+async def set_leader(request: Request, comp_id: int, team_id: int, member_id: int, db: Session = Depends(get_db)):
     if not _is_privileged(request, db):
         raise HTTPException(status_code=403)
-    db.query(TeamMember).filter(TeamMember.competition_id == comp_id, TeamMember.is_leader.is_(True)).update({"is_leader": False})
+    db.query(TeamMember).filter(TeamMember.team_id == team_id, TeamMember.is_leader.is_(True)).update({"is_leader": False})
     m = db.query(TeamMember).filter(TeamMember.id == member_id).first()
     if m:
         m.is_leader = True
@@ -801,17 +878,22 @@ async def admin_comp_members(request: Request, comp_id: int, db: Session = Depen
     comp = db.query(Competition).filter(Competition.id == comp_id).first()
     if not comp:
         raise HTTPException(status_code=404)
-    team = db.query(TeamMember).filter(TeamMember.competition_id == comp_id).order_by(TeamMember.created_at.asc()).all()
-    # member_id → Member 매핑
-    member_ids = [t.member_id for t in team if t.member_id]
+    teams = db.query(Team).filter(Team.competition_id == comp_id).order_by(Team.created_at.asc()).all()
+    team_ids = [t.id for t in teams]
+    all_tm = db.query(TeamMember).filter(TeamMember.team_id.in_(team_ids)).order_by(TeamMember.created_at.asc()).all() if team_ids else []
+    tm_by_team: dict = {}
+    for tm in all_tm:
+        tm_by_team.setdefault(tm.team_id, []).append(tm)
+    for t in teams:
+        t.members = tm_by_team.get(t.id, [])
+    member_ids = [tm.member_id for tm in all_tm if tm.member_id]
     members_map = {}
     if member_ids:
         for m in db.query(Member).filter(Member.id.in_(member_ids)).all():
             members_map[m.id] = m
     return templates.TemplateResponse(
         "admin/comp_members.html",
-        _ctx(request, db, comp=comp, team=team, members_map=members_map,
-             award_ranks=AWARD_RANKS),
+        _ctx(request, db, comp=comp, teams=teams, members_map=members_map, award_ranks=AWARD_RANKS),
     )
 
 
@@ -826,7 +908,7 @@ async def admin_set_award(
     """팀원 한 명의 수상 정보 저장"""
     if r := _admin_redirect(request):
         return r
-    tm = db.query(TeamMember).filter(TeamMember.id == tm_id, TeamMember.competition_id == comp_id).first()
+    tm = db.query(TeamMember).filter(TeamMember.id == tm_id).first()
     if not tm:
         raise HTTPException(status_code=404)
     tm.award_rank  = award_rank if award_rank in AWARD_RANKS else None
@@ -836,25 +918,26 @@ async def admin_set_award(
     return RedirectResponse(url=f"/admin/competition/{comp_id}/members", status_code=303)
 
 
-@app.post("/competition/{comp_id}/submit")
+@app.post("/competition/{comp_id}/team/{team_id}/submit")
 async def record_submission(
-    request: Request, comp_id: int,
+    request: Request, comp_id: int, team_id: int,
     participant_ids: List[int] = Form(default=[]),
     db: Session = Depends(get_db),
 ):
     if not _is_privileged(request, db):
         raise HTTPException(status_code=403)
-    comp = db.query(Competition).filter(Competition.id == comp_id).first()
-    if not comp:
+    team = db.query(Team).filter(Team.id == team_id, Team.competition_id == comp_id).first()
+    if not team:
         raise HTTPException(status_code=404)
+    comp = db.query(Competition).filter(Competition.id == comp_id).first()
     today = date.today()
     if not (comp.deadline < today <= comp.deadline + timedelta(days=7)):
         raise HTTPException(status_code=400, detail="제출 기록 기간이 아닙니다.")
-    db.query(TeamMember).filter(TeamMember.competition_id == comp_id).update({"is_participant": False})
+    db.query(TeamMember).filter(TeamMember.team_id == team_id).update({"is_participant": False})
     if participant_ids:
-        db.query(TeamMember).filter(TeamMember.competition_id == comp_id, TeamMember.id.in_(participant_ids)).update({"is_participant": True})
-    comp.submitted = True
-    comp.submitted_at = datetime.now()
+        db.query(TeamMember).filter(TeamMember.team_id == team_id, TeamMember.id.in_(participant_ids)).update({"is_participant": True})
+    team.submitted = True
+    team.submitted_at = datetime.now()
     db.commit()
     return RedirectResponse(url=f"/competition/{comp_id}#team", status_code=303)
 

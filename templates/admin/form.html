@@ -87,10 +87,21 @@
             </label>
           </div>
 
-          <label class="check-row">
-            <input type="checkbox" name="is_featured" value="true" {% if comp and comp.is_featured %}checked{% endif %}>
-            <span>첫 화면 주목 공모전에 노출</span>
-          </label>
+          <div class="form-grid two-col">
+            <label class="field">
+              <span>최대 팀 인원</span>
+              <input type="number" name="max_members" id="max_members" min="1" max="99"
+                     value="{{ comp.max_members if comp and comp.max_members else '' }}"
+                     placeholder="미입력 시 무제한">
+            </label>
+            <label class="field" style="justify-content:flex-end">
+              <span>&nbsp;</span>
+              <label class="check-row">
+                <input type="checkbox" name="is_featured" value="true" {% if comp and comp.is_featured %}checked{% endif %}>
+                <span>첫 화면 주목 공모전에 노출</span>
+              </label>
+            </label>
+          </div>
         </section>
 
         <section class="form-section">

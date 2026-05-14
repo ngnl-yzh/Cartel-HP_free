@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 import uuid
@@ -19,7 +20,7 @@ load_dotenv(BASE_DIR / ".env")
 from ai_parser import parse_image_file, parse_text
 from auth import create_token, verify_token
 from database import get_db, init_db
-from models import Competition
+from models import Competition, TeamMember
 
 app = FastAPI(title="공모전 보드")
 
@@ -126,6 +127,18 @@ async def index(
 
     competitions = _annotate(query.all())
 
+    # 카드에 팀 인원 수 표시용
+    all_ids = [c.id for c in competitions] + [c.id for c in featured]
+    from sqlalchemy import func
+    counts = dict(
+        db.query(TeamMember.competition_id, func.count(TeamMember.id))
+        .filter(TeamMember.competition_id.in_(all_ids))
+        .group_by(TeamMember.competition_id)
+        .all()
+    ) if all_ids else {}
+    for c in competitions + featured:
+        c.member_count = counts.get(c.id, 0)
+
     return templates.TemplateResponse(
         name="index.html",
         request=request,
@@ -156,6 +169,10 @@ async def detail(request: Request, comp_id: int, db: Session = Depends(get_db)):
     competition.status = _urgency(competition.deadline)
     competition.days_left = _days_left(competition.deadline)
 
+    members = db.query(TeamMember).filter(
+        TeamMember.competition_id == comp_id
+    ).order_by(TeamMember.created_at.asc()).all()
+
     return templates.TemplateResponse(
         name="detail.html",
         request=request,
@@ -164,6 +181,8 @@ async def detail(request: Request, comp_id: int, db: Session = Depends(get_db)):
             "comp": competition,
             "files": _from_json(competition.files),
             "tags_list": _from_json(competition.tags),
+            "members": members,
+            "roles": ROLES,
             "is_admin": _is_admin(request),
         },
     )
@@ -247,6 +266,7 @@ async def admin_add(
     link: str = Form(""),
     description: str = Form(""),
     is_featured: bool = Form(False),
+    max_members: Optional[int] = Form(None),
     comp_image_path: Optional[str] = Form(None),   # GPT 파싱 시 자동 저장된 경로
     comp_image: Optional[UploadFile] = File(None),  # 직접 업로드한 이미지
     files: List[UploadFile] = File(default=[]),
@@ -269,6 +289,7 @@ async def admin_add(
         link=link,
         description=description,
         image=image,
+        max_members=max_members,
         is_featured=is_featured,
         files=json.dumps(await _save_files(files), ensure_ascii=False),
     )
@@ -317,6 +338,7 @@ async def admin_edit(
     link: str = Form(""),
     description: str = Form(""),
     is_featured: bool = Form(False),
+    max_members: Optional[int] = Form(None),
     comp_image_path: Optional[str] = Form(None),
     comp_image: Optional[UploadFile] = File(None),
     files: List[UploadFile] = File(default=[]),
@@ -342,7 +364,7 @@ async def admin_edit(
     competition.link = link
     competition.description = description
     competition.is_featured = is_featured
-    # 새 이미지 > GPT 파싱 이미지 > 기존 이미지 순으로 우선
+    competition.max_members = max_members
     competition.image = new_image or comp_image_path or competition.image
     competition.files = json.dumps(existing_files + await _save_files(files), ensure_ascii=False)
     db.commit()
@@ -411,6 +433,129 @@ async def api_parse_image(request: Request, image: UploadFile = File(...)):
         return JSONResponse(result)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+# ── 비밀번호 헬퍼 ──────────────────────────────────────────────────────────────
+
+def _hash_pw(password: str) -> str:
+    salt = os.urandom(16).hex()
+    h = hashlib.sha256(f"{salt}{password}".encode()).hexdigest()
+    return f"{salt}:{h}"
+
+
+def _verify_pw(password: str, stored: str) -> bool:
+    try:
+        salt, h = stored.split(":", 1)
+        return hashlib.sha256(f"{salt}{password}".encode()).hexdigest() == h
+    except Exception:
+        return False
+
+
+# ── 팀 참여 / 취소 / 팀장 지정 ────────────────────────────────────────────────
+
+ROLES = ["기획", "개발", "디자인", "마케팅", "기타"]
+
+
+@app.post("/competition/{comp_id}/join")
+async def team_join(
+    request: Request,
+    comp_id: int,
+    nickname: str = Form(...),
+    password: str = Form(...),
+    role: str = Form("기타"),
+    memo: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    comp = db.query(Competition).filter(Competition.id == comp_id).first()
+    if not comp:
+        raise HTTPException(status_code=404)
+
+    members = db.query(TeamMember).filter(TeamMember.competition_id == comp_id).all()
+
+    # 인원 초과 확인
+    if comp.max_members and len(members) >= comp.max_members:
+        raise HTTPException(status_code=400, detail="팀 인원이 가득 찼습니다.")
+
+    # 닉네임 중복 확인
+    dup = db.query(TeamMember).filter(
+        TeamMember.competition_id == comp_id,
+        TeamMember.nickname == nickname,
+    ).first()
+    if dup:
+        raise HTTPException(status_code=400, detail="이미 같은 닉네임으로 참여 중입니다.")
+
+    member = TeamMember(
+        competition_id=comp_id,
+        nickname=nickname,
+        password_hash=_hash_pw(password),
+        role=role if role in ROLES else "기타",
+        memo=memo,
+        is_leader=len(members) == 0,   # 첫 번째 참여자는 자동 팀장
+    )
+    db.add(member)
+    db.commit()
+    return RedirectResponse(url=f"/competition/{comp_id}#team", status_code=303)
+
+
+@app.post("/competition/{comp_id}/leave/{member_id}")
+async def team_leave(
+    request: Request,
+    comp_id: int,
+    member_id: int,
+    nickname: str = Form(...),
+    password: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    member = db.query(TeamMember).filter(
+        TeamMember.id == member_id,
+        TeamMember.competition_id == comp_id,
+    ).first()
+    if not member:
+        raise HTTPException(status_code=404)
+
+    # 관리자는 비밀번호 없이 삭제 가능
+    if not _is_admin(request):
+        if member.nickname != nickname or not _verify_pw(password, member.password_hash):
+            raise HTTPException(status_code=400, detail="닉네임 또는 비밀번호가 올바르지 않습니다.")
+
+    was_leader = member.is_leader
+    db.delete(member)
+    db.commit()
+
+    # 팀장이 나갔으면 가장 오래된 멤버를 팀장으로 승격
+    if was_leader:
+        next_leader = db.query(TeamMember).filter(
+            TeamMember.competition_id == comp_id
+        ).order_by(TeamMember.created_at.asc()).first()
+        if next_leader:
+            next_leader.is_leader = True
+            db.commit()
+
+    return RedirectResponse(url=f"/competition/{comp_id}#team", status_code=303)
+
+
+@app.post("/admin/competition/{comp_id}/set-leader/{member_id}")
+async def set_leader(
+    request: Request,
+    comp_id: int,
+    member_id: int,
+    db: Session = Depends(get_db),
+):
+    if not _is_admin(request):
+        raise HTTPException(status_code=403)
+
+    # 기존 팀장 해제
+    db.query(TeamMember).filter(
+        TeamMember.competition_id == comp_id,
+        TeamMember.is_leader == True,
+    ).update({"is_leader": False})
+
+    # 새 팀장 지정
+    member = db.query(TeamMember).filter(TeamMember.id == member_id).first()
+    if member:
+        member.is_leader = True
+    db.commit()
+    return RedirectResponse(url=f"/competition/{comp_id}#team", status_code=303)
 
 
 async def _save_image(upload: Optional[UploadFile]) -> Optional[str]:

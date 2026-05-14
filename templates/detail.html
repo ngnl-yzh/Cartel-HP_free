@@ -112,4 +112,117 @@
     </aside>
   </div>
 </main>
+
+{# ── 팀 구성 섹션 ───────────────────────────────────── #}
+<section class="team-section" id="team">
+  <div class="container">
+    <div class="team-header">
+      <h2 class="team-title">
+        👥 팀 구성
+        <span class="team-count">{{ members | length }}{% if comp.max_members %} / {{ comp.max_members }}{% endif %}명</span>
+        {% if comp.max_members and members | length >= comp.max_members %}
+          <span class="deadline-badge closed">모집 완료</span>
+        {% elif comp.status == 'closed' %}
+          <span class="deadline-badge closed">마감된 공모전</span>
+        {% else %}
+          <span class="deadline-badge open">모집 중</span>
+        {% endif %}
+      </h2>
+    </div>
+
+    {% if members %}
+    <div class="member-grid">
+      {% for m in members %}
+      <div class="member-card {% if m.is_leader %}is-leader{% endif %}">
+        <div class="member-top">
+          <div class="member-avatar">{{ m.nickname[0] | upper }}</div>
+          <div class="member-info">
+            <div class="member-name-row">
+              {% if m.is_leader %}<span class="leader-crown">👑</span>{% endif %}
+              <span class="member-name">{{ m.nickname }}</span>
+            </div>
+            <span class="member-role role-{{ m.role }}">{{ m.role }}</span>
+          </div>
+          <div class="member-actions">
+            {% if is_admin %}
+              {% if not m.is_leader %}
+              <form method="post" action="/admin/competition/{{ comp.id }}/set-leader/{{ m.id }}" style="display:inline">
+                <button type="submit" class="btn btn-ghost btn-xs" title="팀장으로 지정">👑</button>
+              </form>
+              {% endif %}
+              <button class="btn btn-ghost btn-xs leave-trigger"
+                data-member-id="{{ m.id }}" data-comp-id="{{ comp.id }}"
+                data-nickname="{{ m.nickname }}" data-admin="true">✕</button>
+            {% else %}
+              <button class="btn btn-ghost btn-xs leave-trigger"
+                data-member-id="{{ m.id }}" data-comp-id="{{ comp.id }}"
+                data-nickname="{{ m.nickname }}" data-admin="false">탈퇴</button>
+            {% endif %}
+          </div>
+        </div>
+        {% if m.memo %}
+        <p class="member-memo">"{{ m.memo }}"</p>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="team-empty">아직 팀원이 없습니다. 첫 번째로 참여해보세요! 🙌</p>
+    {% endif %}
+
+    {% if (not comp.max_members or members | length < comp.max_members) and comp.status != 'closed' %}
+    <div class="join-box">
+      <h3 class="join-title">팀 참여 신청</h3>
+      <form method="post" action="/competition/{{ comp.id }}/join" class="join-form">
+        <div class="join-grid">
+          <label class="field">
+            <span>닉네임</span>
+            <input type="text" name="nickname" placeholder="본인 닉네임" required maxlength="30">
+          </label>
+          <label class="field">
+            <span>비밀번호 <small>(탈퇴 시 필요)</small></span>
+            <input type="password" name="password" placeholder="비밀번호 설정" required minlength="4">
+          </label>
+          <label class="field">
+            <span>역할</span>
+            <select name="role">
+              {% for r in roles %}<option value="{{ r }}">{{ r }}</option>{% endfor %}
+            </select>
+          </label>
+          <label class="field">
+            <span>한마디 <small>(선택)</small></span>
+            <input type="text" name="memo" placeholder="한마디 남기기" maxlength="100">
+          </label>
+        </div>
+        <button type="submit" class="btn btn-primary">참여 신청</button>
+      </form>
+    </div>
+    {% endif %}
+  </div>
+</section>
+
+{# 탈퇴 모달 #}
+<div id="leaveModal" class="modal-overlay" style="display:none">
+  <div class="modal-box">
+    <h3 class="modal-title">팀 탈퇴</h3>
+    <p class="modal-desc" id="leaveDesc"></p>
+    <form id="leaveForm" method="post">
+      <div id="leaveFields">
+        <label class="field">
+          <span>닉네임 확인</span>
+          <input type="text" name="nickname" id="leaveNickname" required>
+        </label>
+        <label class="field" style="margin-top:.6rem">
+          <span>비밀번호 확인</span>
+          <input type="password" name="password" id="leavePassword" required>
+        </label>
+      </div>
+      <div class="modal-actions">
+        <button type="submit" class="btn btn-danger">탈퇴 확인</button>
+        <button type="button" class="btn btn-outline" id="leaveCancel">취소</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 {% endblock %}

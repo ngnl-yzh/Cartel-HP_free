@@ -109,6 +109,7 @@
             {% else %}
               <span class="deadline-badge open">D-{{ comp.days_left }}</span>
             {% endif %}
+            <span class="member-badge">👥 {{ comp.member_count }}{% if comp.max_members %}/{{ comp.max_members }}{% endif %}</span>
             <span class="view-count-sm">조회 {{ comp.view_count }}</span>
           </div>
         </div>

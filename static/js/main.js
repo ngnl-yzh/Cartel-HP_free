@@ -192,6 +192,57 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  // 팀 탈퇴 모달
+  const leaveModal   = document.getElementById("leaveModal");
+  const leaveForm    = document.getElementById("leaveForm");
+  const leaveDesc    = document.getElementById("leaveDesc");
+  const leaveNick    = document.getElementById("leaveNickname");
+  const leavePw      = document.getElementById("leavePassword");
+  const leaveFields  = document.getElementById("leaveFields");
+  const leaveCancel  = document.getElementById("leaveCancel");
+
+  document.querySelectorAll(".leave-trigger").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const memberId = btn.dataset.memberId;
+      const compId   = btn.dataset.compId;
+      const nickname = btn.dataset.nickname;
+      const isAdmin  = btn.dataset.admin === "true";
+
+      leaveForm.action = `/competition/${compId}/leave/${memberId}`;
+      leaveDesc.textContent = `'${nickname}' 님의 팀 참여를 취소합니다.`;
+
+      // 관리자는 비밀번호 입력 없이 삭제
+      if (isAdmin) {
+        leaveFields.style.display = "none";
+        leaveNick.required = false;
+        leavePw.required  = false;
+        leaveNick.value   = nickname;
+        leavePw.value     = "__admin__";
+      } else {
+        leaveFields.style.display = "block";
+        leaveNick.required = true;
+        leavePw.required   = true;
+        leaveNick.value    = "";
+        leavePw.value      = "";
+      }
+
+      leaveModal.style.display = "flex";
+      if (!isAdmin) setTimeout(() => leaveNick.focus(), 50);
+    });
+  });
+
+  if (leaveCancel) {
+    leaveCancel.addEventListener("click", () => {
+      leaveModal.style.display = "none";
+    });
+  }
+
+  if (leaveModal) {
+    leaveModal.addEventListener("click", (e) => {
+      if (e.target === leaveModal) leaveModal.style.display = "none";
+    });
+  }
+
   // 직접 이미지 업로드 시 미리보기
   const compImageInput = document.getElementById("comp_image_input");
   if (compImageInput) {

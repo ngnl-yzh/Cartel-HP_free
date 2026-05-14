@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}{{ target.activity_name }} · 공모전 보드{% endblock %}
+
+{% block content %}
+<main class="profile-page">
+  <div class="container">
+    <div class="profile-card">
+      <div class="profile-avatar-wrap">
+        {% if target.profile_image %}
+          <img src="/uploads/{{ target.profile_image }}" alt="{{ target.activity_name }}" class="profile-avatar-img">
+        {% else %}
+          <div class="profile-avatar-placeholder">{{ target.activity_name[0] | upper }}</div>
+        {% endif %}
+      </div>
+
+      <div class="profile-info">
+        <div class="profile-name-row">
+          <h1 class="profile-name">{{ target.activity_name }}</h1>
+          {% if target.role == 'sub_admin' %}
+            <span class="role-badge sub-admin">중간관리자</span>
+          {% endif %}
+        </div>
+
+        {% if target.bio %}
+          <p class="profile-bio">{{ target.bio }}</p>
+        {% else %}
+          <p class="profile-bio muted">소개가 없습니다.</p>
+        {% endif %}
+
+        <p class="profile-since">가입일: {{ target.created_at.strftime('%Y년 %m월 %d일') }}</p>
+
+        {# 관리자/중간관리자에게만 개인정보 공개 #}
+        {% if is_privileged %}
+        <div class="profile-private-info">
+          <h3 class="private-info-title">🔒 개인정보 (관리자 전용)</h3>
+          <table class="info-table">
+            <tr><th>실명</th><td>{{ target.real_name }}</td></tr>
+            {% if target.student_id %}
+            <tr><th>학번</th><td>{{ target.student_id }}</td></tr>
+            {% endif %}
+            {% if target.phone %}
+            <tr><th>전화번호</th><td>{{ target.phone }}</td></tr>
+            {% endif %}
+          </table>
+        </div>
+        {% endif %}
+
+        <div class="profile-actions">
+          {% if is_own %}
+            <a href="/profile/edit/me" class="btn btn-outline">프로필 수정</a>
+          {% endif %}
+          {% if is_admin and not is_own %}
+            <form method="post" action="/admin/members/{{ target.id }}/set-role" style="display:inline">
+              {% if target.role == 'member' %}
+                <input type="hidden" name="role" value="sub_admin">
+                <button type="submit" class="btn btn-outline">중간관리자로 지정</button>
+              {% else %}
+                <input type="hidden" name="role" value="member">
+                <button type="submit" class="btn btn-outline">일반회원으로 변경</button>
+              {% endif %}
+            </form>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+{% endblock %}

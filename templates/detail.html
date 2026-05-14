@@ -170,6 +170,58 @@
     <p class="team-empty">아직 팀원이 없습니다. 첫 번째로 참여해보세요! 🙌</p>
     {% endif %}
 
+    {# ── 제출 현황 기록 (마감 후 7일 이내, 관리자/중간관리자) ── #}
+    {% if is_privileged and submission_window %}
+    <div class="submission-box">
+      {% if comp.submitted %}
+      <div class="submission-done">
+        <span class="submit-check">✅</span>
+        <div>
+          <strong>제출 완료</strong> — {{ comp.submitted_at.strftime('%Y년 %m월 %d일 %H:%M') }} 기록
+          <div class="participant-list">
+            참여 팀원:
+            {% for m in members if m.is_participant %}
+              <span class="part-chip">{{ m.nickname }}</span>
+            {% else %}
+              <span class="muted">기록 없음</span>
+            {% endfor %}
+          </div>
+        </div>
+        <a href="#" class="btn btn-ghost btn-sm" onclick="document.getElementById('resubmitForm').style.display='block';return false;">수정</a>
+      </div>
+      {% endif %}
+      <div id="resubmitForm" {% if comp.submitted %}style="display:none;margin-top:1rem"{% endif %}>
+        <h3 class="submission-title">📋 제출 현황 기록</h3>
+        <p class="muted" style="font-size:.85rem;margin-bottom:.75rem">실제로 공모전을 제출한 팀원을 선택하세요.</p>
+        <form method="post" action="/competition/{{ comp.id }}/submit">
+          <div class="participant-check-grid">
+            {% for m in members %}
+            <label class="check-pill">
+              <input type="checkbox" name="participant_ids" value="{{ m.id }}"
+                {% if m.is_participant %}checked{% endif %}>
+              <span>{% if m.is_leader %}👑{% endif %}{{ m.nickname }}</span>
+            </label>
+            {% endfor %}
+          </div>
+          <button type="submit" class="btn btn-primary" style="margin-top:.75rem">제출 완료로 기록</button>
+        </form>
+      </div>
+    </div>
+    {% elif comp.submitted %}
+    <div class="submission-done">
+      <span class="submit-check">✅</span>
+      <div>
+        <strong>제출 완료</strong> — {{ comp.submitted_at.strftime('%Y년 %m월 %d일') }} 기록
+        <div class="participant-list">
+          참여:
+          {% for m in members if m.is_participant %}
+            <span class="part-chip">{{ m.nickname }}</span>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
     {% if (not comp.max_members or members | length < comp.max_members) and comp.status != 'closed' %}
     <div class="join-box">
       <h3 class="join-title">팀 참여 신청</h3>

@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}초대 코드 관리 · 공모전 보드{% endblock %}
+
+{% block content %}
+<main class="admin-page">
+  <div class="container">
+    <div class="page-heading">
+      <div>
+        <p class="eyebrow">Admin</p>
+        <h1>초대 코드 관리</h1>
+      </div>
+      <a href="/admin/members" class="btn btn-ghost">← 회원 관리</a>
+    </div>
+
+    {# 코드 발급 폼 #}
+    <section class="form-section" style="margin-bottom:2rem">
+      <h2>새 초대 코드 발급</h2>
+      <form method="post" action="/admin/invite-codes/create" style="display:flex;gap:12px;align-items:flex-end">
+        <label class="field" style="flex:1;margin:0">
+          <span>메모 <small>(선택 — 누구에게 줄 코드인지)</small></span>
+          <input type="text" name="note" placeholder="예: 김철수에게" maxlength="100">
+        </label>
+        <button type="submit" class="btn btn-primary">발급</button>
+      </form>
+    </section>
+
+    {% if codes %}
+    <section class="table-wrap">
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th>코드</th>
+            <th>메모</th>
+            <th>상태</th>
+            <th>사용 회원</th>
+            <th>발급일</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in codes %}
+          <tr class="{% if c.used_by_member_id %}row-used{% endif %}">
+            <td>
+              <code class="invite-code-text">{{ c.code }}</code>
+            </td>
+            <td>{{ c.note or "-" }}</td>
+            <td>
+              {% if c.used_by_member_id %}
+                <span class="deadline-badge closed">사용됨</span>
+              {% elif c.expires_at and c.expires_at < now %}
+                <span class="deadline-badge closed">만료됨</span>
+              {% else %}
+                <span class="deadline-badge open">사용 가능</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if c.used_by_member_id and members_map.get(c.used_by_member_id) %}
+                <a href="/profile/{{ members_map[c.used_by_member_id] }}">{{ members_map[c.used_by_member_id] }}</a>
+              {% else %}
+                -
+              {% endif %}
+            </td>
+            <td>{{ c.created_at.strftime('%Y.%m.%d') }}</td>
+            <td>
+              {% if not c.used_by_member_id %}
+              <form method="post" action="/admin/invite-codes/delete/{{ c.id }}" data-confirm="이 코드를 삭제하시겠습니까?">
+                <button type="submit" class="btn btn-danger btn-sm">삭제</button>
+              </form>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+    {% else %}
+    <div class="empty-state">
+      <p class="empty-text">발급된 초대 코드가 없습니다.</p>
+    </div>
+    {% endif %}
+  </div>
+</main>
+{% endblock %}

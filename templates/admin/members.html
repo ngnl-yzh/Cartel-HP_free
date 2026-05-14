@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}회원 관리 · 공모전 보드{% endblock %}
+
+{% block content %}
+<main class="admin-page">
+  <div class="container">
+    <div class="page-heading">
+      <div>
+        <p class="eyebrow">Admin</p>
+        <h1>회원 관리</h1>
+      </div>
+      <div style="display:flex;gap:8px">
+        <a href="/admin/invite-codes" class="btn btn-outline">초대 코드 관리</a>
+        <a href="/admin" class="btn btn-ghost">← 대시보드</a>
+      </div>
+    </div>
+
+    {% if members %}
+    <section class="table-wrap">
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th>활동명</th>
+            <th>실명</th>
+            <th>학번</th>
+            <th>전화번호</th>
+            <th>역할</th>
+            <th>가입일</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for m in members %}
+          <tr>
+            <td>
+              <a href="/profile/{{ m.activity_name }}" class="table-title">{{ m.activity_name }}</a>
+            </td>
+            <td>{{ m.real_name }}</td>
+            <td>{{ m.student_id or "-" }}</td>
+            <td>{{ m.phone or "-" }}</td>
+            <td>
+              {% if m.role == 'sub_admin' %}
+                <span class="deadline-badge soon">중간관리자</span>
+              {% else %}
+                <span class="deadline-badge open">일반회원</span>
+              {% endif %}
+            </td>
+            <td>{{ m.created_at.strftime('%Y.%m.%d') }}</td>
+            <td class="table-actions">
+              <form method="post" action="/admin/members/{{ m.id }}/set-role" style="display:inline">
+                {% if m.role == 'member' %}
+                  <input type="hidden" name="role" value="sub_admin">
+                  <button type="submit" class="btn btn-outline btn-sm">중간관리자 지정</button>
+                {% else %}
+                  <input type="hidden" name="role" value="member">
+                  <button type="submit" class="btn btn-ghost btn-sm">권한 해제</button>
+                {% endif %}
+              </form>
+              <form method="post" action="/admin/members/{{ m.id }}/delete" data-confirm="{{ m.activity_name }} 회원을 삭제하시겠습니까?" style="display:inline">
+                <button type="submit" class="btn btn-danger btn-sm">삭제</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+    {% else %}
+    <div class="empty-state">
+      <p class="empty-text">가입된 회원이 없습니다.</p>
+      <a href="/admin/invite-codes" class="btn btn-primary">초대 코드 발급하기</a>
+    </div>
+    {% endif %}
+  </div>
+</main>
+{% endblock %}

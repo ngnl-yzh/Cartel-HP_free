@@ -7,6 +7,7 @@ from models import Base
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./competitions.db")
 
+# Railway PostgreSQL URL 호환
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
@@ -18,17 +19,32 @@ engine = create_engine(
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
+def _add_column_if_missing(conn, inspector, table: str, col: str, col_def: str):
+    cols = [c["name"] for c in inspector.get_columns(table)]
+    if col not in cols:
+        conn.execute(__import__("sqlalchemy").text(f"ALTER TABLE {table} ADD COLUMN {col_def}"))
+
+
 def init_db():
     Base.metadata.create_all(bind=engine)
-    # 기존 DB 마이그레이션 — 새 컬럼이 없으면 추가
+
     from sqlalchemy import inspect, text
     with engine.connect() as conn:
         inspector = inspect(engine)
-        comp_cols = [c["name"] for c in inspector.get_columns("competitions")]
-        if "image" not in comp_cols:
-            conn.execute(text("ALTER TABLE competitions ADD COLUMN image VARCHAR(500)"))
-        if "max_members" not in comp_cols:
-            conn.execute(text("ALTER TABLE competitions ADD COLUMN max_members INTEGER"))
+        existing_tables = inspector.get_table_names()
+
+        # ── competitions 신규 컬럼 ──────────────────────────────────────────────
+        if "competitions" in existing_tables:
+            _add_column_if_missing(conn, inspector, "competitions", "image",        "image VARCHAR(500)")
+            _add_column_if_missing(conn, inspector, "competitions", "max_members",  "max_members INTEGER")
+            _add_column_if_missing(conn, inspector, "competitions", "submitted",    "submitted BOOLEAN DEFAULT FALSE")
+            _add_column_if_missing(conn, inspector, "competitions", "submitted_at", "submitted_at TIMESTAMP")
+
+        # ── team_members 신규 컬럼 ─────────────────────────────────────────────
+        if "team_members" in existing_tables:
+            _add_column_if_missing(conn, inspector, "team_members", "is_participant", "is_participant BOOLEAN DEFAULT FALSE")
+            _add_column_if_missing(conn, inspector, "team_members", "member_id",      "member_id INTEGER")
+
         conn.commit()
 
 

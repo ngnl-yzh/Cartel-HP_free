@@ -20,8 +20,24 @@
       {% if is_admin is defined and is_admin %}
         <a href="/admin" class="btn btn-outline btn-sm">관리자 패널</a>
         <a href="/admin/logout" class="btn btn-ghost btn-sm">로그아웃</a>
+      {% elif current_member is defined and current_member %}
+        {% if current_member.role == 'sub_admin' %}
+          <span class="nav-badge-role">중간관리자</span>
+        {% endif %}
+        <a href="/profile/{{ current_member.activity_name }}" class="btn btn-ghost btn-sm">
+          {% if current_member.profile_image %}
+            <img src="/uploads/{{ current_member.profile_image }}" class="nav-avatar" alt="">
+          {% else %}
+            <span class="nav-avatar-letter">{{ current_member.activity_name[0] | upper }}</span>
+          {% endif %}
+          {{ current_member.activity_name }}
+        </a>
+        <a href="/member/logout" class="btn btn-ghost btn-sm">로그아웃</a>
+        <a href="/admin/login" class="btn btn-ghost btn-sm nav-admin-link">관리자</a>
       {% else %}
-        <a href="/admin/login" class="btn btn-ghost btn-sm">관리자</a>
+        <a href="/member/login" class="btn btn-ghost btn-sm">로그인</a>
+        <a href="/register" class="btn btn-outline btn-sm">회원가입</a>
+        <a href="/admin/login" class="btn btn-ghost btn-sm nav-admin-link">관리자</a>
       {% endif %}
     </div>
   </nav>

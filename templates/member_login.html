@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}로그인 · 공모전 보드{% endblock %}
+
+{% block content %}
+<main class="auth-page">
+  <div class="auth-box">
+    <p class="eyebrow">카르텔 공모전 보드</p>
+    <h1 class="auth-title">로그인</h1>
+
+    {% if error %}
+    <div class="alert alert-error">{{ error }}</div>
+    {% endif %}
+
+    <form method="post" action="/member/login" class="auth-form">
+      <label class="field">
+        <span>활동명</span>
+        <input type="text" name="activity_name" placeholder="활동명 입력" required autofocus>
+      </label>
+      <label class="field">
+        <span>비밀번호</span>
+        <input type="password" name="password" placeholder="비밀번호" required>
+      </label>
+      <button type="submit" class="btn btn-primary btn-full">로그인</button>
+    </form>
+
+    <p class="auth-footer-link">계정이 없으신가요? <a href="/register">회원가입</a> (초대 코드 필요)</p>
+  </div>
+</main>
+{% endblock %}

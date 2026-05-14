@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}프로필 수정 · 공모전 보드{% endblock %}
+
+{% block content %}
+<main class="auth-page">
+  <div class="auth-box" style="max-width:560px">
+    <p class="eyebrow">내 계정</p>
+    <h1 class="auth-title">프로필 수정</h1>
+
+    {% if error %}
+    <div class="alert alert-error">{{ error }}</div>
+    {% endif %}
+
+    <form method="post" action="/profile/edit/me" enctype="multipart/form-data" class="auth-form">
+      <label class="field">
+        <span>활동명</span>
+        <input type="text" value="{{ member.activity_name }}" disabled class="input-disabled">
+        <small class="field-hint">활동명은 변경할 수 없습니다</small>
+      </label>
+
+      <label class="field">
+        <span>실명</span>
+        <input type="text" name="real_name" value="{{ member.real_name }}" required maxlength="50">
+      </label>
+
+      <label class="field">
+        <span>전화번호</span>
+        <input type="tel" name="phone" value="{{ member.phone }}" placeholder="010-0000-0000" maxlength="20">
+      </label>
+
+      <label class="field">
+        <span>한 줄 소개</span>
+        <textarea name="bio" rows="3" maxlength="200">{{ member.bio }}</textarea>
+      </label>
+
+      <label class="field">
+        <span>프로필 이미지</span>
+        {% if member.profile_image %}
+          <img src="/uploads/{{ member.profile_image }}" alt="현재 프로필" class="profile-img-preview">
+        {% endif %}
+        <input type="file" name="profile_image" accept="image/*">
+      </label>
+
+      <div class="field-divider"></div>
+      <p class="section-label">비밀번호 변경 <small>(변경하지 않으면 빈칸으로 두세요)</small></p>
+
+      <label class="field">
+        <span>새 비밀번호</span>
+        <input type="password" name="new_password" placeholder="6자 이상 (선택)" minlength="6">
+      </label>
+
+      <div class="field-divider"></div>
+
+      <label class="field">
+        <span>현재 비밀번호 확인 <span class="required">*</span></span>
+        <input type="password" name="current_password" placeholder="변경을 적용하려면 필수" required>
+      </label>
+
+      <div style="display:flex; gap:12px; margin-top:8px">
+        <button type="submit" class="btn btn-primary" style="flex:1">저장</button>
+        <a href="/profile/{{ member.activity_name }}" class="btn btn-outline" style="flex:1; text-align:center">취소</a>
+      </div>
+    </form>
+  </div>
+</main>
+{% endblock %}

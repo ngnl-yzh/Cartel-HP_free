@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}관리자 패널 · 공모전 보드{% endblock %}
+
+{% block content %}
+<main class="admin-page">
+  <div class="container">
+    <div class="page-heading">
+      <div>
+        <p class="eyebrow">Admin</p>
+        <h1>공모전 관리</h1>
+      </div>
+      <a href="/admin/add" class="btn btn-primary">공모전 추가</a>
+    </div>
+
+    <div class="stat-grid">
+      <div class="stat-card">
+        <span>전체</span>
+        <strong>{{ competitions | length }}</strong>
+      </div>
+      <div class="stat-card">
+        <span>마감 임박</span>
+        <strong>{{ competitions | selectattr('status', 'equalto', 'urgent') | list | length }}</strong>
+      </div>
+      <div class="stat-card">
+        <span>주목 표시</span>
+        <strong>{{ competitions | selectattr('is_featured') | list | length }}</strong>
+      </div>
+    </div>
+
+    {% if competitions %}
+    <section class="table-wrap">
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th>공모전명</th>
+            <th>주최기관</th>
+            <th>마감일</th>
+            <th>조회수</th>
+            <th>상태</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for comp in competitions %}
+          <tr>
+            <td>
+              <a href="/competition/{{ comp.id }}" class="table-title">{{ comp.title }}</a>
+              {% if comp.is_featured %}<span class="mini-badge">주목</span>{% endif %}
+            </td>
+            <td>{{ comp.organizer or "-" }}</td>
+            <td>{{ comp.deadline.strftime('%Y.%m.%d') }}</td>
+            <td>{{ comp.view_count }}</td>
+            <td>
+              {% if comp.status == 'closed' %}
+                <span class="deadline-badge closed">마감</span>
+              {% elif comp.status == 'urgent' %}
+                <span class="deadline-badge urgent">D-{{ comp.days_left }}</span>
+              {% elif comp.status == 'soon' %}
+                <span class="deadline-badge soon">D-{{ comp.days_left }}</span>
+              {% else %}
+                <span class="deadline-badge open">D-{{ comp.days_left }}</span>
+              {% endif %}
+            </td>
+            <td class="table-actions">
+              <a href="/admin/edit/{{ comp.id }}" class="btn btn-outline btn-sm">수정</a>
+              <form method="post" action="/admin/delete/{{ comp.id }}" data-confirm="정말 삭제하시겠습니까?">
+                <button type="submit" class="btn btn-danger btn-sm">삭제</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+    {% else %}
+    <section class="empty-state">
+      <p class="empty-title">등록된 공모전이 없습니다.</p>
+      <a href="/admin/add" class="btn btn-primary">첫 공모전 추가</a>
+    </section>
+    {% endif %}
+  </div>
+</main>
+{% endblock %}

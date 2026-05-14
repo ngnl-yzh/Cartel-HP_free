@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}공모전 보드{% endblock %}</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <nav class="navbar">
+    <a href="/" class="nav-logo">공모전 보드</a>
+    <form class="nav-search" action="/" method="get">
+      {% if current_tag is defined and current_tag and current_tag != 'all' %}
+        <input type="hidden" name="tag" value="{{ current_tag }}">
+      {% endif %}
+      <input type="search" name="q" placeholder="공모전명, 주최기관 검색" value="{{ query if query is defined else '' }}">
+      <button type="submit" aria-label="검색">검색</button>
+    </form>
+    <div class="nav-actions">
+      {% if is_admin is defined and is_admin %}
+        <a href="/admin" class="btn btn-outline btn-sm">관리자 패널</a>
+        <a href="/admin/logout" class="btn btn-ghost btn-sm">로그아웃</a>
+      {% else %}
+        <a href="/admin/login" class="btn btn-ghost btn-sm">관리자</a>
+      {% endif %}
+    </div>
+  </nav>
+
+  {% block content %}{% endblock %}
+
+  <footer class="footer">
+    <p>© 2026 공모전 보드 · 팀 내부용</p>
+  </footer>
+
+  <script src="/static/js/main.js"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

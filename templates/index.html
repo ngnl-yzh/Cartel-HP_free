@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% block title %}공모전 보드{% endblock %}
+
+{% block content %}
+{% if featured %}
+<section class="featured-section">
+  <div class="container">
+    <div class="featured-header">
+      <div>
+        <h1 class="featured-title">마감 임박 · 인기 공모전</h1>
+        <p class="featured-sub">마감일, 조회수, 주목 표시를 기준으로 먼저 보여줍니다.</p>
+      </div>
+    </div>
+    <div class="featured-grid">
+      {% for comp in featured %}
+      <a href="/competition/{{ comp.id }}" class="featured-card status-{{ comp.status }}">
+        <div class="featured-tags">
+          {% for tag in comp.tags | fromjson %}
+            <span class="tag-chip">{{ tag }}</span>
+          {% endfor %}
+        </div>
+        <h2 class="featured-card-title">{{ comp.title }}</h2>
+        <p class="featured-card-org">{{ comp.organizer }}</p>
+        {% if comp.prize %}
+          <p class="featured-card-prize">시상 {{ comp.prize }}</p>
+        {% endif %}
+        <div class="featured-card-footer">
+          {% if comp.status == 'urgent' %}
+            <span class="deadline-badge urgent">D-{{ comp.days_left }}</span>
+          {% elif comp.status == 'soon' %}
+            <span class="deadline-badge soon">D-{{ comp.days_left }}</span>
+          {% else %}
+            <span class="deadline-badge open">D-{{ comp.days_left }}</span>
+          {% endif %}
+          <span class="view-count">조회 {{ comp.view_count }}</span>
+        </div>
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+{% endif %}
+
+<main class="main-content">
+  <div class="container">
+    <div class="toolbar">
+      <div class="filter-bar">
+        <a href="/?sort={{ current_sort | urlencode }}&q={{ query | urlencode }}"
+           class="filter-btn {% if current_tag == 'all' %}active{% endif %}">전체</a>
+        {% for t in tags %}
+        <a href="/?tag={{ t | urlencode }}&sort={{ current_sort | urlencode }}&q={{ query | urlencode }}"
+           class="filter-btn {% if current_tag == t %}active{% endif %}">{{ t }}</a>
+        {% endfor %}
+      </div>
+      <div class="sort-bar">
+        <span class="sort-label">정렬</span>
+        <a href="/?tag={{ current_tag | urlencode }}&sort=deadline&q={{ query | urlencode }}"
+           class="sort-btn {% if current_sort == 'deadline' %}active{% endif %}">마감일순</a>
+        <a href="/?tag={{ current_tag | urlencode }}&sort=views&q={{ query | urlencode }}"
+           class="sort-btn {% if current_sort == 'views' %}active{% endif %}">조회순</a>
+        <a href="/?tag={{ current_tag | urlencode }}&sort=newest&q={{ query | urlencode }}"
+           class="sort-btn {% if current_sort == 'newest' %}active{% endif %}">최신순</a>
+      </div>
+    </div>
+
+    <p class="result-count">
+      {% if query %}
+        "<strong>{{ query }}</strong>" 검색 결과 {{ competitions | length }}건
+      {% else %}
+        전체 {{ competitions | length }}개 공모전
+      {% endif %}
+    </p>
+
+    {% if competitions %}
+    <div class="competition-grid">
+      {% for comp in competitions %}
+      <a href="/competition/{{ comp.id }}" class="comp-card status-{{ comp.status }}">
+        <div class="comp-card-tags">
+          {% for tag in comp.tags | fromjson %}
+            <span class="tag-chip tag-small">{{ tag }}</span>
+          {% endfor %}
+          {% if comp.is_featured %}
+            <span class="tag-chip tag-featured">주목</span>
+          {% endif %}
+        </div>
+        <h2 class="comp-card-title">{{ comp.title }}</h2>
+        <p class="comp-card-org">{{ comp.organizer }}</p>
+        {% if comp.prize %}
+          <p class="comp-card-prize">시상 {{ comp.prize }}</p>
+        {% endif %}
+        <div class="comp-card-footer">
+          <div class="comp-dates">
+            {% if comp.start_date %}
+              <span class="date-info">접수 {{ comp.start_date.strftime('%m/%d') }}</span>
+              <span class="date-sep">~</span>
+            {% endif %}
+            <span class="date-deadline">마감 {{ comp.deadline.strftime('%Y.%m.%d') }}</span>
+          </div>
+          <div class="comp-meta">
+            {% if comp.status == 'closed' %}
+              <span class="deadline-badge closed">마감</span>
+            {% elif comp.status == 'urgent' %}
+              <span class="deadline-badge urgent">D-{{ comp.days_left }}</span>
+            {% elif comp.status == 'soon' %}
+              <span class="deadline-badge soon">D-{{ comp.days_left }}</span>
+            {% else %}
+              <span class="deadline-badge open">D-{{ comp.days_left }}</span>
+            {% endif %}
+            <span class="view-count-sm">조회 {{ comp.view_count }}</span>
+          </div>
+        </div>
+      </a>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">
+      <p class="empty-text">등록된 공모전이 없습니다.</p>
+      {% if is_admin %}
+        <a href="/admin/add" class="btn btn-primary">첫 공모전 추가</a>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+</main>
+
+{% if is_admin %}
+<a href="/admin/add" class="fab" title="공모전 추가">+</a>
+{% endif %}
+{% endblock %}

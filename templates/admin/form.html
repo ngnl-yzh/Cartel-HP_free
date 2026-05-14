@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% block title %}{{ title }} · 공모전 보드{% endblock %}
+
+{% block content %}
+<main class="admin-page">
+  <div class="container">
+    <div class="page-heading">
+      <div>
+        <p class="eyebrow">Admin</p>
+        <h1>{{ title }}</h1>
+      </div>
+      <a href="/admin" class="btn btn-outline">목록으로</a>
+    </div>
+
+    <div class="admin-form-layout">
+      <section class="assistant-panel">
+        <h2>GPT 정리</h2>
+        <p class="muted">공모전 공고문 텍스트나 이미지를 넣으면 입력 폼에 자동 반영됩니다.</p>
+
+        <label class="field">
+          <span>공고문 텍스트</span>
+          <textarea id="raw_text" rows="10" placeholder="공모전 공고 내용을 붙여넣으세요."></textarea>
+        </label>
+        <button type="button" id="parseTextBtn" class="btn btn-primary btn-full">텍스트로 자동 채우기</button>
+
+        <div class="divider"></div>
+
+        <label class="field">
+          <span>공고 이미지</span>
+          <input type="file" id="parse_image" accept="image/*">
+        </label>
+        <button type="button" id="parseImageBtn" class="btn btn-outline btn-full">이미지로 자동 채우기</button>
+
+        <div id="parseStatus" class="parse-status" aria-live="polite"></div>
+      </section>
+
+      <form method="post" action="{{ action }}" enctype="multipart/form-data" class="competition-form">
+        <section class="form-section">
+          <h2>기본 정보</h2>
+          <div class="form-grid two-col">
+            <label class="field">
+              <span>공모전명</span>
+              <input type="text" name="title" id="title" value="{{ comp.title if comp else '' }}" required>
+            </label>
+            <label class="field">
+              <span>주최기관</span>
+              <input type="text" name="organizer" id="organizer" value="{{ comp.organizer if comp else '' }}">
+            </label>
+          </div>
+
+          <label class="field">
+            <span>분야 태그</span>
+            <div class="check-grid">
+              {% for tag in tags %}
+              <label class="check-pill">
+                <input type="checkbox" name="tags" value="{{ tag }}"
+                  {% if comp and tag in comp.tags_list %}checked{% endif %}>
+                <span>{{ tag }}</span>
+              </label>
+              {% endfor %}
+            </div>
+          </label>
+
+          <div class="form-grid three-col">
+            <label class="field">
+              <span>접수 시작일</span>
+              <input type="date" name="start_date" id="start_date" value="{{ comp.start_date.isoformat() if comp and comp.start_date else '' }}">
+            </label>
+            <label class="field">
+              <span>마감일</span>
+              <input type="date" name="deadline" id="deadline" value="{{ comp.deadline.isoformat() if comp else '' }}" required>
+            </label>
+            <label class="field">
+              <span>발표일</span>
+              <input type="date" name="announcement_date" id="announcement_date" value="{{ comp.announcement_date.isoformat() if comp and comp.announcement_date else '' }}">
+            </label>
+          </div>
+
+          <div class="form-grid two-col">
+            <label class="field">
+              <span>상금/시상 내용</span>
+              <input type="text" name="prize" id="prize" value="{{ comp.prize if comp else '' }}">
+            </label>
+            <label class="field">
+              <span>공식 링크</span>
+              <input type="url" name="link" id="link" value="{{ comp.link if comp else '' }}">
+            </label>
+          </div>
+
+          <label class="check-row">
+            <input type="checkbox" name="is_featured" value="true" {% if comp and comp.is_featured %}checked{% endif %}>
+            <span>첫 화면 주목 공모전에 노출</span>
+          </label>
+        </section>
+
+        <section class="form-section">
+          <h2>상세 내용</h2>
+          <label class="field">
+            <span>설명</span>
+            <textarea name="description" id="description" rows="14">{{ comp.description if comp else '' }}</textarea>
+          </label>
+          <div class="preview-block">
+            <div class="preview-head">미리보기</div>
+            <div id="descriptionPreview" class="markdown-body"></div>
+          </div>
+        </section>
+
+        <section class="form-section">
+          <h2>첨부 파일</h2>
+          {% if comp and comp.files_list %}
+          <ul class="file-list admin-files">
+            {% for f in comp.files_list %}
+            <li class="file-item">
+              <a href="/uploads/{{ f.path }}" download="{{ f.name }}" class="file-name">{{ f.name }}</a>
+              <button type="submit" form="delete-file-{{ loop.index }}" class="btn btn-danger btn-sm">삭제</button>
+            </li>
+            {% endfor %}
+          </ul>
+          {% endif %}
+          <label class="field">
+            <span>새 파일 추가</span>
+            <input type="file" name="files" multiple>
+          </label>
+        </section>
+
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary">저장</button>
+          <a href="/admin" class="btn btn-outline">취소</a>
+        </div>
+      </form>
+    </div>
+
+    {% if comp and comp.files_list %}
+      {% for f in comp.files_list %}
+      <form id="delete-file-{{ loop.index }}" method="post" action="/admin/delete-file/{{ comp.id }}" data-confirm="첨부 파일을 삭제하시겠습니까?">
+        <input type="hidden" name="filename" value="{{ f.path }}">
+      </form>
+      {% endfor %}
+    {% endif %}
+  </div>
+</main>
+{% endblock %}

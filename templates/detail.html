@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% block title %}{{ comp.title }} · 공모전 보드{% endblock %}
+
+{% block content %}
+<div class="detail-hero status-{{ comp.status }}">
+  <div class="container">
+    <a href="/" class="back-link">목록으로</a>
+    <div class="detail-hero-tags">
+      {% for tag in tags_list %}
+        <span class="tag-chip">{{ tag }}</span>
+      {% endfor %}
+      {% if comp.is_featured %}
+        <span class="tag-chip tag-featured">주목</span>
+      {% endif %}
+    </div>
+    <h1 class="detail-title">{{ comp.title }}</h1>
+    <p class="detail-org">{{ comp.organizer }}</p>
+    <div class="detail-hero-meta">
+      {% if comp.status == 'closed' %}
+        <span class="deadline-badge closed lg">마감됨</span>
+      {% elif comp.status == 'urgent' %}
+        <span class="deadline-badge urgent lg">D-{{ comp.days_left }} 마감 임박</span>
+      {% elif comp.status == 'soon' %}
+        <span class="deadline-badge soon lg">D-{{ comp.days_left }}</span>
+      {% else %}
+        <span class="deadline-badge open lg">D-{{ comp.days_left }}</span>
+      {% endif %}
+      <span class="view-count">조회 {{ comp.view_count }}회</span>
+    </div>
+  </div>
+</div>
+
+<main class="container detail-body">
+  <div class="detail-grid">
+    <div class="detail-main">
+      {% if comp.description %}
+      <section class="detail-section">
+        <h2 class="section-title">공모전 소개</h2>
+        <div class="markdown-body" data-markdown data-raw="{{ comp.description | e }}"></div>
+      </section>
+      {% endif %}
+
+      {% if files %}
+      <section class="detail-section">
+        <h2 class="section-title">첨부 파일</h2>
+        <ul class="file-list">
+          {% for f in files %}
+          <li class="file-item">
+            <span class="file-name">{{ f.name }}</span>
+            <a href="/uploads/{{ f.path }}" download="{{ f.name }}" class="btn btn-outline btn-sm">다운로드</a>
+          </li>
+          {% endfor %}
+        </ul>
+      </section>
+      {% endif %}
+    </div>
+
+    <aside class="detail-sidebar">
+      <div class="info-card">
+        <h2 class="info-card-title">공모전 정보</h2>
+        <table class="info-table">
+          {% if comp.organizer %}
+          <tr>
+            <th>주최기관</th>
+            <td>{{ comp.organizer }}</td>
+          </tr>
+          {% endif %}
+          {% if comp.start_date %}
+          <tr>
+            <th>접수 시작</th>
+            <td>{{ comp.start_date.strftime('%Y년 %m월 %d일') }}</td>
+          </tr>
+          {% endif %}
+          <tr>
+            <th>접수 마감</th>
+            <td class="{% if comp.status == 'urgent' %}text-urgent{% elif comp.status == 'soon' %}text-soon{% endif %}">
+              {{ comp.deadline.strftime('%Y년 %m월 %d일') }}
+            </td>
+          </tr>
+          {% if comp.announcement_date %}
+          <tr>
+            <th>발표일</th>
+            <td>{{ comp.announcement_date.strftime('%Y년 %m월 %d일') }}</td>
+          </tr>
+          {% endif %}
+          {% if comp.prize %}
+          <tr>
+            <th>시상 내용</th>
+            <td>{{ comp.prize }}</td>
+          </tr>
+          {% endif %}
+        </table>
+        {% if comp.link %}
+          <a href="{{ comp.link }}" target="_blank" rel="noopener" class="btn btn-primary btn-full">공식 사이트 바로가기</a>
+        {% endif %}
+      </div>
+
+      {% if is_admin %}
+      <div class="admin-actions">
+        <a href="/admin/edit/{{ comp.id }}" class="btn btn-outline btn-full">수정</a>
+        <form method="post" action="/admin/delete/{{ comp.id }}" data-confirm="정말 삭제하시겠습니까?">
+          <button type="submit" class="btn btn-danger btn-full">삭제</button>
+        </form>
+      </div>
+      {% endif %}
+    </aside>
+  </div>
+</main>
+{% endblock %}

@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}자동 크롤링 · 공모전 보드{% endblock %}
+
+{% block content %}
+<main class="admin-page">
+  <div class="container">
+
+    <div class="page-heading">
+      <div>
+        <p class="eyebrow">Admin</p>
+        <h1>자동 크롤링</h1>
+        {% if cache.crawled_at %}
+        <p class="muted" style="margin-top:4px;font-size:.85rem;">마지막 수집: {{ cache.crawled_at }}</p>
+        {% endif %}
+      </div>
+      <div style="display:flex;gap:8px;align-items:flex-start">
+        <a href="/admin" class="btn btn-outline">관리자 홈</a>
+        <form method="post" action="/admin/crawl/run">
+          <button type="submit" class="btn btn-primary" id="crawlRunBtn"
+                  onclick="this.disabled=true;this.textContent='크롤링 중…';this.form.submit();">
+            🔍 크롤링 시작
+          </button>
+        </form>
+      </div>
+    </div>
+
+    {# ── 사이트별 수집 현황 ──────────────────────────────────────── #}
+    {% if cache.counts %}
+    <div class="crawl-stat-bar">
+      {% for label, cnt in cache.counts.items() %}
+      <span class="crawl-site-badge">{{ label }} <strong>{{ cnt }}</strong></span>
+      {% endfor %}
+      <span class="crawl-site-badge total">전체 <strong>{{ cache.items | length }}</strong></span>
+    </div>
+    {% endif %}
+
+    {# ── 오류 메시지 ────────────────────────────────────────────── #}
+    {% if cache.errors %}
+    <details class="crawl-errors">
+      <summary>⚠️ 오류 {{ cache.errors | length }}건</summary>
+      <ul>
+        {% for err in cache.errors %}
+        <li>{{ err }}</li>
+        {% endfor %}
+      </ul>
+    </details>
+    {% endif %}
+
+    {# ── 결과 없음 ──────────────────────────────────────────────── #}
+    {% if not cache.items and not cache.errors %}
+    <section class="empty-state">
+      <p class="empty-title">아직 크롤링 결과가 없습니다.</p>
+      <p class="muted">위 버튼을 눌러 공모전 정보를 수집하세요.</p>
+    </section>
+
+    {# ── 결과 목록 ──────────────────────────────────────────────── #}
+    {% elif cache.items %}
+    <section class="table-wrap">
+      <table class="admin-table crawl-table">
+        <thead>
+          <tr>
+            <th style="width:80px">출처</th>
+            <th>공모전명</th>
+            <th style="width:140px">주최기관</th>
+            <th style="width:110px">마감일</th>
+            <th style="width:200px">액션</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in cache.items %}
+          <tr>
+            <td>
+              <span class="source-badge source-{{ item.source }}">{{ item.source_label }}</span>
+            </td>
+            <td>
+              <a href="{{ item.link }}" target="_blank" rel="noopener" class="crawl-title">
+                {{ item.title }}
+              </a>
+            </td>
+            <td class="muted">{{ item.organizer or "-" }}</td>
+            <td class="muted">{{ item.deadline or "-" }}</td>
+            <td class="crawl-actions">
+              <form method="post" action="/admin/crawl/add" style="display:inline">
+                <input type="hidden" name="idx" value="{{ loop.index0 }}">
+                <button type="submit" class="btn btn-outline btn-sm">추가</button>
+              </form>
+              <form method="post" action="/admin/crawl/add-with-gpt" style="display:inline"
+                    onsubmit="this.querySelector('button').disabled=true;this.querySelector('button').textContent='GPT…';">
+                <input type="hidden" name="idx" value="{{ loop.index0 }}">
+                <button type="submit" class="btn btn-primary btn-sm">GPT 파싱 후 추가</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+    {% endif %}
+
+  </div>
+</main>
+{% endblock %}

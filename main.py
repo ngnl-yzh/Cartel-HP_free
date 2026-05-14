@@ -20,6 +20,7 @@ BASE_DIR = Path(__file__).resolve().parent
 load_dotenv(BASE_DIR / ".env")
 
 from ai_parser import parse_document_file, parse_image_file, parse_text
+from crawler import crawl_all as _do_crawl_all
 from auth import create_token, verify_token
 from database import SessionLocal, get_db, init_db
 from member_auth import create_member_token, hash_password, verify_member_token, verify_password
@@ -1197,3 +1198,124 @@ async def ws_chat(
             })
     finally:
         db.close()
+
+
+# ════════════════════════════════════════════════════════════════════════════
+#  관리자 — 공모전 자동 크롤링 (Phase 3)
+# ════════════════════════════════════════════════════════════════════════════
+
+# 크롤 결과를 서버 인스턴스 메모리에 캐시 (재크롤 전까지 유지)
+_crawl_cache: dict = {"items": [], "errors": [], "counts": {}, "crawled_at": None}
+
+
+@app.get("/admin/crawl", response_class=HTMLResponse)
+async def admin_crawl_page(request: Request, db: Session = Depends(get_db)):
+    if r := _admin_redirect(request):
+        return r
+    return templates.TemplateResponse(
+        "admin/crawl.html",
+        _ctx(request, db, cache=_crawl_cache),
+    )
+
+
+@app.post("/admin/crawl/run")
+async def admin_crawl_run(request: Request, db: Session = Depends(get_db)):
+    """크롤링 실행 — 완료까지 기다린 후 결과 페이지로 이동"""
+    if r := _admin_redirect(request):
+        return r
+    global _crawl_cache
+    result = await _do_crawl_all()
+    result["crawled_at"] = datetime.now().strftime("%Y년 %m월 %d일 %H:%M")
+    _crawl_cache = result
+    return RedirectResponse(url="/admin/crawl", status_code=303)
+
+
+@app.post("/admin/crawl/add")
+async def admin_crawl_add(
+    request: Request,
+    idx: int = Form(...),
+    db: Session = Depends(get_db),
+):
+    """크롤 결과 한 항목을 공모전으로 즉시 등록 (기본 정보만)"""
+    if r := _admin_redirect(request):
+        return r
+
+    items = _crawl_cache.get("items", [])
+    if idx < 0 or idx >= len(items):
+        raise HTTPException(status_code=400, detail="잘못된 인덱스입니다.")
+
+    item = items[idx]
+    deadline_str = item.get("deadline")
+    if not deadline_str:
+        # 마감일 없는 경우 오늘+30일로 임시 설정
+        deadline_str = (date.today() + timedelta(days=30)).isoformat()
+
+    comp = Competition(
+        title=item.get("title", ""),
+        organizer=item.get("organizer", ""),
+        tags=json.dumps(item.get("tags", []), ensure_ascii=False),
+        deadline=date.fromisoformat(deadline_str),
+        prize=item.get("prize", ""),
+        link=item.get("link", ""),
+        description=f"[{item.get('source_label', '')}에서 자동 수집]\n\n원문 링크: {item.get('link', '')}",
+    )
+    db.add(comp)
+    db.commit()
+    return RedirectResponse(url=f"/admin/edit/{comp.id}", status_code=303)
+
+
+@app.post("/admin/crawl/add-with-gpt")
+async def admin_crawl_add_with_gpt(
+    request: Request,
+    idx: int = Form(...),
+    db: Session = Depends(get_db),
+):
+    """크롤 결과의 링크를 GPT로 파싱한 뒤 추가 (공고 본문 자동 추출)"""
+    if r := _admin_redirect(request):
+        return r
+
+    items = _crawl_cache.get("items", [])
+    if idx < 0 or idx >= len(items):
+        raise HTTPException(status_code=400, detail="잘못된 인덱스입니다.")
+
+    item = items[idx]
+    link = item.get("link", "")
+
+    try:
+        async with __import__("httpx").AsyncClient(timeout=15, follow_redirects=True) as client:
+            r = await client.get(link, headers={"User-Agent": "Mozilla/5.0"})
+        from bs4 import BeautifulSoup as _BS
+        soup = _BS(r.text, "lxml")
+        # 본문 텍스트 추출 (script/style 제거 후 앞 6000자)
+        for tag in soup(["script", "style", "nav", "footer", "header"]):
+            tag.decompose()
+        page_text = re.sub(r"\s{3,}", "\n\n", soup.get_text()).strip()[:6000]
+        parsed = await parse_text(page_text)
+    except Exception as exc:
+        # GPT 파싱 실패 시 기본 등록으로 폴백
+        parsed = {
+            "title": item.get("title", ""),
+            "organizer": item.get("organizer", ""),
+            "deadline": item.get("deadline"),
+            "link": link,
+            "description": f"GPT 파싱 실패: {exc}\n\n원문: {link}",
+        }
+
+    deadline_str = parsed.get("deadline") or item.get("deadline")
+    if not deadline_str:
+        deadline_str = (date.today() + timedelta(days=30)).isoformat()
+
+    comp = Competition(
+        title=parsed.get("title") or item.get("title", ""),
+        organizer=parsed.get("organizer") or item.get("organizer", ""),
+        tags=json.dumps(parsed.get("tags") or item.get("tags", []), ensure_ascii=False),
+        start_date=date.fromisoformat(parsed["start_date"]) if parsed.get("start_date") else None,
+        deadline=date.fromisoformat(deadline_str),
+        announcement_date=date.fromisoformat(parsed["announcement_date"]) if parsed.get("announcement_date") else None,
+        prize=parsed.get("prize") or item.get("prize", ""),
+        link=link,
+        description=parsed.get("description", ""),
+    )
+    db.add(comp)
+    db.commit()
+    return RedirectResponse(url=f"/admin/edit/{comp.id}", status_code=303)

@@ -1942,6 +1942,97 @@ select {
   gap: 5px;
 }
 
+/* ── 크롤링 페이지 ─────────────────────────────────────────────────────────── */
+
+.crawl-stat-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.crawl-site-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 12px;
+  border-radius: 20px;
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  font-size: .82rem;
+  color: var(--muted);
+}
+
+.crawl-site-badge.total {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+
+.crawl-site-badge strong {
+  font-weight: 700;
+  color: inherit;
+}
+
+.crawl-errors {
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  border-radius: 10px;
+  padding: 10px 16px;
+  margin-bottom: 20px;
+  font-size: .85rem;
+  color: var(--warning);
+}
+
+.crawl-errors summary {
+  cursor: pointer;
+  font-weight: 600;
+  list-style: none;
+}
+
+.crawl-errors ul {
+  margin: 8px 0 0 0;
+  padding-left: 18px;
+  color: var(--text);
+}
+
+.crawl-errors li {
+  margin-bottom: 4px;
+}
+
+/* 출처 배지 */
+.source-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: .75rem;
+  font-weight: 600;
+  white-space: nowrap;
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+
+.source-badge.source-contestkorea { background: #eff6ff; border-color: #bfdbfe; color: #1d4ed8; }
+.source-badge.source-wevity       { background: #f0fdf4; border-color: #bbf7d0; color: #15803d; }
+.source-badge.source-thinkcontest { background: #fdf4ff; border-color: #e9d5ff; color: #7e22ce; }
+.source-badge.source-detizen      { background: #fff7ed; border-color: #fed7aa; color: #c2410c; }
+.source-badge.source-gongmoju     { background: #fefce8; border-color: #fde68a; color: #92400e; }
+
+.crawl-table .crawl-title {
+  font-weight: 500;
+  color: var(--text);
+  transition: color .15s;
+}
+
+.crawl-table .crawl-title:hover { color: var(--primary); text-decoration: underline; }
+
+.crawl-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
 @media (max-width: 640px) {
   .post-row { flex-direction: column; align-items: flex-start; }
   .post-row-meta { width: 100%; justify-content: space-between; }

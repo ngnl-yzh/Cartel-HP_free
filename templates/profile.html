@@ -45,6 +45,24 @@
         </div>
         {% endif %}
 
+        {# 통계 뱃지 #}
+        {% if stats %}
+        <div class="portfolio-stats">
+          <div class="pstat">
+            <span class="pstat-num">{{ stats.total }}</span>
+            <span class="pstat-label">참여</span>
+          </div>
+          <div class="pstat">
+            <span class="pstat-num">{{ stats.submitted }}</span>
+            <span class="pstat-label">신청완료</span>
+          </div>
+          <div class="pstat">
+            <span class="pstat-num">{{ stats.awarded }}</span>
+            <span class="pstat-label">수상</span>
+          </div>
+        </div>
+        {% endif %}
+
         <div class="profile-actions">
           {% if is_own %}
             <a href="/profile/edit/me" class="btn btn-outline">프로필 수정</a>
@@ -63,6 +81,64 @@
         </div>
       </div>
     </div>
+
+    {# ── 공모전 이력 ──────────────────────────────────────────────── #}
+    {% if team_rows is defined %}
+    <section class="portfolio-history">
+      <h2 class="section-title">공모전 이력</h2>
+
+      {% if not team_rows %}
+      <p class="muted" style="padding:24px 0">아직 참여한 공모전이 없습니다.</p>
+      {% else %}
+      <div class="history-list">
+        {% for tm in team_rows %}
+        {% set comp = comps_map.get(tm.competition_id) %}
+        {% if comp %}
+        <div class="history-card {% if tm.award_rank %}history-card--awarded{% endif %}">
+          {% if tm.award_rank %}
+          <div class="history-ribbon rank-{{ tm.award_rank }}">🏆 {{ tm.award_rank }}</div>
+          {% endif %}
+
+          <div class="history-card-body">
+            <div class="history-card-top">
+              <div>
+                <a href="/competition/{{ comp.id }}" class="history-title">{{ comp.title }}</a>
+                {% if comp.organizer %}
+                <span class="history-organizer">{{ comp.organizer }}</span>
+                {% endif %}
+              </div>
+              <div class="history-badges">
+                <span class="role-tag">{{ tm.role }}</span>
+                {% if tm.is_leader %}<span class="role-tag leader-tag">리더</span>{% endif %}
+                {% if tm.is_participant %}
+                <span class="submit-badge submitted">✅ 신청완료</span>
+                {% else %}
+                <span class="submit-badge">미신청</span>
+                {% endif %}
+              </div>
+            </div>
+
+            <div class="history-meta">
+              {% if comp.deadline %}
+              <span>📅 마감 {{ comp.deadline.strftime('%Y.%m.%d') }}</span>
+              {% endif %}
+              {% if tm.award_prize %}
+              <span>🎁 {{ tm.award_prize }}</span>
+              {% endif %}
+            </div>
+
+            {% if tm.award_note %}
+            <p class="history-award-note">{{ tm.award_note }}</p>
+            {% endif %}
+          </div>
+        </div>
+        {% endif %}
+        {% endfor %}
+      </div>
+      {% endif %}
+    </section>
+    {% endif %}
+
   </div>
 </main>
 {% endblock %}

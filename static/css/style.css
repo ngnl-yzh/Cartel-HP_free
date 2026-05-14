@@ -2033,10 +2033,265 @@ select {
   align-items: center;
 }
 
+/* ── 수상/포트폴리오 공통 ─────────────────────────────────────────────────────── */
+
+/* 신청 여부 배지 */
+.submit-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: .75rem;
+  font-weight: 600;
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+.submit-badge.submitted {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+  color: #15803d;
+}
+
+/* 수상 등급 배지 (공통) */
+.award-rank-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 14px;
+  font-size: .8rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.rank-대상      { background: #fef9c3; border: 1px solid #fde047; color: #713f12; }
+.rank-최우수상  { background: #fff7ed; border: 1px solid #fdba74; color: #9a3412; }
+.rank-우수상    { background: #eff6ff; border: 1px solid #93c5fd; color: #1e3a8a; }
+.rank-장려상    { background: #f0fdf4; border: 1px solid #86efac; color: #14532d; }
+.rank-입선      { background: #fdf4ff; border: 1px solid #d8b4fe; color: #581c87; }
+
+/* ── 어드민 참여자 관리 카드 ─────────────────────────────────────────────────── */
+
+.page-h1-clamp {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: clamp(1.1rem, 3vw, 1.6rem);
+}
+
+.award-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 20px;
+  margin-bottom: 16px;
+}
+
+.award-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.award-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.avatar-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--primary);
+  color: #fff;
+  font-weight: 700;
+  font-size: 1.1rem;
+}
+
+.profile-link {
+  display: block;
+  font-size: .8rem;
+  color: var(--primary);
+}
+.profile-link:hover { text-decoration: underline; }
+
+.award-memo {
+  font-size: .85rem;
+  color: var(--muted);
+  margin: 0 0 10px;
+  padding: 6px 10px;
+  background: var(--surface-soft);
+  border-radius: 6px;
+}
+
+.award-form { border-top: 1px solid var(--line); padding-top: 14px; }
+
+.award-form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.award-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: .85rem;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.award-select,
+.award-input {
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: .9rem;
+  background: var(--bg);
+}
+
+.award-textarea {
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: .9rem;
+  background: var(--bg);
+  resize: vertical;
+  width: 100%;
+}
+
+/* ── 포트폴리오 통계 (profile.html) ──────────────────────────────────────────── */
+
+.portfolio-stats {
+  display: flex;
+  gap: 20px;
+  margin: 14px 0 6px;
+}
+
+.pstat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 54px;
+}
+
+.pstat-num {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--primary);
+  line-height: 1;
+}
+
+.pstat-label {
+  font-size: .75rem;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+/* ── 공모전 이력 카드 ───────────────────────────────────────────────────────── */
+
+.portfolio-history { margin-top: 36px; }
+
+.section-title {
+  font-size: 1.15rem;
+  font-weight: 700;
+  margin: 0 0 16px;
+  padding-bottom: 10px;
+  border-bottom: 2px solid var(--line);
+}
+
+.history-list { display: flex; flex-direction: column; gap: 14px; }
+
+.history-card {
+  position: relative;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.history-card--awarded {
+  border-color: #fde047;
+  box-shadow: 0 2px 12px rgba(234,179,8,.12);
+}
+
+.history-ribbon {
+  padding: 5px 14px;
+  font-size: .8rem;
+  font-weight: 700;
+}
+.history-ribbon.rank-대상     { background: #fef9c3; color: #713f12; }
+.history-ribbon.rank-최우수상 { background: #fff7ed; color: #9a3412; }
+.history-ribbon.rank-우수상   { background: #eff6ff; color: #1e3a8a; }
+.history-ribbon.rank-장려상   { background: #f0fdf4; color: #14532d; }
+.history-ribbon.rank-입선     { background: #fdf4ff; color: #581c87; }
+
+.history-card-body { padding: 16px 18px; }
+
+.history-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.history-title {
+  font-weight: 600;
+  font-size: 1rem;
+  color: var(--text);
+  display: block;
+  margin-bottom: 3px;
+}
+.history-title:hover { color: var(--primary); text-decoration: underline; }
+
+.history-organizer {
+  font-size: .82rem;
+  color: var(--muted);
+}
+
+.history-badges {
+  display: flex;
+  gap: 5px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.history-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: .82rem;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.history-award-note {
+  font-size: .85rem;
+  color: var(--text);
+  background: #fef9c3;
+  border-radius: 6px;
+  padding: 6px 10px;
+  margin: 6px 0 0;
+}
+
+.history-memo {
+  font-size: .82rem;
+  color: var(--muted);
+  margin: 4px 0 0;
+}
+
 @media (max-width: 640px) {
   .post-row { flex-direction: column; align-items: flex-start; }
   .post-row-meta { width: 100%; justify-content: space-between; }
   .chat-sidebar { display: none; }
   .chat-layout { margin: 0; border-radius: 0; height: calc(100vh - 110px); }
   .chat-message { max-width: 85%; }
+  .award-form-row { grid-template-columns: 1fr; }
+  .history-card-top { flex-direction: column; }
+  .history-badges { justify-content: flex-start; }
 }

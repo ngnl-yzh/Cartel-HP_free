@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block title %}참여자 관리 · {{ comp.title }}{% endblock %}
+
+{% block content %}
+<main class="admin-page">
+  <div class="container">
+
+    <div class="page-heading">
+      <div>
+        <p class="eyebrow">Admin · 참여자 관리</p>
+        <h1 class="page-h1-clamp">{{ comp.title }}</h1>
+        <p class="muted" style="margin-top:4px;font-size:.85rem;">
+          {{ comp.organizer or "" }}
+          {% if comp.deadline %} · 마감 {{ comp.deadline.strftime('%Y.%m.%d') }}{% endif %}
+          {% if comp.submitted %}<span class="deadline-badge soon" style="margin-left:8px">신청 완료</span>{% endif %}
+        </p>
+      </div>
+      <div style="display:flex;gap:8px;align-items:flex-start">
+        <a href="/competition/{{ comp.id }}" class="btn btn-outline" target="_blank">공모전 보기</a>
+        <a href="/admin" class="btn btn-outline">관리자 홈</a>
+      </div>
+    </div>
+
+    {# ── 참여자 없음 ─────────────────────────────────────────────── #}
+    {% if not team %}
+    <section class="empty-state">
+      <p class="empty-title">아직 참여자가 없습니다.</p>
+    </section>
+
+    {# ── 참여자 목록 ─────────────────────────────────────────────── #}
+    {% else %}
+    <p class="muted" style="margin-bottom:16px;font-size:.88rem;">
+      총 <strong>{{ team | length }}</strong>명 참여 ·
+      신청 완료 <strong>{{ team | selectattr('is_participant') | list | length }}</strong>명 ·
+      수상 <strong>{{ team | selectattr('award_rank') | list | length }}</strong>명
+    </p>
+
+    <div class="member-cards">
+      {% for tm in team %}
+      {% set linked = members_map.get(tm.member_id) %}
+      <div class="member-card award-card">
+        {# ── 상단: 기본 정보 ── #}
+        <div class="award-card-header">
+          <div style="display:flex;align-items:center;gap:10px">
+            {% if linked and linked.profile_image %}
+            <img src="/uploads/{{ linked.profile_image }}" class="award-avatar" alt="">
+            {% else %}
+            <div class="award-avatar avatar-placeholder">{{ tm.nickname[0] }}</div>
+            {% endif %}
+            <div>
+              <strong>{{ tm.nickname }}</strong>
+              {% if linked %}
+              <a href="/profile/{{ linked.activity_name | urlencode }}" class="profile-link" target="_blank">
+                @{{ linked.activity_name }}
+              </a>
+              {% else %}
+              <span class="muted" style="font-size:.8rem"> (비회원)</span>
+              {% endif %}
+              <div style="display:flex;gap:6px;margin-top:3px">
+                <span class="role-tag">{{ tm.role }}</span>
+                {% if tm.is_leader %}<span class="role-tag leader-tag">리더</span>{% endif %}
+                {% if tm.is_participant %}
+                <span class="submit-badge submitted">✅ 신청완료</span>
+                {% else %}
+                <span class="submit-badge">미신청</span>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+          {% if tm.award_rank %}
+          <span class="award-rank-badge rank-{{ tm.award_rank }}">🏆 {{ tm.award_rank }}</span>
+          {% endif %}
+        </div>
+
+        {% if tm.memo %}
+        <p class="award-memo">{{ tm.memo }}</p>
+        {% endif %}
+
+        {# ── 수상 정보 입력 폼 ── #}
+        <form method="post" action="/admin/competition/{{ comp.id }}/members/{{ tm.id }}/award"
+              class="award-form">
+          <div class="award-form-row">
+            <label class="award-label">
+              수상 등급
+              <select name="award_rank" class="award-select">
+                <option value="">수상 없음</option>
+                {% for rank in award_ranks %}
+                <option value="{{ rank }}" {% if tm.award_rank == rank %}selected{% endif %}>{{ rank }}</option>
+                {% endfor %}
+              </select>
+            </label>
+
+            <label class="award-label">
+              상금·부상
+              <input type="text" name="award_prize" class="award-input"
+                     placeholder="예) 상금 100만원" value="{{ tm.award_prize or '' }}">
+            </label>
+          </div>
+
+          <label class="award-label" style="display:block;margin-top:8px">
+            메모
+            <textarea name="award_note" class="award-textarea" rows="2"
+                      placeholder="수상 관련 메모 (홍보 문구 등)">{{ tm.award_note or '' }}</textarea>
+          </label>
+
+          <div style="text-align:right;margin-top:8px">
+            <button type="submit" class="btn btn-primary btn-sm">저장</button>
+          </div>
+        </form>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+  </div>
+</main>
+{% endblock %}

@@ -67,6 +67,7 @@
               {% endif %}
             </td>
             <td class="table-actions">
+              <a href="/admin/competition/{{ comp.id }}/members" class="btn btn-outline btn-sm">참여자</a>
               <a href="/admin/edit/{{ comp.id }}" class="btn btn-outline btn-sm">수정</a>
               <form method="post" action="/admin/delete/{{ comp.id }}" data-confirm="정말 삭제하시겠습니까?">
                 <button type="submit" class="btn btn-danger btn-sm">삭제</button>

@@ -59,6 +59,7 @@ templates.env.filters["fromjson"] = _from_json
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin1234")
 TAGS = ["IT/SW", "디자인", "기획·마케팅", "사회혁신", "예술·문화", "창업·스타트업", "논문·학술", "기타"]
 ROLES = ["기획", "개발", "디자인", "마케팅", "기타"]
+AWARD_RANKS = ["대상", "최우수상", "우수상", "장려상", "입선"]
 
 
 @app.on_event("startup")
@@ -666,7 +667,29 @@ async def profile_view(request: Request, activity_name: str, db: Session = Depen
     if not target:
         raise HTTPException(status_code=404, detail="회원을 찾을 수 없습니다.")
     cm = _current_member(request, db)
-    return templates.TemplateResponse("profile.html", _ctx(request, db, target=target, is_own=bool(cm and cm.id == target.id)))
+
+    # 포트폴리오: 이 회원이 참여한 팀원 레코드 (최신순)
+    team_rows = (
+        db.query(TeamMember)
+        .filter(TeamMember.member_id == target.id)
+        .order_by(TeamMember.created_at.desc())
+        .all()
+    )
+    comp_ids = list({t.competition_id for t in team_rows})
+    comps_map: dict = {}
+    if comp_ids:
+        for c in db.query(Competition).filter(Competition.id.in_(comp_ids)).all():
+            comps_map[c.id] = c
+    total     = len(team_rows)
+    submitted = sum(1 for t in team_rows if t.is_participant)
+    awarded   = sum(1 for t in team_rows if t.award_rank)
+
+    return templates.TemplateResponse(
+        "profile.html",
+        _ctx(request, db, target=target, is_own=bool(cm and cm.id == target.id),
+             team_rows=team_rows, comps_map=comps_map,
+             stats={"total": total, "submitted": submitted, "awarded": awarded}),
+    )
 
 
 @app.get("/profile/edit/me", response_class=HTMLResponse)
@@ -767,6 +790,50 @@ async def set_leader(request: Request, comp_id: int, member_id: int, db: Session
         m.is_leader = True
     db.commit()
     return RedirectResponse(url=f"/competition/{comp_id}#team", status_code=303)
+
+
+# ── 어드민: 공모전별 참여자·수상 관리 ─────────────────────────────────────────────
+
+@app.get("/admin/competition/{comp_id}/members", response_class=HTMLResponse)
+async def admin_comp_members(request: Request, comp_id: int, db: Session = Depends(get_db)):
+    if r := _admin_redirect(request):
+        return r
+    comp = db.query(Competition).filter(Competition.id == comp_id).first()
+    if not comp:
+        raise HTTPException(status_code=404)
+    team = db.query(TeamMember).filter(TeamMember.competition_id == comp_id).order_by(TeamMember.created_at.asc()).all()
+    # member_id → Member 매핑
+    member_ids = [t.member_id for t in team if t.member_id]
+    members_map = {}
+    if member_ids:
+        for m in db.query(Member).filter(Member.id.in_(member_ids)).all():
+            members_map[m.id] = m
+    return templates.TemplateResponse(
+        "admin/comp_members.html",
+        _ctx(request, db, comp=comp, team=team, members_map=members_map,
+             award_ranks=AWARD_RANKS),
+    )
+
+
+@app.post("/admin/competition/{comp_id}/members/{tm_id}/award")
+async def admin_set_award(
+    request: Request, comp_id: int, tm_id: int,
+    award_rank: str = Form(""),
+    award_prize: str = Form(""),
+    award_note: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    """팀원 한 명의 수상 정보 저장"""
+    if r := _admin_redirect(request):
+        return r
+    tm = db.query(TeamMember).filter(TeamMember.id == tm_id, TeamMember.competition_id == comp_id).first()
+    if not tm:
+        raise HTTPException(status_code=404)
+    tm.award_rank  = award_rank if award_rank in AWARD_RANKS else None
+    tm.award_prize = award_prize.strip()
+    tm.award_note  = award_note.strip()
+    db.commit()
+    return RedirectResponse(url=f"/admin/competition/{comp_id}/members", status_code=303)
 
 
 @app.post("/competition/{comp_id}/submit")

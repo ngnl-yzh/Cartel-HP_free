@@ -47,6 +47,10 @@ class TeamMember(Base):
     is_leader = Column(Boolean, default=False)
     is_participant = Column(Boolean, default=False)
     member_id = Column(Integer, nullable=True)
+    # ── 수상 정보 ──────────────────────────────────────────────────
+    award_rank = Column(String(50), nullable=True)     # 대상/최우수상/우수상/장려상/입선
+    award_prize = Column(String(300), default="")      # 상금·부상 내용
+    award_note = Column(Text, default="")              # 수상 관련 메모
     created_at = Column(DateTime, default=datetime.now)
 
 

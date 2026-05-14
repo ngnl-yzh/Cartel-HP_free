@@ -5,6 +5,12 @@ from sqlalchemy.orm import declarative_base
 
 Base = declarative_base()
 
+BOARDS = {
+    "free":    "자유게시판",
+    "social":  "활동(친목)",
+    "project": "활동(프로젝트)",
+}
+
 
 class Competition(Base):
     __tablename__ = "competitions"
@@ -21,11 +27,11 @@ class Competition(Base):
     description = Column(Text, default="")
     files = Column(Text, default="[]")
     view_count = Column(Integer, default=0)
-    image = Column(String(500), nullable=True)        # 대표 이미지 파일명
-    max_members = Column(Integer, nullable=True)      # 최대 팀 인원 (None=무제한)
+    image = Column(String(500), nullable=True)
+    max_members = Column(Integer, nullable=True)
     is_featured = Column(Boolean, default=False)
-    submitted = Column(Boolean, default=False)        # 공모전 제출 여부
-    submitted_at = Column(DateTime, nullable=True)    # 제출 기록 일시
+    submitted = Column(Boolean, default=False)
+    submitted_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
 
 
@@ -36,38 +42,102 @@ class TeamMember(Base):
     competition_id = Column(Integer, nullable=False, index=True)
     nickname = Column(String(100), nullable=False)
     password_hash = Column(String(300), nullable=False)
-    role = Column(String(50), default="기타")         # 기획/개발/디자인/마케팅/기타
+    role = Column(String(50), default="기타")
     memo = Column(String(500), default="")
     is_leader = Column(Boolean, default=False)
-    is_participant = Column(Boolean, default=False)   # 최종 제출 참여자로 기록됨
-    member_id = Column(Integer, nullable=True)        # 연결된 Member.id (선택)
+    is_participant = Column(Boolean, default=False)
+    member_id = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
 
 
 class Member(Base):
-    """가입 회원 (초대 코드로 가입, 활동명 기반 로그인)"""
     __tablename__ = "members"
 
     id = Column(Integer, primary_key=True, index=True)
-    activity_name = Column(String(100), unique=True, nullable=False, index=True)  # 활동명 (공개)
+    activity_name = Column(String(100), unique=True, nullable=False, index=True)
     real_name = Column(String(100), nullable=False)
-    student_id = Column(String(50), default="")       # 학번 (관리자/중간관리자만 조회)
-    phone = Column(String(50), default="")            # 전화번호 (관리자/중간관리자만 조회)
+    student_id = Column(String(50), default="")
+    phone = Column(String(50), default="")
     password_hash = Column(String(300), nullable=False)
     bio = Column(Text, default="")
     profile_image = Column(String(500), nullable=True)
-    role = Column(String(20), default="member")       # member / sub_admin
+    role = Column(String(20), default="member")   # member / sub_admin
     invite_code_used = Column(String(100), nullable=True)
     created_at = Column(DateTime, default=datetime.now)
 
 
 class InviteCode(Base):
-    """초대 코드 — 관리자가 발급하며 1회 사용 가능"""
     __tablename__ = "invite_codes"
 
     id = Column(Integer, primary_key=True, index=True)
     code = Column(String(100), unique=True, nullable=False, index=True)
-    note = Column(String(200), default="")            # 메모 (누구에게 줄 코드인지 등)
+    note = Column(String(200), default="")
     created_at = Column(DateTime, default=datetime.now)
-    expires_at = Column(DateTime, nullable=True)      # None이면 무기한
-    used_by_member_id = Column(Integer, nullable=True)  # None이면 미사용
+    expires_at = Column(DateTime, nullable=True)
+    used_by_member_id = Column(Integer, nullable=True)
+
+
+# ── 게시판 ────────────────────────────────────────────────────────────────────
+
+class Post(Base):
+    __tablename__ = "posts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    board = Column(String(20), nullable=False, index=True)   # free / social / project
+    title = Column(String(300), nullable=False)
+    content = Column(Text, default="")
+    author_id = Column(Integer, nullable=False, index=True)
+    images = Column(Text, default="[]")              # JSON list of filenames
+    view_count = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now)
+
+
+class Comment(Base):
+    __tablename__ = "comments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    post_id = Column(Integer, nullable=False, index=True)
+    parent_id = Column(Integer, nullable=True)       # None = 최상위 댓글
+    author_id = Column(Integer, nullable=False, index=True)
+    content = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.now)
+
+
+class PostLike(Base):
+    __tablename__ = "post_likes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    post_id = Column(Integer, nullable=False, index=True)
+    member_id = Column(Integer, nullable=False, index=True)
+
+
+class CommentLike(Base):
+    __tablename__ = "comment_likes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    comment_id = Column(Integer, nullable=False, index=True)
+    member_id = Column(Integer, nullable=False, index=True)
+
+
+# ── 채팅 ──────────────────────────────────────────────────────────────────────
+
+class ChatRoom(Base):
+    __tablename__ = "chat_rooms"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), nullable=False)
+    description = Column(String(300), default="")
+    password_hash = Column(String(300), nullable=True)   # None = 공개방
+    created_by_id = Column(Integer, nullable=False)
+    created_at = Column(DateTime, default=datetime.now)
+
+
+class ChatMessage(Base):
+    __tablename__ = "chat_messages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    room_id = Column(Integer, nullable=False, index=True)
+    author_id = Column(Integer, nullable=False)
+    content = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.now)

@@ -1,0 +1,196 @@
+{% extends "base.html" %}
+{% block title %}{{ post.title }} · {{ board_name }} · 공모전 보드{% endblock %}
+
+{% block content %}
+<main class="board-page">
+  <div class="container" style="max-width:820px">
+
+    {# ── 게시글 ── #}
+    <article class="post-article">
+      <div class="post-article-header">
+        <a href="/board/{{ board }}" class="back-link">← {{ board_name }}</a>
+        <h1 class="post-article-title">{{ post.title }}</h1>
+        <div class="post-article-meta">
+          {% if author %}
+          <a href="/profile/{{ author.activity_name }}" class="post-author-link">
+            {% if author.profile_image %}
+              <img src="/uploads/{{ author.profile_image }}" class="mini-avatar" alt="">
+            {% else %}
+              <span class="mini-avatar-letter">{{ author.activity_name[0] | upper }}</span>
+            {% endif %}
+            <strong>{{ author.activity_name }}</strong>
+          </a>
+          {% endif %}
+          <span class="muted">{{ post.created_at.strftime('%Y년 %m월 %d일 %H:%M') }}</span>
+          <span class="muted">조회 {{ post.view_count }}</span>
+        </div>
+      </div>
+
+      {# 내용 #}
+      <div class="post-content markdown-body" id="postContent" data-raw="{{ post.content | e }}"></div>
+
+      {# 이미지 #}
+      {% if images %}
+      <div class="post-images">
+        {% for img in images %}
+          <img src="/uploads/{{ img }}" alt="첨부 이미지" class="post-img" loading="lazy"
+               onclick="openLightbox(this.src)">
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      {# 좋아요 / 삭제 #}
+      <div class="post-actions-bar">
+        <form method="post" action="/board/{{ board }}/post/{{ post.id }}/like" style="display:inline">
+          <button type="submit" class="like-btn {% if user_liked_post %}liked{% endif %}">
+            ❤️ {{ post_likes }}
+          </button>
+        </form>
+        {% set cm = current_member %}
+        {% if cm and (cm.id == post.author_id or is_privileged) %}
+        <form method="post" action="/board/{{ board }}/post/{{ post.id }}/delete"
+              data-confirm="게시글을 삭제하시겠습니까?">
+          <button type="submit" class="btn btn-danger btn-sm">삭제</button>
+        </form>
+        {% endif %}
+      </div>
+    </article>
+
+    {# ── 댓글 ── #}
+    <section class="comments-section" id="comments">
+      <h2 class="comments-title">댓글 {{ top_comments | length + (replies.values() | sum(start=[]) | list | length) }}개</h2>
+
+      {% for c in top_comments %}
+      <div class="comment {% if c.user_liked %}comment-liked{% endif %}" id="comment-{{ c.id }}">
+        <div class="comment-header">
+          {% if c.author %}
+          <a href="/profile/{{ c.author.activity_name }}" class="comment-author-link">
+            {% if c.author.profile_image %}
+              <img src="/uploads/{{ c.author.profile_image }}" class="mini-avatar" alt="">
+            {% else %}
+              <span class="mini-avatar-letter">{{ c.author.activity_name[0] | upper }}</span>
+            {% endif %}
+            <strong>{{ c.author.activity_name }}</strong>
+          </a>
+          {% endif %}
+          <span class="muted comment-time">{{ c.created_at.strftime('%m/%d %H:%M') }}</span>
+          <div class="comment-actions">
+            <form method="post" action="/board/{{ board }}/comment/{{ c.id }}/like" style="display:inline">
+              <button type="submit" class="like-btn-sm {% if c.user_liked %}liked{% endif %}">❤️ {{ c.like_count }}</button>
+            </form>
+            {% if current_member %}
+            <button class="btn btn-ghost btn-xs reply-trigger" data-comment-id="{{ c.id }}">답글</button>
+            {% endif %}
+            {% if current_member and (current_member.id == c.author_id or is_privileged) %}
+            <form method="post" action="/board/{{ board }}/comment/{{ c.id }}/delete" style="display:inline">
+              <button type="submit" class="btn btn-ghost btn-xs text-danger">삭제</button>
+            </form>
+            {% endif %}
+          </div>
+        </div>
+        <div class="comment-content mention-render">{{ c.content }}</div>
+
+        {# 답글 폼 (기본 숨김) #}
+        {% if current_member %}
+        <form method="post" action="/board/{{ board }}/post/{{ post.id }}/comment"
+              class="reply-form" id="reply-form-{{ c.id }}" style="display:none">
+          <input type="hidden" name="parent_id" value="{{ c.id }}">
+          <div class="reply-input-row">
+            <textarea name="content" rows="2" placeholder="답글 입력..." required></textarea>
+            <button type="submit" class="btn btn-primary btn-sm">등록</button>
+          </div>
+        </form>
+        {% endif %}
+
+        {# 답글 목록 #}
+        {% if replies.get(c.id) %}
+        <div class="replies">
+          {% for r in replies[c.id] %}
+          <div class="comment reply" id="comment-{{ r.id }}">
+            <div class="comment-header">
+              {% if r.author %}
+              <a href="/profile/{{ r.author.activity_name }}" class="comment-author-link">
+                {% if r.author.profile_image %}
+                  <img src="/uploads/{{ r.author.profile_image }}" class="mini-avatar" alt="">
+                {% else %}
+                  <span class="mini-avatar-letter">{{ r.author.activity_name[0] | upper }}</span>
+                {% endif %}
+                <strong>{{ r.author.activity_name }}</strong>
+              </a>
+              {% endif %}
+              <span class="muted comment-time">{{ r.created_at.strftime('%m/%d %H:%M') }}</span>
+              <div class="comment-actions">
+                <form method="post" action="/board/{{ board }}/comment/{{ r.id }}/like" style="display:inline">
+                  <button type="submit" class="like-btn-sm {% if r.user_liked %}liked{% endif %}">❤️ {{ r.like_count }}</button>
+                </form>
+                {% if current_member and (current_member.id == r.author_id or is_privileged) %}
+                <form method="post" action="/board/{{ board }}/comment/{{ r.id }}/delete" style="display:inline">
+                  <button type="submit" class="btn btn-ghost btn-xs text-danger">삭제</button>
+                </form>
+                {% endif %}
+              </div>
+            </div>
+            <div class="comment-content mention-render">{{ r.content }}</div>
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+      {% endfor %}
+
+      {# 댓글 작성 폼 #}
+      {% if current_member %}
+      <form method="post" action="/board/{{ board }}/post/{{ post.id }}/comment#comments" class="comment-write-form">
+        <div class="comment-write-row">
+          <div class="mini-avatar-letter small">{{ current_member.activity_name[0] | upper }}</div>
+          <div style="flex:1">
+            <textarea name="content" rows="3" placeholder="댓글을 입력하세요. @활동명으로 멘션할 수 있습니다." required></textarea>
+            <button type="submit" class="btn btn-primary btn-sm" style="margin-top:6px">댓글 등록</button>
+          </div>
+        </div>
+      </form>
+      {% else %}
+      <p class="login-notice"><a href="/member/login">로그인</a>하면 댓글을 남길 수 있습니다.</p>
+      {% endif %}
+    </section>
+
+  </div>
+</main>
+
+{# 이미지 라이트박스 #}
+<div id="lightbox" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:200;cursor:zoom-out;display:none;align-items:center;justify-content:center" onclick="this.style.display='none'">
+  <img id="lightboxImg" src="" style="max-width:90vw;max-height:90vh;border-radius:8px" alt="">
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+// 내용 마크다운 렌더링 + @멘션 처리
+document.querySelectorAll("[data-raw]").forEach(el => {
+  el.innerHTML = renderMentions(renderMarkdown(el.dataset.raw || ""));
+});
+document.querySelectorAll(".mention-render").forEach(el => {
+  el.innerHTML = renderMentions(renderMarkdown(el.textContent || ""));
+});
+
+// 답글 토글
+document.querySelectorAll(".reply-trigger").forEach(btn => {
+  btn.addEventListener("click", () => {
+    const id = btn.dataset.commentId;
+    const form = document.getElementById(`reply-form-${id}`);
+    if (form) {
+      form.style.display = form.style.display === "none" ? "block" : "none";
+      if (form.style.display === "block") form.querySelector("textarea").focus();
+    }
+  });
+});
+
+// 라이트박스
+function openLightbox(src) {
+  const lb = document.getElementById("lightbox");
+  document.getElementById("lightboxImg").src = src;
+  lb.style.display = "flex";
+}
+</script>
+{% endblock %}

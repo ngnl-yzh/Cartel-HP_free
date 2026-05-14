@@ -23,19 +23,13 @@ function renderMarkdown(raw) {
     const trimmed = line.trim();
 
     if (!trimmed) {
-      if (inList) {
-        html.push("</ul>");
-        inList = false;
-      }
+      if (inList) { html.push("</ul>"); inList = false; }
       continue;
     }
 
     const heading = trimmed.match(/^(#{1,3})\s+(.+)$/);
     if (heading) {
-      if (inList) {
-        html.push("</ul>");
-        inList = false;
-      }
+      if (inList) { html.push("</ul>"); inList = false; }
       const level = heading[1].length + 2;
       html.push(`<h${level}>${renderInlineMarkdown(heading[2])}</h${level}>`);
       continue;
@@ -43,27 +37,27 @@ function renderMarkdown(raw) {
 
     const bullet = trimmed.match(/^[-*]\s+(.+)$/);
     if (bullet) {
-      if (!inList) {
-        html.push("<ul>");
-        inList = true;
-      }
+      if (!inList) { html.push("<ul>"); inList = true; }
       html.push(`<li>${renderInlineMarkdown(bullet[1])}</li>`);
       continue;
     }
 
-    if (inList) {
-      html.push("</ul>");
-      inList = false;
-    }
+    if (inList) { html.push("</ul>"); inList = false; }
     html.push(`<p>${renderInlineMarkdown(trimmed)}</p>`);
   }
 
-  if (inList) {
-    html.push("</ul>");
-  }
-
+  if (inList) html.push("</ul>");
   return html.join("");
 }
+
+/** @활동명 멘션을 프로필 링크로 변환 */
+function renderMentions(html) {
+  return html.replace(/@([\w가-힣\-_]+)/g, (match, name) => {
+    return `<a href="/profile/${encodeURIComponent(name)}" class="mention">@${escapeHtml(name)}</a>`;
+  });
+}
+
+// ── 관리자 폼 파싱 ───────────────────────────────────────────────────────────
 
 function setParseStatus(message, type = "") {
   const status = document.getElementById("parseStatus");
@@ -87,11 +81,9 @@ function fillCompetitionForm(data) {
     checkbox.checked = selectedTags.includes(checkbox.value);
   });
 
-  // GPT 이미지 파싱 시 대표 이미지 자동 설정
   if (data._image_path) {
     const hiddenPath = document.getElementById("comp_image_path");
     if (hiddenPath) hiddenPath.value = data._image_path;
-
     const wrap = document.getElementById("imagePreviewWrap");
     const preview = document.getElementById("imagePreview");
     if (wrap && preview) {
@@ -107,11 +99,9 @@ async function parseWithText() {
     setParseStatus("공고문 텍스트를 입력하세요.", "error");
     return;
   }
-
   setParseStatus("GPT가 공모전 정보를 정리하는 중입니다.", "loading");
   const formData = new FormData();
   formData.append("text", rawText.value);
-
   const response = await fetch("/admin/api/parse", { method: "POST", body: formData });
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
@@ -127,11 +117,9 @@ async function parseWithImage() {
     setParseStatus("공고 이미지를 선택하세요.", "error");
     return;
   }
-
   setParseStatus("이미지에서 공모전 정보를 추출하는 중입니다.", "loading");
   const formData = new FormData();
   formData.append("image", imageInput.files[0]);
-
   const response = await fetch("/admin/api/parse-image", { method: "POST", body: formData });
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
@@ -141,7 +129,28 @@ async function parseWithImage() {
   setParseStatus("입력 폼에 반영했습니다.", "success");
 }
 
+async function parseWithDocument() {
+  const docInput = document.getElementById("parse_doc");
+  if (!docInput || !docInput.files.length) {
+    setParseStatus("PDF 또는 HWP 파일을 선택하세요.", "error");
+    return;
+  }
+  setParseStatus("문서에서 공모전 정보를 추출하는 중입니다...", "loading");
+  const formData = new FormData();
+  formData.append("document", docInput.files[0]);
+  const response = await fetch("/admin/api/parse-document", { method: "POST", body: formData });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.detail || "문서 파싱에 실패했습니다.");
+  }
+  fillCompetitionForm(await response.json());
+  setParseStatus("입력 폼에 반영했습니다.", "success");
+}
+
+// ── DOMContentLoaded ─────────────────────────────────────────────────────────
+
 document.addEventListener("DOMContentLoaded", () => {
+  // data-confirm 폼
   document.querySelectorAll("[data-confirm]").forEach((form) => {
     form.addEventListener("submit", (event) => {
       if (!window.confirm(form.dataset.confirm || "진행하시겠습니까?")) {
@@ -150,56 +159,61 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 
+  // 마크다운 렌더링
   document.querySelectorAll("[data-markdown]").forEach((element) => {
-    element.innerHTML = renderMarkdown(element.dataset.raw || "");
+    element.innerHTML = renderMentions(renderMarkdown(element.dataset.raw || ""));
   });
 
+  // 설명 미리보기
   const description = document.getElementById("description");
   const preview = document.getElementById("descriptionPreview");
   if (description && preview) {
-    const updatePreview = () => {
-      preview.innerHTML = renderMarkdown(description.value);
-    };
+    const updatePreview = () => { preview.innerHTML = renderMentions(renderMarkdown(description.value)); };
     description.addEventListener("input", updatePreview);
     updatePreview();
   }
 
+  // 텍스트 파싱 버튼
   const parseTextButton = document.getElementById("parseTextBtn");
   if (parseTextButton) {
     parseTextButton.addEventListener("click", async () => {
       parseTextButton.disabled = true;
-      try {
-        await parseWithText();
-      } catch (error) {
-        setParseStatus(error.message, "error");
-      } finally {
-        parseTextButton.disabled = false;
-      }
+      try { await parseWithText(); }
+      catch (error) { setParseStatus(error.message, "error"); }
+      finally { parseTextButton.disabled = false; }
     });
   }
 
+  // 이미지 파싱 버튼
   const parseImageButton = document.getElementById("parseImageBtn");
   if (parseImageButton) {
     parseImageButton.addEventListener("click", async () => {
       parseImageButton.disabled = true;
-      try {
-        await parseWithImage();
-      } catch (error) {
-        setParseStatus(error.message, "error");
-      } finally {
-        parseImageButton.disabled = false;
-      }
+      try { await parseWithImage(); }
+      catch (error) { setParseStatus(error.message, "error"); }
+      finally { parseImageButton.disabled = false; }
+    });
+  }
+
+  // 문서 파싱 버튼
+  const parseDocButton = document.getElementById("parseDocBtn");
+  if (parseDocButton) {
+    parseDocButton.addEventListener("click", async () => {
+      parseDocButton.disabled = true;
+      try { await parseWithDocument(); }
+      catch (error) { setParseStatus(error.message, "error"); }
+      finally { parseDocButton.disabled = false; }
     });
   }
 
   // 팀 탈퇴 모달
-  const leaveModal   = document.getElementById("leaveModal");
-  const leaveForm    = document.getElementById("leaveForm");
-  const leaveDesc    = document.getElementById("leaveDesc");
-  const leaveNick    = document.getElementById("leaveNickname");
-  const leavePw      = document.getElementById("leavePassword");
-  const leaveFields  = document.getElementById("leaveFields");
-  const leaveCancel  = document.getElementById("leaveCancel");
+  const leaveModal  = document.getElementById("leaveModal");
+  const leaveForm   = document.getElementById("leaveForm");
+  const leaveDesc   = document.getElementById("leaveDesc");
+  const leaveNick   = document.getElementById("leaveNickname");
+  const leavePw     = document.getElementById("leavePassword");
+  const leaveFields = document.getElementById("leaveFields");
+  const leaveCancel = document.getElementById("leaveCancel");
 
   document.querySelectorAll(".leave-trigger").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -211,13 +225,12 @@ document.addEventListener("DOMContentLoaded", () => {
       leaveForm.action = `/competition/${compId}/leave/${memberId}`;
       leaveDesc.textContent = `'${nickname}' 님의 팀 참여를 취소합니다.`;
 
-      // 관리자는 비밀번호 입력 없이 삭제
       if (isAdmin) {
         leaveFields.style.display = "none";
         leaveNick.required = false;
-        leavePw.required  = false;
-        leaveNick.value   = nickname;
-        leavePw.value     = "__admin__";
+        leavePw.required   = false;
+        leaveNick.value    = nickname;
+        leavePw.value      = "__admin__";
       } else {
         leaveFields.style.display = "block";
         leaveNick.required = true;
@@ -232,29 +245,25 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   if (leaveCancel) {
-    leaveCancel.addEventListener("click", () => {
-      leaveModal.style.display = "none";
-    });
+    leaveCancel.addEventListener("click", () => { leaveModal.style.display = "none"; });
   }
-
   if (leaveModal) {
     leaveModal.addEventListener("click", (e) => {
       if (e.target === leaveModal) leaveModal.style.display = "none";
     });
   }
 
-  // 직접 이미지 업로드 시 미리보기
+  // 직접 이미지 업로드 미리보기
   const compImageInput = document.getElementById("comp_image_input");
   if (compImageInput) {
     compImageInput.addEventListener("change", () => {
       const file = compImageInput.files[0];
       if (!file) return;
-      const wrap = document.getElementById("imagePreviewWrap");
+      const wrap    = document.getElementById("imagePreviewWrap");
       const preview = document.getElementById("imagePreview");
       if (wrap && preview) {
         preview.src = URL.createObjectURL(file);
         wrap.style.display = "flex";
-        // 직접 업로드 시 hidden path 초기화 (새 파일이 우선)
         const hiddenPath = document.getElementById("comp_image_path");
         if (hiddenPath) hiddenPath.value = "";
       }

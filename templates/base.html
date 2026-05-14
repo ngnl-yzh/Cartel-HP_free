@@ -24,7 +24,7 @@
         {% if current_member.role == 'sub_admin' %}
           <span class="nav-badge-role">중간관리자</span>
         {% endif %}
-        <a href="/profile/{{ current_member.activity_name }}" class="btn btn-ghost btn-sm">
+        <a href="/profile/{{ current_member.activity_name }}" class="btn btn-ghost btn-sm nav-member-btn">
           {% if current_member.profile_image %}
             <img src="/uploads/{{ current_member.profile_image }}" class="nav-avatar" alt="">
           {% else %}
@@ -39,6 +39,17 @@
         <a href="/register" class="btn btn-outline btn-sm">회원가입</a>
         <a href="/admin/login" class="btn btn-ghost btn-sm nav-admin-link">관리자</a>
       {% endif %}
+    </div>
+  </nav>
+
+  {# 2차 네비 — 게시판 + 채팅 #}
+  <nav class="sub-nav">
+    <div class="sub-nav-inner">
+      <a href="/" class="sub-nav-link {% if request.url.path == '/' %}active{% endif %}">🏆 공모전</a>
+      <a href="/board/free" class="sub-nav-link {% if '/board/free' in request.url.path %}active{% endif %}">💬 자유게시판</a>
+      <a href="/board/social" class="sub-nav-link {% if '/board/social' in request.url.path %}active{% endif %}">🤝 친목게시판</a>
+      <a href="/board/project" class="sub-nav-link {% if '/board/project' in request.url.path %}active{% endif %}">🛠 프로젝트</a>
+      <a href="/chat" class="sub-nav-link {% if '/chat' in request.url.path %}active{% endif %}">💬 채팅</a>
     </div>
   </nav>
 

@@ -1422,3 +1422,530 @@ select {
   flex-wrap: wrap;
   gap: 8px;
 }
+
+/* ════════════════════════════════════════════════════════════
+   Phase 2 — 게시판 / 채팅 / 공통
+   ════════════════════════════════════════════════════════════ */
+
+/* ── 2차 네비게이션 ─────────────────────────────────────── */
+.sub-nav {
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+  position: sticky;
+  top: 57px;
+  z-index: 15;
+}
+
+.sub-nav-inner {
+  width: min(1180px, calc(100% - 40px));
+  margin: 0 auto;
+  display: flex;
+  gap: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.sub-nav-inner::-webkit-scrollbar { display: none; }
+
+.sub-nav-link {
+  padding: 10px 18px;
+  font-size: .88rem;
+  font-weight: 500;
+  color: var(--muted);
+  white-space: nowrap;
+  border-bottom: 2px solid transparent;
+  transition: color .15s, border-color .15s;
+}
+
+.sub-nav-link:hover { color: var(--text); }
+.sub-nav-link.active {
+  color: var(--primary);
+  border-bottom-color: var(--primary);
+  font-weight: 700;
+}
+
+/* ── 게시판 공통 ─────────────────────────────────────────── */
+.board-page { padding: 36px 0 60px; }
+
+.board-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.board-title { font-size: 1.7rem; font-weight: 800; margin: 0; }
+.board-sub   { margin: 4px 0 0; font-size: .9rem; }
+
+/* ── 게시글 목록 ─────────────────────────────────────────── */
+.post-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.post-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  gap: 12px;
+  transition: background .12s, box-shadow .12s;
+}
+
+.post-row:hover {
+  background: #f0fdf4;
+  box-shadow: 0 2px 8px rgba(15,118,110,.08);
+}
+
+.post-row-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.post-title {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.post-img-badge { font-size: .85rem; flex-shrink: 0; }
+
+.post-row-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+  font-size: .8rem;
+  color: var(--muted);
+}
+
+.post-author {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text);
+  font-weight: 500;
+}
+
+.post-stats { display: flex; gap: 8px; }
+
+/* ── 작은 아바타 ─────────────────────────────────────────── */
+.mini-avatar {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  object-fit: cover;
+  vertical-align: middle;
+}
+
+.mini-avatar-letter {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--primary);
+  color: #fff;
+  font-size: .7rem;
+  font-weight: 700;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+
+.mini-avatar-letter.small { width: 24px; height: 24px; font-size: .75rem; }
+
+/* ── 게시글 작성 폼 ──────────────────────────────────────── */
+.post-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 28px;
+}
+
+/* ── 게시글 상세 ─────────────────────────────────────────── */
+.post-article {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 28px 32px;
+  margin-bottom: 24px;
+}
+
+.post-article-header { margin-bottom: 20px; }
+
+.post-article-title {
+  font-size: 1.5rem;
+  font-weight: 800;
+  margin: 8px 0 10px;
+}
+
+.post-article-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: .85rem;
+}
+
+.post-author-link {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: .9rem;
+}
+
+.post-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 16px 0;
+}
+
+.post-img {
+  max-width: 280px;
+  max-height: 220px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  cursor: zoom-in;
+  transition: opacity .15s;
+}
+
+.post-img:hover { opacity: .88; }
+
+.post-actions-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  margin-top: 16px;
+}
+
+.like-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: var(--surface);
+  cursor: pointer;
+  font-size: .9rem;
+  transition: background .15s, border-color .15s;
+}
+
+.like-btn:hover { background: #fce7f3; border-color: #f9a8d4; }
+.like-btn.liked  { background: #fce7f3; border-color: #f472b6; color: #be185d; }
+
+.like-btn-sm {
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: transparent;
+  cursor: pointer;
+  font-size: .78rem;
+  transition: background .12s;
+}
+
+.like-btn-sm:hover { background: #fce7f3; }
+.like-btn-sm.liked { background: #fce7f3; border-color: #f472b6; color: #be185d; }
+
+/* ── 댓글 ────────────────────────────────────────────────── */
+.comments-section {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 24px 28px;
+}
+
+.comments-title {
+  font-size: 1rem;
+  font-weight: 700;
+  margin: 0 0 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.comment {
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.comment:last-of-type { border-bottom: none; }
+
+.reply { padding-left: 24px; border-left: 3px solid var(--line); margin-top: 8px; border-bottom: none; }
+
+.comment-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+
+.comment-author-link {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: .88rem;
+}
+
+.comment-time { font-size: .78rem; }
+
+.comment-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.comment-content {
+  font-size: .9rem;
+  line-height: 1.6;
+  word-break: break-word;
+}
+
+.replies { margin-top: 8px; display: flex; flex-direction: column; gap: 0; }
+
+.reply-form { margin-top: 8px; }
+.reply-input-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.reply-input-row textarea {
+  flex: 1;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  resize: vertical;
+}
+
+.comment-write-form { margin-top: 20px; }
+.comment-write-row  { display: flex; gap: 12px; align-items: flex-start; }
+.comment-write-row textarea {
+  flex: 1;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  resize: vertical;
+}
+
+.login-notice {
+  text-align: center;
+  padding: 20px;
+  color: var(--muted);
+  font-size: .9rem;
+}
+
+.login-notice a { color: var(--primary); font-weight: 600; }
+
+/* ── @멘션 ───────────────────────────────────────────────── */
+.mention {
+  color: var(--primary);
+  font-weight: 600;
+  background: #f0fdf4;
+  padding: 0 3px;
+  border-radius: 4px;
+}
+
+.text-danger { color: var(--danger) !important; }
+
+/* ── 페이지네이션 ────────────────────────────────────────── */
+.pagination {
+  display: flex;
+  justify-content: center;
+  gap: 4px;
+  margin-top: 24px;
+}
+
+.page-btn {
+  padding: 7px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: .85rem;
+  background: var(--surface);
+  transition: background .12s;
+}
+
+.page-btn:hover { background: var(--surface-soft); }
+.page-btn.active { background: var(--primary); color: #fff; border-color: var(--primary); font-weight: 700; }
+
+/* ── 채팅방 목록 ─────────────────────────────────────────── */
+.create-room-details {
+  margin-bottom: 20px;
+}
+
+.create-room-form {
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 20px;
+  margin-top: 8px;
+}
+
+.room-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 14px;
+}
+
+.room-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: box-shadow .15s, transform .1s;
+  cursor: pointer;
+}
+
+.room-card:hover {
+  box-shadow: 0 4px 16px rgba(15,118,110,.1);
+  transform: translateY(-2px);
+}
+
+.room-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.room-name { font-weight: 700; font-size: 1rem; }
+.room-online { font-size: .75rem; color: var(--primary); font-weight: 600; }
+.room-desc { font-size: .85rem; color: var(--muted); margin: 0; }
+.room-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 4px; }
+
+/* ── 채팅 페이지 ─────────────────────────────────────────── */
+.chat-page {
+  height: calc(100vh - 110px);
+  display: flex;
+  overflow: hidden;
+}
+
+.chat-layout {
+  display: flex;
+  width: 100%;
+  max-width: 1100px;
+  margin: 0 auto;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  overflow: hidden;
+  margin: 12px auto;
+  height: calc(100vh - 130px);
+}
+
+.chat-sidebar {
+  width: 220px;
+  flex-shrink: 0;
+  background: var(--surface-soft);
+  border-right: 1px solid var(--line);
+  padding: 20px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+}
+
+.chat-room-name { font-size: 1rem; font-weight: 800; margin: 0; word-break: break-word; }
+.chat-room-desc { font-size: .82rem; margin: 0; }
+
+.chat-status { font-size: .78rem; padding: 4px 8px; border-radius: 6px; background: #f1f5f9; }
+.chat-status.connected    { background: #dcfce7; color: #166534; }
+.chat-status.disconnected { background: #fee2e2; color: #991b1b; }
+
+.online-list { font-size: .82rem; }
+
+.chat-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--surface);
+}
+
+.chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.chat-system {
+  text-align: center;
+  font-size: .78rem;
+  color: var(--muted);
+  padding: 4px 0;
+}
+
+.chat-message { display: flex; flex-direction: column; max-width: 70%; }
+.chat-message.mine   { align-self: flex-end; align-items: flex-end; }
+.chat-message.theirs { align-self: flex-start; align-items: flex-start; }
+
+.chat-author-info { display: flex; align-items: center; gap: 5px; margin-bottom: 3px; }
+.chat-author      { font-size: .78rem; font-weight: 600; }
+
+.chat-bubble {
+  padding: 9px 14px;
+  border-radius: 14px;
+  font-size: .9rem;
+  line-height: 1.5;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.mine   .chat-bubble { background: var(--primary); color: #fff; border-bottom-right-radius: 4px; }
+.theirs .chat-bubble { background: var(--surface-soft); border: 1px solid var(--line); border-bottom-left-radius: 4px; }
+
+.chat-time { font-size: .7rem; color: var(--muted); margin-top: 2px; }
+
+.chat-input-area {
+  border-top: 1px solid var(--line);
+  padding: 12px;
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.chat-input-area textarea {
+  flex: 1;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+  resize: none;
+  font-size: .92rem;
+  line-height: 1.4;
+}
+
+/* ── 기타 공통 ───────────────────────────────────────────── */
+.nav-member-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+@media (max-width: 640px) {
+  .post-row { flex-direction: column; align-items: flex-start; }
+  .post-row-meta { width: 100%; justify-content: space-between; }
+  .chat-sidebar { display: none; }
+  .chat-layout { margin: 0; border-radius: 0; height: calc(100vh - 110px); }
+  .chat-message { max-width: 85%; }
+}

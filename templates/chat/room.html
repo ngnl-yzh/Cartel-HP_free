@@ -1,0 +1,200 @@
+{% extends "base.html" %}
+{% block title %}{{ room.name }} · 채팅 · 공모전 보드{% endblock %}
+
+{% block content %}
+<div class="chat-page">
+  <div class="chat-layout">
+
+    {# 사이드바 #}
+    <aside class="chat-sidebar">
+      <a href="/chat" class="back-link">← 채팅방 목록</a>
+      <h2 class="chat-room-name">
+        {% if has_password %}🔒{% else %}🌐{% endif %}
+        {{ room.name }}
+      </h2>
+      {% if room.description %}
+        <p class="chat-room-desc muted">{{ room.description }}</p>
+      {% endif %}
+      <div id="chatStatus" class="chat-status">연결 중...</div>
+      <div id="onlineList" class="online-list">
+        <p class="muted" style="font-size:.8rem">접속자</p>
+        <div id="onlineNames"></div>
+      </div>
+    </aside>
+
+    {# 채팅 영역 #}
+    <div class="chat-main">
+      <div id="messages" class="chat-messages">
+        {# 기존 메시지 #}
+        {% for msg in messages %}
+        <div class="chat-message {% if current_member and msg.author_id == current_member.id %}mine{% else %}theirs{% endif %}">
+          {% if not (current_member and msg.author_id == current_member.id) %}
+          <div class="chat-author-info">
+            {% if msg.author %}
+              {% if msg.author.profile_image %}
+                <img src="/uploads/{{ msg.author.profile_image }}" class="mini-avatar" alt="">
+              {% else %}
+                <span class="mini-avatar-letter small">{{ msg.author.activity_name[0] | upper }}</span>
+              {% endif %}
+              <span class="chat-author">{{ msg.author.activity_name }}</span>
+            {% endif %}
+          </div>
+          {% endif %}
+          <div class="chat-bubble">{{ msg.content }}</div>
+          <div class="chat-time">{{ msg.created_at.strftime('%H:%M') }}</div>
+        </div>
+        {% endfor %}
+      </div>
+
+      <div class="chat-input-area">
+        <textarea id="chatInput" placeholder="메시지 입력 (Enter 전송, Shift+Enter 줄바꿈)" rows="2" {% if not current_member %}disabled{% endif %}></textarea>
+        <button id="sendBtn" class="btn btn-primary" {% if not current_member %}disabled{% endif %}>전송</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# 비밀번호 모달 #}
+{% if has_password %}
+<div id="passwordModal" class="modal-overlay" style="display:flex">
+  <div class="modal-box">
+    <h3 class="modal-title">🔒 비밀번호가 필요한 방입니다</h3>
+    <div id="passwordError" class="alert alert-error" style="display:none"></div>
+    <label class="field" style="margin-top:1rem">
+      <span>채팅방 비밀번호</span>
+      <input type="password" id="roomPasswordInput" placeholder="비밀번호 입력" autofocus>
+    </label>
+    <div class="modal-actions" style="margin-top:1rem">
+      <button id="passwordSubmitBtn" class="btn btn-primary">입장</button>
+      <a href="/chat" class="btn btn-outline">취소</a>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+const ROOM_ID = {{ room.id }};
+const HAS_PASSWORD = {{ 'true' if has_password else 'false' }};
+const MY_NAME = "{{ current_member.activity_name if current_member else '' }}";
+let roomPassword = "";
+
+function getCookie(name) {
+  const m = document.cookie.match(new RegExp("(?:^|;)\\s*" + name + "=([^;]*)"));
+  return m ? decodeURIComponent(m[1]) : "";
+}
+
+function connectWS() {
+  const wsToken = getCookie("ws_token");
+  const proto = location.protocol === "https:" ? "wss:" : "ws:";
+  const url = `${proto}//${location.host}/ws/chat/${ROOM_ID}?token=${encodeURIComponent(wsToken)}&password=${encodeURIComponent(roomPassword)}`;
+  const ws = new WebSocket(url);
+  window._ws = ws;
+
+  ws.onopen = () => {
+    document.getElementById("chatStatus").textContent = "✅ 연결됨";
+    document.getElementById("chatStatus").className = "chat-status connected";
+    scrollToBottom();
+  };
+
+  ws.onmessage = (e) => {
+    const data = JSON.parse(e.data);
+    if (data.type === "system") {
+      appendSystem(data.message);
+    } else {
+      appendMessage(data);
+    }
+  };
+
+  ws.onclose = (e) => {
+    if (e.code === 4003) {
+      const errEl = document.getElementById("passwordError");
+      errEl.textContent = "비밀번호가 올바르지 않습니다.";
+      errEl.style.display = "block";
+      document.getElementById("passwordModal").style.display = "flex";
+      document.getElementById("roomPasswordInput").focus();
+    } else if (e.code === 4001) {
+      alert("로그인이 필요합니다.");
+      location.href = "/member/login";
+    } else {
+      document.getElementById("chatStatus").textContent = "⚠️ 연결 끊김 (새로고침으로 재연결)";
+      document.getElementById("chatStatus").className = "chat-status disconnected";
+    }
+  };
+}
+
+function appendSystem(msg) {
+  const el = document.createElement("div");
+  el.className = "chat-system";
+  el.textContent = msg;
+  document.getElementById("messages").appendChild(el);
+  scrollToBottom();
+}
+
+function appendMessage(data) {
+  const isMine = data.author === MY_NAME;
+  const container = document.getElementById("messages");
+  const div = document.createElement("div");
+  div.className = `chat-message ${isMine ? "mine" : "theirs"}`;
+
+  let authorHtml = "";
+  if (!isMine) {
+    const avatar = data.profile_image
+      ? `<img src="/uploads/${data.profile_image}" class="mini-avatar" alt="">`
+      : `<span class="mini-avatar-letter small">${escapeHtml(data.author[0] || "?").toUpperCase()}</span>`;
+    authorHtml = `<div class="chat-author-info">${avatar}<span class="chat-author">${escapeHtml(data.author)}</span></div>`;
+  }
+
+  div.innerHTML = `
+    ${authorHtml}
+    <div class="chat-bubble">${escapeHtml(data.content)}</div>
+    <div class="chat-time">${data.time}</div>
+  `;
+  container.appendChild(div);
+  scrollToBottom();
+}
+
+function sendMessage() {
+  const input = document.getElementById("chatInput");
+  const text = input.value.trim();
+  if (!text || !window._ws || window._ws.readyState !== WebSocket.OPEN) return;
+  window._ws.send(text);
+  input.value = "";
+}
+
+function scrollToBottom() {
+  const msgs = document.getElementById("messages");
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+// 입력 이벤트
+document.getElementById("chatInput").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    sendMessage();
+  }
+});
+document.getElementById("sendBtn").addEventListener("click", sendMessage);
+
+// 비밀번호 모달
+if (HAS_PASSWORD) {
+  const submitBtn = document.getElementById("passwordSubmitBtn");
+  const pwInput = document.getElementById("roomPasswordInput");
+
+  function tryConnect() {
+    roomPassword = pwInput.value;
+    document.getElementById("passwordModal").style.display = "none";
+    connectWS();
+  }
+
+  submitBtn.addEventListener("click", tryConnect);
+  pwInput.addEventListener("keydown", (e) => { if (e.key === "Enter") tryConnect(); });
+} else {
+  connectWS();
+}
+
+scrollToBottom();
+</script>
+{% endblock %}

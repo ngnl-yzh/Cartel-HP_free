@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}채팅 · 공모전 보드{% endblock %}
+
+{% block content %}
+<main class="board-page">
+  <div class="container">
+
+    <div class="board-header">
+      <div>
+        <h1 class="board-title">💬 채팅방</h1>
+        <p class="board-sub muted">실시간으로 대화할 수 있는 채팅방입니다.</p>
+      </div>
+    </div>
+
+    {# 채팅방 생성 폼 #}
+    <details class="create-room-details">
+      <summary class="btn btn-outline" style="cursor:pointer;display:inline-flex;align-items:center;gap:6px">
+        ＋ 새 채팅방 만들기
+      </summary>
+      <div class="create-room-form">
+        <form method="post" action="/chat/create">
+          <div class="form-grid two-col">
+            <label class="field">
+              <span>방 이름 <span class="required">*</span></span>
+              <input type="text" name="name" required maxlength="50" placeholder="채팅방 이름">
+            </label>
+            <label class="field">
+              <span>비밀번호 <small>(없으면 공개방)</small></span>
+              <input type="password" name="password" maxlength="50" placeholder="빈칸이면 공개">
+            </label>
+          </div>
+          <label class="field">
+            <span>설명 <small>(선택)</small></span>
+            <input type="text" name="description" maxlength="100" placeholder="방 설명">
+          </label>
+          <button type="submit" class="btn btn-primary">만들기</button>
+        </form>
+      </div>
+    </details>
+
+    {% if rooms %}
+    <div class="room-grid">
+      {% for room in rooms %}
+      <a href="/chat/{{ room.id }}" class="room-card">
+        <div class="room-card-header">
+          <span class="room-name">
+            {% if room.has_password %}🔒{% else %}🌐{% endif %}
+            {{ room.name }}
+          </span>
+          <span class="room-online">{{ room.online_count }}명 접속 중</span>
+        </div>
+        {% if room.description %}
+          <p class="room-desc">{{ room.description }}</p>
+        {% endif %}
+        <div class="room-footer">
+          <span class="muted" style="font-size:.8rem">
+            {% if room.creator %}{{ room.creator.activity_name }}{% endif %} ·
+            {{ room.created_at.strftime('%m/%d') }}
+          </span>
+          {% if is_privileged %}
+          <form method="post" action="/chat/{{ room.id }}/delete"
+                data-confirm="채팅방 '{{ room.name }}'을(를) 삭제하시겠습니까?" style="display:inline" onclick="event.stopPropagation()">
+            <button type="submit" class="btn btn-ghost btn-xs text-danger">삭제</button>
+          </form>
+          {% endif %}
+        </div>
+      </a>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">
+      <p class="empty-text">채팅방이 없습니다. 새로 만들어보세요!</p>
+    </div>
+    {% endif %}
+
+  </div>
+</main>
+{% endblock %}

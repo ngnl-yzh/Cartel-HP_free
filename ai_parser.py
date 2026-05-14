@@ -1,6 +1,9 @@
 import base64
+import io
 import json
 import os
+import struct
+import zlib
 
 from openai import AsyncOpenAI
 
@@ -67,3 +70,126 @@ async def parse_image_file(image_data: bytes, content_type: str | None) -> dict:
     )
     content = response.choices[0].message.content or "{}"
     return json.loads(content)
+
+
+# ── 문서 파싱 (PDF / HWP / HWPX) ─────────────────────────────────────────────
+
+def _extract_pdf_text(file_bytes: bytes) -> str:
+    try:
+        from pypdf import PdfReader
+        reader = PdfReader(io.BytesIO(file_bytes))
+        parts = []
+        for page in reader.pages:
+            t = page.extract_text()
+            if t:
+                parts.append(t)
+        return "\n".join(parts)
+    except Exception as exc:
+        raise RuntimeError(f"PDF 텍스트 추출 실패: {exc}") from exc
+
+
+def _extract_hwp_text(file_bytes: bytes) -> str:
+    """HWP 5.x 바이너리(OLE2) 파일에서 텍스트를 추출합니다."""
+    try:
+        import olefile
+    except ImportError:
+        raise RuntimeError("olefile 패키지가 필요합니다: pip install olefile")
+
+    try:
+        ole = olefile.OleFileIO(io.BytesIO(file_bytes))
+        text_parts: list[str] = []
+        section_idx = 0
+
+        while True:
+            stream_name = f"BodyText/Section{section_idx}"
+            if not ole.exists(stream_name):
+                break
+            raw = ole.openstream(stream_name).read()
+
+            # 압축 해제 (deflate raw)
+            try:
+                raw = zlib.decompress(raw, -15)
+            except zlib.error:
+                pass
+
+            pos = 0
+            while pos + 4 <= len(raw):
+                header = struct.unpack_from("<I", raw, pos)[0]
+                tag_id = header & 0x3FF
+                size = (header >> 20) & 0xFFF
+                pos += 4
+                if size == 0xFFF:
+                    if pos + 4 <= len(raw):
+                        size = struct.unpack_from("<I", raw, pos)[0]
+                        pos += 4
+                    else:
+                        break
+
+                # HWPTAG_PARA_TEXT = 67
+                if tag_id == 67:
+                    try:
+                        chunk = raw[pos: pos + size]
+                        text = chunk.decode("utf-16-le", errors="ignore").rstrip("\x00")
+                        if text:
+                            text_parts.append(text)
+                    except Exception:
+                        pass
+
+                pos += size
+
+            section_idx += 1
+
+        ole.close()
+        return "\n".join(text_parts)
+
+    except Exception as exc:
+        raise RuntimeError(f"HWP 텍스트 추출 실패: {exc}") from exc
+
+
+def _extract_hwpx_text(file_bytes: bytes) -> str:
+    """HWPX (ZIP 기반 새 한글 형식)에서 텍스트를 추출합니다."""
+    import zipfile
+    from xml.etree import ElementTree as ET
+
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(file_bytes))
+        text_parts: list[str] = []
+
+        for name in zf.namelist():
+            lower = name.lower()
+            if "section" in lower and lower.endswith(".xml"):
+                try:
+                    content = zf.read(name).decode("utf-8", errors="ignore")
+                    root = ET.fromstring(content)
+                    for elem in root.iter():
+                        if elem.text and elem.text.strip():
+                            text_parts.append(elem.text.strip())
+                except Exception:
+                    pass
+
+        zf.close()
+        return "\n".join(text_parts)
+
+    except Exception as exc:
+        raise RuntimeError(f"HWPX 텍스트 추출 실패: {exc}") from exc
+
+
+async def parse_document_file(file_bytes: bytes, filename: str) -> dict:
+    """PDF / HWP / HWPX 파일에서 텍스트를 추출한 뒤 GPT로 공모전 정보를 파싱합니다."""
+    fname = filename.lower()
+
+    if fname.endswith(".pdf"):
+        text = _extract_pdf_text(file_bytes)
+    elif fname.endswith(".hwpx"):
+        text = _extract_hwpx_text(file_bytes)
+    elif fname.endswith(".hwp"):
+        text = _extract_hwp_text(file_bytes)
+    else:
+        raise ValueError(f"지원하지 않는 파일 형식입니다. (PDF, HWP, HWPX만 가능)")
+
+    text = text.strip()
+    if not text:
+        raise ValueError("문서에서 텍스트를 추출할 수 없습니다. 스캔된 이미지 PDF이면 이미지 파싱을 사용하세요.")
+
+    # 토큰 제한을 위해 앞 8000자만 사용
+    return await parse_text(text[:8000])

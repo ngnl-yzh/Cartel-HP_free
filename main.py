@@ -964,6 +964,9 @@ async def admin_edit(
     is_featured: bool = Form(False), max_members: Optional[str] = Form(None),
     comp_image_path: Optional[str] = Form(None),
     comp_image: Optional[UploadFile] = File(None),
+    # image_changed="yes" 일 때만 GPT 파싱 이미지 반영 (기본: 기존 이미지 보존)
+    image_changed: str = Form("no"),
+    delete_image: str = Form("no"),
     files: List[UploadFile] = File(default=[]),
     db: Session = Depends(get_db),
 ):
@@ -974,7 +977,6 @@ async def admin_edit(
         raise HTTPException(status_code=404)
 
     new_image = await _save_image(comp_image)
-    # 이미지 우선순위: 새 직접 업로드 > GPT/기존 경로 (hidden field) > 기존 DB 값 유지
     _safe_path = Path(comp_image_path).name if comp_image_path and comp_image_path.strip() else None
     existing_files = _from_json(comp.files)
     comp.title = title; comp.organizer = organizer
@@ -987,12 +989,23 @@ async def admin_edit(
     comp.award_date = date.fromisoformat(award_date) if award_date else None
     comp.prize = prize; comp.link = link; comp.description = description
     comp.is_featured = is_featured; comp.max_members = _optional_int(max_members, "최대 팀 인원")
+
+    # ── 이미지 처리 우선순위 ────────────────────────────────────────────────
+    # 1) 새 파일 직접 업로드 → 교체
+    # 2) 이미지 삭제 체크박스 → None
+    # 3) GPT 파싱 결과 (image_changed="yes") → 교체
+    # 4) 그 외 → 기존 DB 값 반드시 유지 (hidden field 의존하지 않음)
     if new_image:
-        _delete_upload(comp.image)      # 구 이미지 파일 삭제
-        comp.image = new_image          # 새로 직접 업로드한 파일
-    elif _safe_path:
-        comp.image = _safe_path         # GPT 파싱 또는 폼의 기존 경로
-    # else: comp.image 변경 없음 — DB 기존 값 그대로 유지
+        _delete_upload(comp.image)
+        comp.image = new_image
+    elif delete_image == "yes":
+        _delete_upload(comp.image)
+        comp.image = None
+    elif image_changed == "yes" and _safe_path:
+        _delete_upload(comp.image)
+        comp.image = _safe_path
+    # else: comp.image 절대 건드리지 않음 (기존 DB 값 보존)
+
     comp.files = json.dumps(existing_files + await _save_files(files), ensure_ascii=False)
     db.commit()
     return RedirectResponse(url="/admin", status_code=303)

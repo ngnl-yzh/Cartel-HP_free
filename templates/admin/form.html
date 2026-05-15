@@ -143,11 +143,21 @@
           {# GPT 이미지 파싱 시 자동 저장된 경로를 hidden으로 전달 #}
           <input type="hidden" name="comp_image_path" id="comp_image_path"
                  value="{{ comp.image if comp and comp.image else '' }}">
+          {# image_changed="yes" 일 때만 GPT 파싱 이미지 반영됨 (기본값 "no" = 기존 이미지 보존) #}
+          <input type="hidden" name="image_changed" id="image_changed" value="no">
+          <input type="hidden" name="delete_image" id="delete_image" value="no">
 
           {% if comp and comp.image %}
           <div class="image-preview-wrap" id="imagePreviewWrap">
             <img id="imagePreview" src="/uploads/{{ comp.image }}" alt="대표 이미지">
           </div>
+          <label class="check-row" style="margin-top:.5rem">
+            <input type="checkbox" id="deleteImageCheck" onchange="
+              document.getElementById('delete_image').value = this.checked ? 'yes' : 'no';
+              document.getElementById('imagePreviewWrap').style.opacity = this.checked ? '0.3' : '1';
+            ">
+            <span>현재 이미지 삭제</span>
+          </label>
           {% else %}
           <div class="image-preview-wrap" id="imagePreviewWrap" style="display:none">
             <img id="imagePreview" src="" alt="대표 이미지">

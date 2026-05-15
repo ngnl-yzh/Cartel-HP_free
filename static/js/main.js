@@ -83,7 +83,10 @@ function fillCompetitionForm(data) {
 
   if (data._image_path) {
     const hiddenPath = document.getElementById("comp_image_path");
+    const imageChanged = document.getElementById("image_changed");
     if (hiddenPath) hiddenPath.value = data._image_path;
+    // GPT가 이미지를 파싱했음을 서버에 알려 기존 이미지를 교체하게 함
+    if (imageChanged) imageChanged.value = "yes";
     const wrap = document.getElementById("imagePreviewWrap");
     const preview = document.getElementById("imagePreview");
     if (wrap && preview) {

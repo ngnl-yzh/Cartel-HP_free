@@ -66,6 +66,32 @@ def _parse_date(text: str) -> Optional[str]:
     return None
 
 
+def _parse_range_date(text: str) -> Optional[str]:
+    """
+    '접수 04.15~06.17' 또는 '2026-05-18 ~ 2026-07-31' 같은 범위 문자열에서
+    마감일(오른쪽, ~ 이후) 파싱
+    """
+    text = _norm(text)
+    if "~" in text:
+        text = text.split("~")[-1].strip()
+
+    # 연-월-일 전체 형식 먼저 시도
+    full = _parse_date(text)
+    if full:
+        return full
+
+    # MM.DD 또는 MM/DD (연도 없는 단축 형식)
+    m = re.search(r"(\d{1,2})[./](\d{1,2})", text)
+    if m:
+        mo, d = int(m.group(1)), int(m.group(2))
+        y = _current_year()
+        try:
+            return date(y, mo, d).isoformat()
+        except ValueError:
+            pass
+    return None
+
+
 def _is_current_year(deadline_str: Optional[str]) -> bool:
     if not deadline_str:
         return True  # 날짜 파싱 실패 시 포함
@@ -101,6 +127,10 @@ def _check_response(r: httpx.Response, site: str) -> None:
 # ════════════════════════════════════════════════════════════════════════════
 
 # ── 1. 공모전코리아 ────────────────────────────────────────────────────────────
+# 실제 HTML 구조: div.list_style_2 > ul > li
+#   li > div.title > a[href] > span.txt (제목)
+#   li > ul.host > li.icon_1 (주최기관, "주최 . 기관명" 형식)
+#   li > div.date > div.date-detail > span.step-1 ("접수 MM.DD~MM.DD" 형식)
 
 async def _crawl_contestkorea(client: httpx.AsyncClient) -> list:
     results = []
@@ -110,36 +140,45 @@ async def _crawl_contestkorea(client: httpx.AsyncClient) -> list:
         _check_response(r, "공모전코리아")
         soup = _soup(r.text)
 
-        # 다양한 셀렉터 시도
+        # 실제 구조: div.list_style_2 > ul > li
         items = (
-            soup.select("ul.list-type-1 > li")
-            or soup.select("div.list_wrap .list_con")
-            or soup.select(".con_list_wrap li")
-            or soup.select("li.list_item")
+            soup.select("div.list_style_2 > ul > li")
+            or soup.select(".list_style_2 li")
+            or soup.select("ul.list-type-1 > li")
         )
         for li in items:
             try:
                 a = (
-                    li.select_one("strong.tit a")
-                    or li.select_one(".tit a")
-                    or li.select_one("h4 a")
-                    or li.select_one("a.btn-link")
+                    li.select_one("div.title a")
+                    or li.select_one(".title a")
                     or li.select_one("a[href*='view']")
                 )
                 if not a:
                     continue
-                title = _norm(a.get_text())
-                href  = a.get("href", "")
+
+                # 제목은 .txt 스팬만 (카테고리 스팬 제외)
+                txt_span = a.select_one(".txt")
+                title = _norm(txt_span.get_text() if txt_span else a.get_text())
+                if not title:
+                    continue
+
+                href = a.get("href", "")
                 if not href:
                     continue
                 if not href.startswith("http"):
                     href = "https://www.contestkorea.com" + href
 
-                date_el = li.select_one(".date") or li.select_one(".dday") or li.select_one("span.day")
-                deadline = _parse_date(date_el.get_text()) if date_el else None
+                # 마감일: span.step-1 텍스트 "접수 04.15~06.17"
+                step1 = li.select_one(".date .step-1") or li.select_one(".date-detail .step-1")
+                deadline = _parse_range_date(step1.get_text()) if step1 else None
 
-                org_el = li.select_one(".host") or li.select_one(".organ") or li.select_one(".name_organ")
-                organizer = _norm(org_el.get_text()) if org_el else ""
+                # 주최기관: "주최 . 기관명" 에서 "주최 ." 제거
+                host_el = li.select_one("ul.host li.icon_1") or li.select_one(".host")
+                organizer = ""
+                if host_el:
+                    host_text = _norm(host_el.get_text())
+                    host_text = re.sub(r"^주최\s*[·.\s]*", "", host_text).strip()
+                    organizer = host_text
 
                 if title and href and _is_current_year(deadline):
                     results.append(_item("contestkorea", "공모전코리아", title, href, organizer, deadline))
@@ -154,156 +193,183 @@ async def _crawl_contestkorea(client: httpx.AsyncClient) -> list:
 
 
 # ── 2. 위비티 ─────────────────────────────────────────────────────────────────
+# 실제 CSS 구조: ul.list > li > div.tit a (제목), .organ (기관), .day (D-day)
+# ※ Cloudflare Bot Management로 차단될 수 있음 → 실패 시 안내 메시지
 
 async def _crawl_wevity(client: httpx.AsyncClient) -> list:
     results = []
     try:
         url = "https://www.wevity.com/?c=find&s=1&gbn=c&Txt_bcode=0&Txt_area=0&Txt_pri=&page=1"
-        r = await client.get(url)
+        r = await client.get(url, headers={**HEADERS, "Referer": "https://www.wevity.com/"})
         _check_response(r, "위비티")
         soup = _soup(r.text)
 
+        # 실제 CSS: ul.list > li
         items = (
-            soup.select("ul.contest-list > li")
+            soup.select("ul.list > li")
             or soup.select(".find-list li")
-            or soup.select(".list_wrap li")
-            or soup.select("ul.list > li")
+            or soup.select(".content ul li")
         )
         for item in items:
             try:
-                a = item.select_one("a")
-                if not a:
+                tit = item.select_one(".tit a") or item.select_one("a")
+                if not tit:
                     continue
-                title = _norm(a.get_text())
-                href  = a.get("href", "")
-                if not href:
+                title = _norm(tit.get_text())
+                href  = tit.get("href", "")
+                if not href or not title:
                     continue
                 if not href.startswith("http"):
                     href = "https://www.wevity.com" + href
 
-                date_el = (
-                    item.select_one(".dday")
-                    or item.select_one(".date")
-                    or item.select_one(".deadline")
-                    or item.select_one("span[class*='date']")
-                )
-                deadline = _parse_date(date_el.get_text()) if date_el else None
-
-                org_el = item.select_one(".organ") or item.select_one(".host") or item.select_one(".company")
+                org_el = item.select_one(".organ") or item.select_one(".host")
                 organizer = _norm(org_el.get_text()) if org_el else ""
 
-                prize_el = item.select_one(".prize") or item.select_one(".award")
-                prize = _norm(prize_el.get_text()) if prize_el else ""
+                day_el = item.select_one(".day") or item.select_one(".date") or item.select_one(".deadline")
+                deadline = _parse_date(day_el.get_text()) if day_el else None
 
                 if title and href and _is_current_year(deadline):
-                    results.append(_item("wevity", "위비티", title, href, organizer, deadline, prize))
+                    results.append(_item("wevity", "위비티", title, href, organizer, deadline))
             except Exception:
                 continue
 
         if not results:
-            results.append({"_error": f"위비티: 항목 파싱 실패 (HTML 구조 변경 가능성, {len(items)}개 감지)"})
+            results.append({"_error": "위비티: 항목 파싱 실패 (Cloudflare 봇 보호 또는 HTML 구조 변경)"})
     except Exception as e:
         results.append({"_error": f"위비티 오류: {type(e).__name__}: {e}"})
     return results
 
 
 # ── 3. 씽크공모전 ─────────────────────────────────────────────────────────────
+# 목록은 POST AJAX API로 로드됨 → HTML 파싱 불가, JSON API 직접 호출
+# POST https://www.thinkcontest.com/thinkgood/user/contest/subList.do
+# 응답 필드: rows[].contest_pk, program_nm, host_company, receive_period, process_nm
 
 async def _crawl_thinkcontest(client: httpx.AsyncClient) -> list:
     results = []
     try:
-        url = "https://www.thinkcontest.com/Contest/List.html?pCd=c01"
-        r = await client.get(url)
-        _check_response(r, "씽크공모전")
-        soup = _soup(r.text)
-
-        items = (
-            soup.select("ul.listS > li")
-            or soup.select(".contest_list li")
-            or soup.select(".list_con li")
-            or soup.select("ul.list > li")
+        api_url = "https://www.thinkcontest.com/thinkgood/user/contest/subList.do"
+        payload = {
+            "searchStatus": "Y",
+            "sidx": "putup_sdt",
+            "sord": "DESC",
+            "recordsPerPage": 20,
+            "currentPageNo": 1,
+        }
+        r = await client.post(
+            api_url,
+            json=payload,
+            headers={
+                **HEADERS,
+                "Content-Type": "application/json",
+                "Accept": "application/json, text/plain, */*",
+                "X-Requested-With": "XMLHttpRequest",
+                "Referer": "https://www.thinkcontest.com/Contest/List.html",
+            },
         )
-        for item in items:
+        _check_response(r, "씽크공모전")
+
+        try:
+            data = r.json()
+        except Exception as je:
+            results.append({"_error": f"씽크공모전: JSON 파싱 실패 ({je})"})
+            return results
+
+        # 응답 구조: { "rows": [...] } 또는 리스트 직접
+        rows = (
+            data.get("rows")
+            or data.get("list")
+            or data.get("data")
+            or (data if isinstance(data, list) else [])
+        )
+
+        for row in rows:
             try:
-                a = item.select_one("a")
-                if not a:
+                title = _norm(str(row.get("program_nm", "")))
+                contest_pk = row.get("contest_pk", "")
+                if not title or not contest_pk:
                     continue
-                title = _norm(a.get_text())
-                href  = a.get("href", "")
-                if not href:
+
+                href = f"https://www.thinkcontest.com/thinkgood/user/contest/view.do?contest_pk={contest_pk}"
+                organizer = _norm(str(row.get("host_company", "")))
+
+                # "2026-05-18 ~ 2026-07-31" 형식 마감일 파싱
+                period = str(row.get("receive_period", ""))
+                deadline = _parse_range_date(period) if period else None
+
+                # 이미 마감된 공모전 제외
+                process = str(row.get("process_nm", ""))
+                if "마감" in process:
                     continue
-                if not href.startswith("http"):
-                    href = "https://www.thinkcontest.com" + href
 
-                date_el = (
-                    item.select_one(".date")
-                    or item.select_one(".day")
-                    or item.select_one(".period")
-                    or item.select_one("span[class*='date']")
-                )
-                deadline = _parse_date(date_el.get_text()) if date_el else None
-
-                org_el = item.select_one(".host") or item.select_one(".organ") or item.select_one(".company")
-                organizer = _norm(org_el.get_text()) if org_el else ""
-
-                if title and href and _is_current_year(deadline):
+                if title and _is_current_year(deadline):
                     results.append(_item("thinkcontest", "씽크공모전", title, href, organizer, deadline))
             except Exception:
                 continue
 
         if not results:
-            results.append({"_error": f"씽크공모전: 항목 파싱 실패 (HTML 구조 변경 가능성, {len(items)}개 감지)"})
+            results.append({"_error": f"씽크공모전: 항목 파싱 실패 (API 응답 0건 또는 모두 마감)"})
     except Exception as e:
         results.append({"_error": f"씽크공모전 오류: {type(e).__name__}: {e}"})
     return results
 
 
 # ── 4. 데티즌 ─────────────────────────────────────────────────────────────────
+# React SPA → HTML 파싱 불가 (body가 <div id="root"></div>)
+# 백엔드 REST API를 직접 호출 시도
 
 async def _crawl_detizen(client: httpx.AsyncClient) -> list:
     results = []
+    # 알려진 API 엔드포인트 후보
+    api_candidates = [
+        "https://newdevapi.detizenonline.com/contest?page=0&size=20&sort=endDate,asc",
+        "https://newdevapi.detizenonline.com/contests?page=0&size=20",
+        "https://newdevapi.detizenonline.com/api/contest?page=0&size=20",
+    ]
+    api_headers = {
+        **HEADERS,
+        "Accept": "application/json",
+        "Origin": "https://www.detizen.com",
+        "Referer": "https://www.detizen.com/",
+    }
     try:
-        url = "https://www.detizen.com/contest/list"
-        r = await client.get(url)
-        _check_response(r, "데티즌")
-        soup = _soup(r.text)
-
-        items = (
-            soup.select("ul.bbs_list > li")
-            or soup.select(".contest-item")
-            or soup.select(".list-item")
-            or soup.select("ul.list > li")
-        )
-        for item in items:
+        for api_url in api_candidates:
             try:
-                a = item.select_one("a")
-                if not a:
+                r = await client.get(api_url, headers=api_headers)
+                if r.status_code != 200:
                     continue
-                title = _norm(a.get_text())
-                href  = a.get("href", "")
-                if not href:
-                    continue
-                if not href.startswith("http"):
-                    href = "https://www.detizen.com" + href
-
-                date_el = (
-                    item.select_one(".date")
-                    or item.select_one(".deadline")
-                    or item.select_one(".period")
-                    or item.select_one(".dday")
+                data = r.json()
+                items = (
+                    data.get("content")
+                    or data.get("data")
+                    or (data if isinstance(data, list) else [])
                 )
-                deadline = _parse_date(date_el.get_text()) if date_el else None
-
-                org_el = item.select_one(".host") or item.select_one(".organ") or item.select_one(".company") or item.select_one(".org")
-                organizer = _norm(org_el.get_text()) if org_el else ""
-
-                if title and href and _is_current_year(deadline):
-                    results.append(_item("detizen", "데티즌", title, href, organizer, deadline))
+                if not items:
+                    continue
+                for item in items:
+                    try:
+                        title = _norm(str(item.get("title", "")))
+                        _id   = item.get("_id") or item.get("id", "")
+                        if not title or not _id:
+                            continue
+                        href = f"https://www.detizen.com/mDetail/{_id}"
+                        host = item.get("host", {})
+                        organizer = _norm(
+                            str(host.get("name", "") if isinstance(host, dict) else host)
+                        )
+                        end_date = str(item.get("endDate", ""))
+                        deadline = _parse_date(end_date) if end_date else None
+                        if title and _is_current_year(deadline):
+                            results.append(_item("detizen", "데티즌", title, href, organizer, deadline))
+                    except Exception:
+                        continue
+                if results:
+                    return results
             except Exception:
                 continue
 
-        if not results:
-            results.append({"_error": f"데티즌: 항목 파싱 실패 (HTML 구조 변경 가능성, {len(items)}개 감지)"})
+        # 모든 API 시도 실패
+        results.append({"_error": "데티즌: React SPA (백엔드 API 접근 실패, 수동 등록 필요)"})
     except Exception as e:
         results.append({"_error": f"데티즌 오류: {type(e).__name__}: {e}"})
     return results
@@ -390,7 +456,7 @@ async def crawl_all() -> dict:
     """
     try:
         async with httpx.AsyncClient(
-            timeout=25,
+            timeout=30,
             follow_redirects=True,
             headers=HEADERS,
             verify=True,

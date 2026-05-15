@@ -22,8 +22,9 @@ class Competition(Base):
     start_date = Column(Date, nullable=True)
     deadline = Column(Date, nullable=False)
     announcement_date = Column(Date, nullable=True)
-    review_1_date = Column(Date, nullable=True)      # 1차 심사일
-    review_2_date = Column(Date, nullable=True)      # 2차 심사일
+    review_1_date = Column(Date, nullable=True)      # 1차 심사일 (legacy)
+    review_2_date = Column(Date, nullable=True)      # 2차 심사일 (legacy)
+    review_dates  = Column(Text, default="[]")       # JSON: [{"label":"1차 심사","date":"YYYY-MM-DD"}, ...]
     award_date    = Column(Date, nullable=True)      # 시상일
     prize = Column(String(500), default="")
     link = Column(String(1000), default="")

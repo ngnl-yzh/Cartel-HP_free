@@ -94,6 +94,11 @@ function fillCompetitionForm(data) {
       wrap.style.display = "flex";
     }
   }
+
+  // GPT 파싱 결과에 review_dates 가 있으면 심사 일정 섹션 자동 채우기
+  if (Array.isArray(data.review_dates) && data.review_dates.length > 0) {
+    fillReviewDates(data.review_dates);
+  }
 }
 
 async function parseWithText() {
@@ -150,6 +155,79 @@ async function parseWithDocument() {
   setParseStatus("입력 폼에 반영했습니다.", "success");
 }
 
+// ── 심사 일정 동적 관리 ──────────────────────────────────────────────────────
+
+let _reviewContainer = null;
+let _reviewHidden = null;
+
+function _getReviewRows() {
+  if (!_reviewContainer) return [];
+  return Array.from(_reviewContainer.querySelectorAll(".review-row")).map((row) => ({
+    label: row.querySelector(".review-label").value.trim(),
+    date:  row.querySelector(".review-date").value,
+  })).filter((r) => r.label || r.date);
+}
+
+function _updateReviewHidden() {
+  if (_reviewHidden) _reviewHidden.value = JSON.stringify(_getReviewRows());
+}
+
+function _addReviewRow(label = "", dt = "") {
+  if (!_reviewContainer) return;
+  const row = document.createElement("div");
+  row.className = "review-row";
+  row.style.cssText = "display:grid;grid-template-columns:1fr 1fr auto;gap:.5rem;align-items:end;margin-bottom:.5rem";
+  row.innerHTML = `
+    <label class="field" style="margin:0">
+      <span>단계명</span>
+      <input type="text" class="review-label" placeholder="예: 1차 심사" value="${escapeHtml(label)}">
+    </label>
+    <label class="field" style="margin:0">
+      <span>일자</span>
+      <input type="date" class="review-date" value="${escapeHtml(dt)}">
+    </label>
+    <button type="button" class="btn btn-danger btn-sm remove-review-btn" style="margin-bottom:0">삭제</button>
+  `;
+  row.querySelector(".remove-review-btn").addEventListener("click", () => {
+    row.remove();
+    _updateReviewHidden();
+  });
+  row.querySelector(".review-label").addEventListener("input", _updateReviewHidden);
+  row.querySelector(".review-date").addEventListener("change", _updateReviewHidden);
+  _reviewContainer.appendChild(row);
+  _updateReviewHidden();
+}
+
+function fillReviewDates(reviewDates) {
+  if (!_reviewContainer) return;
+  _reviewContainer.innerHTML = "";
+  (Array.isArray(reviewDates) ? reviewDates : []).forEach((r) =>
+    _addReviewRow(r.label || "", r.date || "")
+  );
+  _updateReviewHidden();
+}
+
+function initReviewDates() {
+  _reviewContainer = document.getElementById("reviewDatesContainer");
+  _reviewHidden    = document.getElementById("reviewDatesJson");
+  const addBtn     = document.getElementById("addReviewDateBtn");
+  if (!_reviewContainer || !_reviewHidden) return;
+
+  if (addBtn) addBtn.addEventListener("click", () => _addReviewRow());
+
+  // 폼 제출 직전 hidden 필드 최종 동기화
+  const form = _reviewHidden.closest("form");
+  if (form) form.addEventListener("submit", _updateReviewHidden, { capture: true });
+
+  // 기존 데이터 로드 (서버에서 내려준 JSON)
+  try {
+    const existing = JSON.parse(_reviewHidden.value || "[]");
+    if (Array.isArray(existing) && existing.length > 0) {
+      existing.forEach((r) => _addReviewRow(r.label || "", r.date || ""));
+    }
+  } catch {}
+}
+
 // ── 모바일 햄버거 메뉴 ───────────────────────────────────────────────────────
 
 function initMobileNav() {
@@ -187,6 +265,7 @@ function initMobileNav() {
 
 document.addEventListener("DOMContentLoaded", () => {
   initMobileNav();
+  initReviewDates();
   // data-confirm 폼
   document.querySelectorAll("[data-confirm]").forEach((form) => {
     form.addEventListener("submit", (event) => {

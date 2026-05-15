@@ -83,19 +83,22 @@
               <input type="date" name="announcement_date" id="announcement_date" value="{{ comp.announcement_date.isoformat() if comp and comp.announcement_date else '' }}">
             </label>
           </div>
-          <div class="form-grid three-col" style="margin-top:.5rem">
-            <label class="field">
-              <span>1차 심사일</span>
-              <input type="date" name="review_1_date" id="review_1_date" value="{{ comp.review_1_date.isoformat() if comp and comp.review_1_date else '' }}">
-            </label>
-            <label class="field">
-              <span>2차 심사일</span>
-              <input type="date" name="review_2_date" id="review_2_date" value="{{ comp.review_2_date.isoformat() if comp and comp.review_2_date else '' }}">
-            </label>
+          <div class="form-grid" style="margin-top:.5rem">
             <label class="field">
               <span>시상일</span>
               <input type="date" name="award_date" id="award_date" value="{{ comp.award_date.isoformat() if comp and comp.award_date else '' }}">
             </label>
+          </div>
+
+          {# ── 심사 일정 (가변 횟수) ───────────────────────────────────── #}
+          <div style="margin-top:1rem">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem">
+              <span style="font-size:.875rem;font-weight:500">심사 일정 <small class="muted" style="font-weight:400">(단계명 + 날짜 자유 입력)</small></span>
+              <button type="button" id="addReviewDateBtn" class="btn btn-outline btn-sm">+ 심사 추가</button>
+            </div>
+            <div id="reviewDatesContainer"></div>
+            <input type="hidden" name="review_dates_json" id="reviewDatesJson"
+                   value="{{ comp.review_dates_json if comp and comp.review_dates_json is defined else (review_dates_json if review_dates_json is defined else '[]') }}">
           </div>
 
           <div class="form-grid two-col">

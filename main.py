@@ -203,6 +203,23 @@ def _record_fail(counter: dict, ip: str) -> None:
 @app.on_event("startup")
 def startup():
     init_db()
+    # review_dates 컬럼 마이그레이션: review_1_date/review_2_date 데이터를 review_dates JSON으로 이전
+    try:
+        db = SessionLocal()
+        for comp in db.query(Competition).filter(
+            (Competition.review_dates == None) | (Competition.review_dates == "[]")
+        ).all():
+            old = []
+            if comp.review_1_date:
+                old.append({"label": "1차 심사", "date": comp.review_1_date.isoformat()})
+            if comp.review_2_date:
+                old.append({"label": "2차 심사", "date": comp.review_2_date.isoformat()})
+            if old:
+                comp.review_dates = json.dumps(old, ensure_ascii=False)
+        db.commit()
+        db.close()
+    except Exception:
+        pass
 
 
 # ── 날짜 / 상태 헬퍼 ──────────────────────────────────────────────────────────
@@ -919,7 +936,8 @@ async def admin_add_page(request: Request, db: Session = Depends(get_db)):
         return r
     return _render(request,
         "admin/form.html",
-        _ctx(request, db, comp=None, tags=TAGS, action="/admin/add", title="공모전 추가"),
+        _ctx(request, db, comp=None, tags=TAGS, action="/admin/add", title="공모전 추가",
+             review_dates_json="[]"),
     )
 
 
@@ -932,9 +950,8 @@ async def admin_add(
     start_date: Optional[str] = Form(None),
     deadline: str = Form(...),
     announcement_date: Optional[str] = Form(None),
-    review_1_date: Optional[str] = Form(None),
-    review_2_date: Optional[str] = Form(None),
     award_date: Optional[str] = Form(None),
+    review_dates_json: str = Form("[]"),
     prize: str = Form(""),
     link: str = Form(""),
     description: str = Form(""),
@@ -949,14 +966,19 @@ async def admin_add(
         return r
     _safe_path = Path(comp_image_path).name if comp_image_path else None
     image = await _save_image(comp_image) or _safe_path or None
+    try:
+        _review_dates = json.loads(review_dates_json or "[]")
+        if not isinstance(_review_dates, list):
+            _review_dates = []
+    except Exception:
+        _review_dates = []
     comp = Competition(
         title=title, organizer=organizer,
         tags=json.dumps(tags, ensure_ascii=False),
         start_date=date.fromisoformat(start_date) if start_date else None,
         deadline=date.fromisoformat(deadline),
         announcement_date=date.fromisoformat(announcement_date) if announcement_date else None,
-        review_1_date=date.fromisoformat(review_1_date) if review_1_date else None,
-        review_2_date=date.fromisoformat(review_2_date) if review_2_date else None,
+        review_dates=json.dumps(_review_dates, ensure_ascii=False),
         award_date=date.fromisoformat(award_date) if award_date else None,
         prize=prize, link=link, description=description,
         image=image, max_members=_optional_int(max_members, "최대 팀 인원"), is_featured=is_featured,
@@ -976,6 +998,15 @@ async def admin_edit_page(request: Request, comp_id: int, db: Session = Depends(
         raise HTTPException(status_code=404)
     comp.tags_list = _from_json(comp.tags)
     comp.files_list = _from_json(comp.files)
+    # review_dates JSON → 편집용 리스트
+    review_dates_list = _from_json(comp.review_dates or "[]")
+    # 구버전 호환: review_dates 비어있으면 review_1_date/review_2_date 에서 마이그레이션
+    if not review_dates_list:
+        if comp.review_1_date:
+            review_dates_list.append({"label": "1차 심사", "date": comp.review_1_date.isoformat()})
+        if comp.review_2_date:
+            review_dates_list.append({"label": "2차 심사", "date": comp.review_2_date.isoformat()})
+    comp.review_dates_json = json.dumps(review_dates_list, ensure_ascii=False)
     return _render(request,
         "admin/form.html",
         _ctx(request, db, comp=comp, tags=TAGS, action=f"/admin/edit/{comp_id}", title="공모전 수정"),
@@ -989,9 +1020,8 @@ async def admin_edit(
     tags: List[str] = Form(default=[]),
     start_date: Optional[str] = Form(None), deadline: str = Form(...),
     announcement_date: Optional[str] = Form(None),
-    review_1_date: Optional[str] = Form(None),
-    review_2_date: Optional[str] = Form(None),
     award_date: Optional[str] = Form(None),
+    review_dates_json: str = Form("[]"),
     prize: str = Form(""), link: str = Form(""), description: str = Form(""),
     is_featured: bool = Form(False), max_members: Optional[str] = Form(None),
     comp_image_path: Optional[str] = Form(None),
@@ -1016,9 +1046,14 @@ async def admin_edit(
     comp.start_date = date.fromisoformat(start_date) if start_date else None
     comp.deadline = date.fromisoformat(deadline)
     comp.announcement_date = date.fromisoformat(announcement_date) if announcement_date else None
-    comp.review_1_date = date.fromisoformat(review_1_date) if review_1_date else None
-    comp.review_2_date = date.fromisoformat(review_2_date) if review_2_date else None
     comp.award_date = date.fromisoformat(award_date) if award_date else None
+    try:
+        _review_dates = json.loads(review_dates_json or "[]")
+        if not isinstance(_review_dates, list):
+            _review_dates = []
+    except Exception:
+        _review_dates = []
+    comp.review_dates = json.dumps(_review_dates, ensure_ascii=False)
     comp.prize = prize; comp.link = link; comp.description = description
     comp.is_featured = is_featured; comp.max_members = _optional_int(max_members, "최대 팀 인원")
 
@@ -2888,6 +2923,9 @@ async def admin_crawl_add_with_gpt(
     if not deadline_str:
         deadline_str = (date.today() + timedelta(days=30)).isoformat()
 
+    _rd = parsed.get("review_dates") or []
+    if not isinstance(_rd, list):
+        _rd = []
     comp = Competition(
         title=parsed.get("title") or item.get("title", ""),
         organizer=parsed.get("organizer") or item.get("organizer", ""),
@@ -2895,6 +2933,7 @@ async def admin_crawl_add_with_gpt(
         start_date=date.fromisoformat(parsed["start_date"]) if parsed.get("start_date") else None,
         deadline=date.fromisoformat(deadline_str),
         announcement_date=date.fromisoformat(parsed["announcement_date"]) if parsed.get("announcement_date") else None,
+        review_dates=json.dumps(_rd, ensure_ascii=False),
         prize=parsed.get("prize") or item.get("prize", ""),
         link=link,
         description=parsed.get("description", ""),

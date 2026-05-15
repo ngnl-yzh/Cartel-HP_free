@@ -1,6 +1,6 @@
 """
 공모전 사이트 자동 크롤러
-지원 사이트: contestkorea, wevity, thinkcontest, detizen, gongmoju
+지원 사이트: contestkorea, wevity, thinkcontest, detizen
 - 당해년도 공모전만 수집
 - 각 사이트는 독립적으로 try/except 처리 (한 곳이 실패해도 나머지는 정상 동작)
 """
@@ -33,6 +33,76 @@ try:
     _PARSER = "lxml"
 except ImportError:
     _PARSER = "html.parser"
+
+
+# ── 태그 분류 ─────────────────────────────────────────────────────────────────
+
+# 키워드 → 앱 태그 매핑 (앱 TAGS 목록: IT/SW, 디자인, 기획·마케팅, 사회혁신, 예술·문화, 창업·스타트업, 논문·학술, 기타)
+_TAG_MAP: list[tuple[str, str]] = [
+    # IT/SW
+    ("IT", "IT/SW"), ("SW", "IT/SW"), ("개발", "IT/SW"), ("소프트웨어", "IT/SW"),
+    ("앱", "IT/SW"), ("게임", "IT/SW"), ("인공지능", "IT/SW"), ("AI", "IT/SW"),
+    ("빅데이터", "IT/SW"), ("블록체인", "IT/SW"), ("클라우드", "IT/SW"), ("메타버스", "IT/SW"),
+    # 디자인
+    ("디자인", "디자인"), ("영상", "디자인"), ("사진", "디자인"), ("웹툰", "디자인"),
+    ("캐릭터", "디자인"), ("UX", "디자인"), ("UI", "디자인"), ("패션", "디자인"),
+    ("제품", "디자인"), ("건축", "디자인"), ("인테리어", "디자인"),
+    # 기획·마케팅
+    ("기획", "기획·마케팅"), ("마케팅", "기획·마케팅"), ("광고", "기획·마케팅"),
+    ("홍보", "기획·마케팅"), ("브랜드", "기획·마케팅"), ("PR", "기획·마케팅"),
+    ("아이디어", "기획·마케팅"),
+    # 사회혁신
+    ("사회", "사회혁신"), ("환경", "사회혁신"), ("공공", "사회혁신"), ("복지", "사회혁신"),
+    ("봉사", "사회혁신"), ("ESG", "사회혁신"), ("지속가능", "사회혁신"),
+    # 예술·문화
+    ("예술", "예술·문화"), ("문화", "예술·문화"), ("음악", "예술·문화"), ("미술", "예술·문화"),
+    ("문학", "예술·문화"), ("소설", "예술·문화"), ("공연", "예술·문화"),
+    ("무용", "예술·문화"), ("연극", "예술·문화"), ("시나리오", "예술·문화"),
+    # 창업·스타트업
+    ("창업", "창업·스타트업"), ("스타트업", "창업·스타트업"), ("비즈니스", "창업·스타트업"),
+    ("사업", "창업·스타트업"), ("벤처", "창업·스타트업"),
+    # 논문·학술
+    ("논문", "논문·학술"), ("학술", "논문·학술"), ("연구", "논문·학술"), ("학회", "논문·학술"),
+]
+
+# 각 사이트 카테고리명 → 앱 태그 직접 매핑 (빠른 경로)
+_SITE_CAT_MAP: dict[str, str] = {
+    # 공모전코리아
+    "아이디어": "기획·마케팅", "광고/마케팅": "기획·마케팅", "마케팅/광고": "기획·마케팅",
+    "IT/SW": "IT/SW", "앱/웹": "IT/SW",
+    "디자인/시각": "디자인", "영상/UCC": "디자인", "사진": "디자인", "캐릭터": "디자인",
+    "문학/시나리오": "예술·문화", "음악": "예술·문화", "미술": "예술·문화", "공연/연극": "예술·문화",
+    "창업/사업계획": "창업·스타트업",
+    "논문/리포트": "논문·학술",
+    "사회/환경": "사회혁신",
+    # 씽크공모전
+    "프로그램개발": "IT/SW", "디지털콘텐츠": "IT/SW",
+    "디자인": "디자인",
+    "광고마케팅": "기획·마케팅",
+    "사회공헌": "사회혁신",
+    "문화예술": "예술·문화",
+    "창업기획": "창업·스타트업",
+    "학술논문": "논문·학술",
+    # 위비티
+    "영상/UCC": "디자인",
+}
+
+
+def _classify_tags(category_text: str) -> list[str]:
+    """카테고리 텍스트를 앱 태그 목록으로 분류 (중복 제거)"""
+    if not category_text:
+        return []
+    found: set[str] = set()
+    # 직접 매핑 우선
+    norm = category_text.strip()
+    if norm in _SITE_CAT_MAP:
+        found.add(_SITE_CAT_MAP[norm])
+        return list(found)
+    # 키워드 포함 매핑
+    for keyword, tag in _TAG_MAP:
+        if keyword in category_text:
+            found.add(tag)
+    return list(found)
 
 
 # ── 헬퍼 ─────────────────────────────────────────────────────────────────────
@@ -127,66 +197,100 @@ def _check_response(r: httpx.Response, site: str) -> None:
 # ════════════════════════════════════════════════════════════════════════════
 
 # ── 1. 공모전코리아 ────────────────────────────────────────────────────────────
-# 실제 HTML 구조: div.list_style_2 > ul > li
-#   li > div.title > a[href] > span.txt (제목)
-#   li > ul.host > li.icon_1 (주최기관, "주최 . 기관명" 형식)
+# 메인 목록 페이지(전체 분야) 2페이지 수집
+# HTML 구조: div.list_style_2 > ul > li
+#   li > div.title > a[href] > span.cate (분야), span.txt (제목)
+#   li > ul.host > li.icon_1 (주최기관, "주최 · 기관명" 형식)
 #   li > div.date > div.date-detail > span.step-1 ("접수 MM.DD~MM.DD" 형식)
+
+_CONTESTKOREA_BASE = (
+    "https://www.contestkorea.com/sub/list.php"
+    "?int_gbn=1&Txt_sGbn=0&Txt_area=0&Txt_cate=&Txt_bcode="
+)
+
+
+def _parse_contestkorea_items(soup: BeautifulSoup) -> list:
+    """파싱된 soup 에서 공모전코리아 항목 추출 (내부 헬퍼)"""
+    parsed = []
+    items = (
+        soup.select("div.list_style_2 > ul > li")
+        or soup.select(".list_style_2 li")
+        or soup.select("ul.list-type-1 > li")
+    )
+    for li in items:
+        try:
+            a = (
+                li.select_one("div.title a")
+                or li.select_one(".title a")
+                or li.select_one("a[href*='view']")
+            )
+            if not a:
+                continue
+
+            # 분야 배지 (.cate) → 앱 태그 분류
+            cate_span = a.select_one(".cate") or li.select_one(".cate")
+            category = _norm(cate_span.get_text()) if cate_span else ""
+            tags = _classify_tags(category)
+
+            # 제목 (.txt 스팬만, 카테고리 스팬 제외)
+            txt_span = a.select_one(".txt")
+            title = _norm(txt_span.get_text() if txt_span else a.get_text())
+            if not title:
+                continue
+
+            href = a.get("href", "")
+            if not href:
+                continue
+            if not href.startswith("http"):
+                href = "https://www.contestkorea.com" + href
+
+            # 마감일: span.step-1 "접수 04.15~06.17"
+            step1 = li.select_one(".date .step-1") or li.select_one(".date-detail .step-1")
+            deadline = _parse_range_date(step1.get_text()) if step1 else None
+
+            # 주최기관
+            host_el = li.select_one("ul.host li.icon_1") or li.select_one(".host")
+            organizer = ""
+            if host_el:
+                host_text = _norm(host_el.get_text())
+                host_text = re.sub(r"^주최\s*[·.\s]*", "", host_text).strip()
+                organizer = host_text
+
+            if title and href and _is_current_year(deadline):
+                parsed.append(_item("contestkorea", "공모전코리아", title, href, organizer, deadline, tags=tags))
+        except Exception:
+            continue
+    return parsed
+
 
 async def _crawl_contestkorea(client: httpx.AsyncClient) -> list:
     results = []
     try:
-        url = "https://www.contestkorea.com/sub/list.php?int_gbn=1&Txt_sGbn=0&Txt_area=0&Txt_cate=&Txt_bcode=030110001"
-        r = await client.get(url)
-        _check_response(r, "공모전코리아")
-        soup = _soup(r.text)
-
-        # 실제 구조: div.list_style_2 > ul > li
-        items = (
-            soup.select("div.list_style_2 > ul > li")
-            or soup.select(".list_style_2 li")
-            or soup.select("ul.list-type-1 > li")
+        # 페이지 1, 2 병렬 수집
+        urls = [
+            _CONTESTKOREA_BASE + "&page=1",
+            _CONTESTKOREA_BASE + "&page=2",
+        ]
+        responses = await asyncio.gather(
+            *[client.get(u) for u in urls],
+            return_exceptions=True,
         )
-        for li in items:
+
+        total_li = 0
+        for r in responses:
+            if isinstance(r, Exception):
+                continue
             try:
-                a = (
-                    li.select_one("div.title a")
-                    or li.select_one(".title a")
-                    or li.select_one("a[href*='view']")
-                )
-                if not a:
-                    continue
-
-                # 제목은 .txt 스팬만 (카테고리 스팬 제외)
-                txt_span = a.select_one(".txt")
-                title = _norm(txt_span.get_text() if txt_span else a.get_text())
-                if not title:
-                    continue
-
-                href = a.get("href", "")
-                if not href:
-                    continue
-                if not href.startswith("http"):
-                    href = "https://www.contestkorea.com" + href
-
-                # 마감일: span.step-1 텍스트 "접수 04.15~06.17"
-                step1 = li.select_one(".date .step-1") or li.select_one(".date-detail .step-1")
-                deadline = _parse_range_date(step1.get_text()) if step1 else None
-
-                # 주최기관: "주최 . 기관명" 에서 "주최 ." 제거
-                host_el = li.select_one("ul.host li.icon_1") or li.select_one(".host")
-                organizer = ""
-                if host_el:
-                    host_text = _norm(host_el.get_text())
-                    host_text = re.sub(r"^주최\s*[·.\s]*", "", host_text).strip()
-                    organizer = host_text
-
-                if title and href and _is_current_year(deadline):
-                    results.append(_item("contestkorea", "공모전코리아", title, href, organizer, deadline))
+                _check_response(r, "공모전코리아")
             except Exception:
                 continue
+            soup = _soup(r.text)
+            items = _parse_contestkorea_items(soup)
+            total_li += len(soup.select("div.list_style_2 > ul > li") or [])
+            results.extend(items)
 
         if not results:
-            results.append({"_error": f"공모전코리아: 항목 파싱 실패 (HTML 구조 변경 가능성, {len(items)}개 감지)"})
+            results.append({"_error": f"공모전코리아: 항목 파싱 실패 (HTML 구조 변경 가능성, {total_li}개 li 감지)"})
     except Exception as e:
         results.append({"_error": f"공모전코리아 오류: {type(e).__name__}: {e}"})
     return results
@@ -232,8 +336,13 @@ async def _crawl_wevity(client: httpx.AsyncClient) -> list:
                 if date_el:
                     deadline = _parse_range_date(date_el.get_text())
 
+                # 분야 분류 (카테고리 뱃지 또는 제목 키워드로)
+                cate_el = item.select_one(".cate") or item.select_one(".category") or item.select_one(".field")
+                category = _norm(cate_el.get_text()) if cate_el else ""
+                tags = _classify_tags(category or title)
+
                 if title and href:
-                    results.append(_item("wevity", "위비티", title, href, organizer, deadline))
+                    results.append(_item("wevity", "위비티", title, href, organizer, deadline, tags=tags))
             except Exception:
                 continue
 
@@ -307,8 +416,12 @@ async def _crawl_thinkcontest(client: httpx.AsyncClient) -> list:
                 if status and "마감" in status and "접수" not in status:
                     continue
 
+                # 분야 분류 (cate_nm / category_nm 필드 활용)
+                category = str(row.get("cate_nm", row.get("category_nm", row.get("field_nm", ""))))
+                tags = _classify_tags(category or title)
+
                 if title and _is_current_year(deadline):
-                    results.append(_item("thinkcontest", "씽크공모전", title, href, organizer, deadline))
+                    results.append(_item("thinkcontest", "씽크공모전", title, href, organizer, deadline, tags=tags))
             except Exception:
                 continue
 

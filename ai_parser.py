@@ -16,6 +16,7 @@ SYSTEM_PROMPT = """당신은 공모전 공고문에서 정보를 추출하는 �
 날짜는 YYYY-MM-DD 형식으로, 없으면 null로 반환하세요.
 description은 마크다운으로 보기 좋게 정리하세요. 응모 자격, 주제, 일정, 제출물, 심사 기준이 있으면 포함하세요.
 tags는 ["IT/SW","디자인","기획·마케팅","사회혁신","예술·문화","창업·스타트업","논문·학술","기타"] 중 해당하는 값만 선택하세요.
+review_dates는 공모전의 심사/평가 단계별 일정 배열입니다. 1차 심사, 2차 심사, 서류 심사, 발표 심사, 최종 심사 등 공고문에 명시된 심사 일정을 추출하세요. 없으면 빈 배열로 반환하세요.
 
 {
   "title": "공모전명",
@@ -24,6 +25,7 @@ tags는 ["IT/SW","디자인","기획·마케팅","사회혁신","예술·문화"
   "start_date": "YYYY-MM-DD 또는 null",
   "deadline": "YYYY-MM-DD 또는 null",
   "announcement_date": "YYYY-MM-DD 또는 null",
+  "review_dates": [{"label": "1차 심사", "date": "YYYY-MM-DD"}],
   "prize": "상금 및 시상 내용 요약",
   "link": "공식 URL 또는 null",
   "description": "마크다운 형식의 상세 내용"

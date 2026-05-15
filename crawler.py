@@ -193,22 +193,23 @@ async def _crawl_contestkorea(client: httpx.AsyncClient) -> list:
 
 
 # ── 2. 위비티 ─────────────────────────────────────────────────────────────────
-# 실제 CSS 구조: ul.list > li > div.tit a (제목), .organ (기관), .day (D-day)
-# ※ Cloudflare Bot Management로 차단될 수 있음 → 실패 시 안내 메시지
+# gbn=list 파라미터로 서버렌더링 목록 페이지를 직접 요청
+# 구조: div.ms-list > ul.list > li > div.tit a (제목), .organ (기관)
 
 async def _crawl_wevity(client: httpx.AsyncClient) -> list:
     results = []
     try:
-        url = "https://www.wevity.com/?c=find&s=1&gbn=c&Txt_bcode=0&Txt_area=0&Txt_pri=&page=1"
+        # gbn=c 는 빈 껍데기, gbn=list 가 실제 목록 페이지
+        url = "https://www.wevity.com/?c=find&s=1&gbn=list&Txt_bcode=0&Txt_area=0&page=1"
         r = await client.get(url, headers={**HEADERS, "Referer": "https://www.wevity.com/"})
         _check_response(r, "위비티")
         soup = _soup(r.text)
 
-        # 실제 CSS: ul.list > li
+        # div.ms-list > ul.list > li
         items = (
-            soup.select("ul.list > li")
-            or soup.select(".find-list li")
-            or soup.select(".content ul li")
+            soup.select("div.ms-list ul.list > li")
+            or soup.select("ul.list > li")
+            or soup.select(".ms-list li")
         )
         for item in items:
             try:
@@ -225,16 +226,19 @@ async def _crawl_wevity(client: httpx.AsyncClient) -> list:
                 org_el = item.select_one(".organ") or item.select_one(".host")
                 organizer = _norm(org_el.get_text()) if org_el else ""
 
-                day_el = item.select_one(".day") or item.select_one(".date") or item.select_one(".deadline")
-                deadline = _parse_date(day_el.get_text()) if day_el else None
+                # .day 는 "D-33" 형식 → 날짜 파싱 불가, 날짜 없이 포함
+                deadline = None
+                date_el = item.select_one(".date") or item.select_one(".period")
+                if date_el:
+                    deadline = _parse_range_date(date_el.get_text())
 
-                if title and href and _is_current_year(deadline):
+                if title and href:
                     results.append(_item("wevity", "위비티", title, href, organizer, deadline))
             except Exception:
                 continue
 
         if not results:
-            results.append({"_error": "위비티: 항목 파싱 실패 (Cloudflare 봇 보호 또는 HTML 구조 변경)"})
+            results.append({"_error": f"위비티: 항목 파싱 실패 (HTML 구조 변경 가능성, {len(items)}개 감지)"})
     except Exception as e:
         results.append({"_error": f"위비티 오류: {type(e).__name__}: {e}"})
     return results
@@ -275,9 +279,10 @@ async def _crawl_thinkcontest(client: httpx.AsyncClient) -> list:
             results.append({"_error": f"씽크공모전: JSON 파싱 실패 ({je})"})
             return results
 
-        # 응답 구조: { "rows": [...] } 또는 리스트 직접
+        # 실제 응답 구조: { "listJsonData": [...], "totalcnt": N, ... }
         rows = (
-            data.get("rows")
+            data.get("listJsonData")
+            or data.get("rows")
             or data.get("list")
             or data.get("data")
             or (data if isinstance(data, list) else [])
@@ -293,13 +298,13 @@ async def _crawl_thinkcontest(client: httpx.AsyncClient) -> list:
                 href = f"https://www.thinkcontest.com/thinkgood/user/contest/view.do?contest_pk={contest_pk}"
                 organizer = _norm(str(row.get("host_company", "")))
 
-                # "2026-05-18 ~ 2026-07-31" 형식 마감일 파싱
+                # "2026-05-18 ~ 2026-07-31" 형식 또는 finish_dt 사용
                 period = str(row.get("receive_period", ""))
-                deadline = _parse_range_date(period) if period else None
+                deadline = _parse_range_date(period) if period else _parse_date(str(row.get("finish_dt", "")))
 
-                # 이미 마감된 공모전 제외
-                process = str(row.get("process_nm", ""))
-                if "마감" in process:
+                # 마감된 공모전 제외 (status_nm 또는 process_nm 기준)
+                status = str(row.get("status_nm", row.get("process_nm", "")))
+                if status and "마감" in status and "접수" not in status:
                     continue
 
                 if title and _is_current_year(deadline):
@@ -454,6 +459,7 @@ async def crawl_all() -> dict:
         "counts": { "사이트": n, ... },
     }
     """
+    # 공모주(gongmoju.com): 사이트 접속 불가(ConnectTimeout) → 제외
     try:
         async with httpx.AsyncClient(
             timeout=30,
@@ -466,7 +472,6 @@ async def crawl_all() -> dict:
                 _crawl_wevity(client),
                 _crawl_thinkcontest(client),
                 _crawl_detizen(client),
-                _crawl_gongmoju(client),
                 return_exceptions=True,
             )
     except Exception as e:

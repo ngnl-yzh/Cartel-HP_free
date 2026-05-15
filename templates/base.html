@@ -23,6 +23,7 @@
       {% elif current_member is defined and current_member %}
         {% if current_member.role == 'sub_admin' %}
           <span class="nav-badge-role">중간관리자</span>
+          <a href="/admin" class="btn btn-outline btn-sm">관리</a>
         {% endif %}
         <a href="/profile/{{ current_member.activity_name }}" class="btn btn-ghost btn-sm nav-member-btn">
           {% if current_member.profile_image %}

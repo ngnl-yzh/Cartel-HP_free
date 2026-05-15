@@ -2580,3 +2580,25 @@ select {
   color: #0369a1;
   font-weight: 800;
 }
+
+/* ── 초대코드별 그룹 헤더 ─────────────────────────────────────── */
+.invite-group-section { }
+.invite-group-header { margin-bottom: .5rem; }
+.invite-group-title {
+  font-size: 1rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  flex-wrap: wrap;
+  padding: .5rem 0;
+  border-bottom: 2px solid var(--border);
+}
+.invite-code-inline {
+  font-size: .75rem;
+  background: var(--bg-2);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: monospace;
+  color: var(--text-2);
+}

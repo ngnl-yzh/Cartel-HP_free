@@ -224,6 +224,16 @@ def _admin_redirect(request: Request):
     return None
 
 
+def _privileged_redirect(request: Request, db: Session):
+    """관리자 또는 중간관리자만 통과, 아니면 로그인 페이지로"""
+    if _is_admin(request):
+        return None
+    m = _current_member(request, db)
+    if m and m.role == "sub_admin":
+        return None
+    return RedirectResponse(url="/member/login", status_code=303)
+
+
 def _current_member(request: Request, db: Session) -> Optional[Member]:
     token = request.cookies.get("member_token")
     if not token:
@@ -530,7 +540,7 @@ async def admin_logout():
 
 @app.get("/admin", response_class=HTMLResponse)
 async def admin_dashboard(request: Request, db: Session = Depends(get_db)):
-    if r := _admin_redirect(request):
+    if r := _privileged_redirect(request, db):
         return r
     competitions = _annotate(db.query(Competition).order_by(Competition.deadline.asc()).all())
     return _render(request,
@@ -543,7 +553,7 @@ async def admin_dashboard(request: Request, db: Session = Depends(get_db)):
 
 @app.get("/admin/add", response_class=HTMLResponse)
 async def admin_add_page(request: Request, db: Session = Depends(get_db)):
-    if r := _admin_redirect(request):
+    if r := _privileged_redirect(request, db):
         return r
     return _render(request,
         "admin/form.html",
@@ -570,7 +580,7 @@ async def admin_add(
     files: List[UploadFile] = File(default=[]),
     db: Session = Depends(get_db),
 ):
-    if r := _admin_redirect(request):
+    if r := _privileged_redirect(request, db):
         return r
     _safe_path = Path(comp_image_path).name if comp_image_path else None
     image = await _save_image(comp_image) or _safe_path or None
@@ -591,7 +601,7 @@ async def admin_add(
 
 @app.get("/admin/edit/{comp_id}", response_class=HTMLResponse)
 async def admin_edit_page(request: Request, comp_id: int, db: Session = Depends(get_db)):
-    if r := _admin_redirect(request):
+    if r := _privileged_redirect(request, db):
         return r
     comp = db.query(Competition).filter(Competition.id == comp_id).first()
     if not comp:
@@ -618,7 +628,7 @@ async def admin_edit(
     files: List[UploadFile] = File(default=[]),
     db: Session = Depends(get_db),
 ):
-    if r := _admin_redirect(request):
+    if r := _privileged_redirect(request, db):
         return r
     comp = db.query(Competition).filter(Competition.id == comp_id).first()
     if not comp:
@@ -642,7 +652,7 @@ async def admin_edit(
 
 @app.post("/admin/delete/{comp_id}")
 async def admin_delete(request: Request, comp_id: int, db: Session = Depends(get_db)):
-    if r := _admin_redirect(request):
+    if r := _privileged_redirect(request, db):
         return r
     comp = db.query(Competition).filter(Competition.id == comp_id).first()
     if comp:
@@ -658,7 +668,7 @@ async def admin_delete(request: Request, comp_id: int, db: Session = Depends(get
 
 @app.post("/admin/delete-file/{comp_id}")
 async def delete_file(request: Request, comp_id: int, filename: str = Form(...), db: Session = Depends(get_db)):
-    if r := _admin_redirect(request):
+    if r := _privileged_redirect(request, db):
         return r
     comp = db.query(Competition).filter(Competition.id == comp_id).first()
     if comp:
@@ -718,11 +728,53 @@ async def api_parse_document(request: Request, document: UploadFile = File(...))
 # ── 회원 관리 ─────────────────────────────────────────────────────────────────
 
 @app.get("/admin/members", response_class=HTMLResponse)
-async def admin_members(request: Request, db: Session = Depends(get_db)):
-    if r := _admin_redirect(request):
+async def admin_members(request: Request, q: str = Query(default=""), db: Session = Depends(get_db)):
+    if r := _privileged_redirect(request, db):
         return r
-    members = db.query(Member).order_by(Member.created_at.asc()).all()
-    return _render(request, "admin/members.html", _ctx(request, db, members=members, now=datetime.now()))
+    query = db.query(Member).order_by(Member.created_at.asc())
+    if q.strip():
+        term = f"%{q.strip()}%"
+        query = query.filter(
+            or_(Member.activity_name.ilike(term), Member.real_name.ilike(term))
+        )
+    members = query.all()
+
+    # 초대코드 정보 조회 (삭제된 코드도 표시 위해 members의 invite_code_used 기준)
+    all_invite_codes = {c.code: c for c in db.query(InviteCode).all()}
+
+    # 그룹화
+    groups_dict = defaultdict(list)
+    for m in members:
+        groups_dict[m.invite_code_used or ""].append(m)
+
+    code_groups = []
+    for code_val in sorted(groups_dict.keys(), key=lambda x: (x == "", x)):
+        mlist = groups_dict[code_val]
+        code_obj = all_invite_codes.get(code_val) if code_val else None
+        if not code_val:
+            label = "초대 코드 없음"
+            note = ""
+            code_exists = False
+        elif code_obj:
+            label = code_obj.note or code_val
+            note = code_val
+            code_exists = True
+        else:
+            label = f"삭제된 코드"
+            note = code_val
+            code_exists = False
+        code_groups.append({
+            "code": code_val,
+            "label": label,
+            "note": note,
+            "exists": code_exists,
+            "count": len(mlist),
+            "members": mlist,
+        })
+
+    return _render(request, "admin/members.html", _ctx(request, db,
+        members=members, code_groups=code_groups, query=q, now=datetime.now()
+    ))
 
 
 @app.post("/admin/members/{member_id}/set-role")
@@ -738,7 +790,7 @@ async def admin_set_role(request: Request, member_id: int, role: str = Form(...)
 
 @app.post("/admin/members/{member_id}/delete")
 async def admin_delete_member(request: Request, member_id: int, db: Session = Depends(get_db)):
-    if r := _admin_redirect(request):
+    if r := _privileged_redirect(request, db):
         return r
     m = db.query(Member).filter(Member.id == member_id).first()
     if m:
@@ -754,7 +806,7 @@ async def admin_mute_member_comments(
     duration_minutes: Optional[str] = Form(None),
     db: Session = Depends(get_db),
 ):
-    if r := _admin_redirect(request):
+    if r := _privileged_redirect(request, db):
         return r
     member = db.query(Member).filter(Member.id == member_id).first()
     if member:
@@ -1161,7 +1213,7 @@ async def set_leader(request: Request, comp_id: int, team_id: int, member_id: in
 
 @app.get("/admin/competition/{comp_id}/members", response_class=HTMLResponse)
 async def admin_comp_members(request: Request, comp_id: int, db: Session = Depends(get_db)):
-    if r := _admin_redirect(request):
+    if r := _privileged_redirect(request, db):
         return r
     comp = db.query(Competition).filter(Competition.id == comp_id).first()
     if not comp:
@@ -1194,7 +1246,7 @@ async def admin_set_award(
     db: Session = Depends(get_db),
 ):
     """팀원 한 명의 수상 정보 저장"""
-    if r := _admin_redirect(request):
+    if r := _privileged_redirect(request, db):
         return r
     tm = db.query(TeamMember).filter(TeamMember.id == tm_id).first()
     if not tm:

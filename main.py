@@ -43,7 +43,9 @@ from models import (
 
 app = FastAPI(title="공모전 보드")
 
-UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", "uploads"))
+# 빈 문자열 방어 처리: UPLOAD_DIR 환경변수가 없거나 빈 값이면 기본값 사용
+_upload_raw = (os.getenv("UPLOAD_DIR") or "").strip()
+UPLOAD_DIR = Path(_upload_raw) if _upload_raw else BASE_DIR / "uploads"
 if not UPLOAD_DIR.is_absolute():
     UPLOAD_DIR = BASE_DIR / UPLOAD_DIR
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)

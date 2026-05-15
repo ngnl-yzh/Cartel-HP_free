@@ -35,13 +35,18 @@ def init_db():
         tables = inspector.get_table_names()
 
         if "competitions" in tables:
-            _add_col(conn, inspector, "competitions", "image",        "image VARCHAR(500)")
-            _add_col(conn, inspector, "competitions", "max_members",  "max_members INTEGER")
-            _add_col(conn, inspector, "competitions", "submitted",    "submitted BOOLEAN DEFAULT FALSE")
-            _add_col(conn, inspector, "competitions", "submitted_at", "submitted_at TIMESTAMP")
-            _add_col(conn, inspector, "competitions", "review_1_date", "review_1_date DATE")
-            _add_col(conn, inspector, "competitions", "review_2_date", "review_2_date DATE")
-            _add_col(conn, inspector, "competitions", "award_date",    "award_date DATE")
+            _add_col(conn, inspector, "competitions", "image",             "image VARCHAR(500)")
+            _add_col(conn, inspector, "competitions", "max_members",       "max_members INTEGER")
+            _add_col(conn, inspector, "competitions", "submitted",         "submitted BOOLEAN DEFAULT FALSE")
+            _add_col(conn, inspector, "competitions", "submitted_at",      "submitted_at TIMESTAMP")
+            _add_col(conn, inspector, "competitions", "start_date",        "start_date DATE")
+            _add_col(conn, inspector, "competitions", "announcement_date", "announcement_date DATE")
+            _add_col(conn, inspector, "competitions", "review_1_date",     "review_1_date DATE")
+            _add_col(conn, inspector, "competitions", "review_2_date",     "review_2_date DATE")
+            _add_col(conn, inspector, "competitions", "award_date",        "award_date DATE")
+            _add_col(conn, inspector, "competitions", "review_dates",      "review_dates TEXT DEFAULT '[]'")
+            _add_col(conn, inspector, "competitions", "is_featured",       "is_featured BOOLEAN DEFAULT FALSE")
+            _add_col(conn, inspector, "competitions", "view_count",        "view_count INTEGER DEFAULT 0")
 
         if "members" in tables:
             _add_col(conn, inspector, "members", "comment_muted_until", "comment_muted_until TIMESTAMP")

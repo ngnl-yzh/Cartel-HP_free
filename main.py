@@ -202,6 +202,14 @@ def _record_fail(counter: dict, ip: str) -> None:
 
 @app.on_event("startup")
 def startup():
+    # 보안 기본값 경고
+    import logging
+    _log = logging.getLogger("uvicorn.error")
+    if os.getenv("SECRET_KEY", "change-me-in-production") == "change-me-in-production":
+        _log.warning("[보안] SECRET_KEY가 기본값입니다. 환경변수로 강력한 랜덤 키를 설정하세요.")
+    if os.getenv("ADMIN_PASSWORD", "admin1234") == "admin1234":
+        _log.warning("[보안] ADMIN_PASSWORD가 기본값(admin1234)입니다. 즉시 변경하세요.")
+
     init_db()
     # review_dates 컬럼 마이그레이션: review_1_date/review_2_date 데이터를 review_dates JSON으로 이전
     try:
@@ -249,11 +257,33 @@ def _next_upcoming_event(comp) -> Optional[tuple]:
     """7일 이내 또는 당일인 다음 이벤트. 없으면 None.
     반환: (stage_key, label, event_date, days_left)"""
     today = date.today()
-    for stage_key, attr, label in COMP_STAGES:
+    candidates = []
+
+    # 고정 단계 (announcement, award)
+    for stage_key, attr, label in [
+        ("announcement", "announcement_date", "결과 발표"),
+        ("award",        "award_date",        "시상식"),
+    ]:
         d = getattr(comp, attr, None)
         if d and 0 <= (d - today).days <= 7:
-            return (stage_key, label, d, (d - today).days)
-    return None
+            candidates.append((stage_key, label, d, (d - today).days))
+
+    # 동적 심사 일정 (review_dates JSON)
+    try:
+        for i, rd in enumerate(json.loads(comp.review_dates or "[]")):
+            rd_label = rd.get("label") or f"{i + 1}차 심사"
+            rd_str   = rd.get("date", "")
+            if not rd_str:
+                continue
+            d = date.fromisoformat(rd_str)
+            if 0 <= (d - today).days <= 7:
+                candidates.append((f"review_{i}", rd_label, d, (d - today).days))
+    except Exception:
+        pass
+
+    if not candidates:
+        return None
+    return min(candidates, key=lambda x: x[3])
 
 
 def _annotate(competitions: list) -> list:
@@ -351,6 +381,18 @@ MAX_IMAGE_SIZE = int(os.getenv("MAX_IMAGE_SIZE", str(10 * 1024 * 1024)))   # 10 
 MAX_FILE_SIZE  = int(os.getenv("MAX_FILE_SIZE",  str(50 * 1024 * 1024)))   # 50 MB
 
 
+def _is_valid_image_bytes(content: bytes) -> bool:
+    """매직 바이트로 실제 이미지 파일 여부 확인 (확장자 스푸핑 방지)"""
+    if len(content) < 12:
+        return False
+    return (
+        content[:3] == b"\xff\xd8\xff"                          # JPEG
+        or content[:8] == b"\x89PNG\r\n\x1a\n"                 # PNG
+        or content[:6] in (b"GIF87a", b"GIF89a")               # GIF
+        or (content[:4] == b"RIFF" and content[8:12] == b"WEBP")  # WebP
+    )
+
+
 async def _save_image(upload: Optional[UploadFile]) -> Optional[str]:
     if not upload or not upload.filename:
         return None
@@ -362,6 +404,8 @@ async def _save_image(upload: Optional[UploadFile]) -> Optional[str]:
         return None
     if len(content) > MAX_IMAGE_SIZE:
         raise HTTPException(status_code=413, detail=f"이미지 파일 크기는 {MAX_IMAGE_SIZE // 1024 // 1024}MB를 초과할 수 없습니다.")
+    if not _is_valid_image_bytes(content):
+        raise HTTPException(status_code=400, detail="유효하지 않은 이미지 파일입니다.")
     name = f"{uuid.uuid4().hex}{ext}"
     (UPLOAD_DIR / name).write_bytes(content)
     return name
@@ -634,6 +678,7 @@ async def detail(request: Request, comp_id: int, db: Session = Depends(get_db)):
         _ctx(request, db,
              comp=comp, files=_from_json(comp.files),
              tags_list=_from_json(comp.tags),
+             review_dates_list=_from_json(comp.review_dates or "[]"),
              teams=teams, roles=ROLES,
              submission_window=submission_window, today=today,
              user_scrapped=user_scrapped,
@@ -1131,12 +1176,22 @@ async def api_parse_image(request: Request, image: UploadFile = File(...), db: S
         raise HTTPException(status_code=403)
     try:
         data = await image.read()
+        if not data:
+            raise HTTPException(status_code=400, detail="빈 파일입니다.")
         ext = Path(image.filename).suffix.lower() if image.filename else ".jpg"
+        if ext not in ALLOWED_IMAGE_EXT:
+            raise HTTPException(status_code=400, detail="이미지 파일만 업로드 가능합니다.")
+        if not _is_valid_image_bytes(data):
+            raise HTTPException(status_code=400, detail="유효하지 않은 이미지 파일입니다.")
+        if len(data) > MAX_IMAGE_SIZE:
+            raise HTTPException(status_code=413, detail=f"이미지 크기가 {MAX_IMAGE_SIZE // 1024 // 1024}MB를 초과했습니다.")
         stored_name = f"{uuid.uuid4().hex}{ext}"
         (UPLOAD_DIR / stored_name).write_bytes(data)
         result = await parse_image_file(data, image.content_type)
         result["_image_path"] = stored_name
         return JSONResponse(result)
+    except HTTPException:
+        raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
@@ -1218,7 +1273,8 @@ async def admin_set_role(request: Request, member_id: int, role: str = Form(...)
 
 @app.post("/admin/members/{member_id}/delete")
 async def admin_delete_member(request: Request, member_id: int, db: Session = Depends(get_db)):
-    if r := _privileged_redirect(request, db):
+    # 회원 삭제는 최고 관리자만 가능 (sub_admin 제외)
+    if r := _admin_redirect(request):
         return r
     m = db.query(Member).filter(Member.id == member_id).first()
     if m:
@@ -1353,7 +1409,8 @@ async def register(
     def err(msg):
         return _render(request, "register.html", _ctx(request, db, error=msg), status_code=400)
 
-    code_obj = db.query(InviteCode).filter(InviteCode.code == invite_code.strip()).first()
+    # with_for_update(): 동시 가입 시 같은 코드 중복 사용 방지 (row-level lock)
+    code_obj = db.query(InviteCode).filter(InviteCode.code == invite_code.strip()).with_for_update().first()
     if not code_obj:
         return err("초대 코드가 올바르지 않습니다.")
     if not code_obj.is_active:
@@ -1978,8 +2035,11 @@ async def team_join(
     team = db.query(Team).filter(Team.id == team_id, Team.competition_id == comp_id).first()
     if not team:
         raise HTTPException(status_code=404)
-    members = db.query(TeamMember).filter(TeamMember.team_id == team_id).all()
-    if comp.max_members and len(members) >= comp.max_members:
+    # 인원 제한 확인: COUNT 쿼리로 직접 확인 (목록 로드 불필요)
+    current_count = db.query(func.count(TeamMember.id)).filter(
+        TeamMember.team_id == team_id
+    ).scalar() or 0
+    if comp.max_members and current_count >= comp.max_members:
         raise HTTPException(status_code=400, detail="팀 인원이 가득 찼습니다.")
     if db.query(TeamMember).filter(TeamMember.team_id == team_id, TeamMember.nickname == nickname).first():
         raise HTTPException(status_code=400, detail="이미 같은 닉네임으로 참여 중입니다.")
@@ -1991,7 +2051,7 @@ async def team_join(
         password_hash=hash_password(password),
         role=role if role in ROLES else "기타",
         memo=memo,
-        is_leader=len(members) == 0,
+        is_leader=current_count == 0,
         member_id=cm.id if cm else None,
     ))
     db.commit()

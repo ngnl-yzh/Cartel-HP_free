@@ -612,11 +612,12 @@ async def crawl_all() -> dict:
 
         items.extend(site_items)
 
-    # 중복 제거 (같은 제목 + 같은 사이트)
+    # 중복 제거: URL 우선, URL 없으면 (사이트+제목)
     seen  = set()
     dedup = []
     for item in items:
-        key = (item.get("source", ""), item.get("title", ""))
+        link = item.get("link", "").strip().rstrip("/")
+        key  = link if link else (item.get("source", ""), item.get("title", ""))
         if key not in seen:
             seen.add(key)
             dedup.append(item)

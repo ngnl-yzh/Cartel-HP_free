@@ -90,10 +90,24 @@
               {{ comp.deadline.strftime('%Y년 %m월 %d일') }}
             </td>
           </tr>
+          {% for rd in review_dates_list %}
+          {% if rd.date %}
+          <tr>
+            <th>{{ rd.label or '심사' }}</th>
+            <td>{{ rd.date }}</td>
+          </tr>
+          {% endif %}
+          {% endfor %}
           {% if comp.announcement_date %}
           <tr>
             <th>발표일</th>
             <td>{{ comp.announcement_date.strftime('%Y년 %m월 %d일') }}</td>
+          </tr>
+          {% endif %}
+          {% if comp.award_date %}
+          <tr>
+            <th>시상일</th>
+            <td>{{ comp.award_date.strftime('%Y년 %m월 %d일') }}</td>
           </tr>
           {% endif %}
           {% if comp.prize %}

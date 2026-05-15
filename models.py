@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, Column, Date, DateTime, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Column, Date, DateTime, Integer, String, Text, UniqueConstraint, and_, or_
 from sqlalchemy.orm import declarative_base
 
 Base = declarative_base()
@@ -83,6 +83,9 @@ class Member(Base):
     profile_image = Column(String(500), nullable=True)
     role = Column(String(20), default="member")   # member / sub_admin
     invite_code_used = Column(String(100), nullable=True)
+    intro_text = Column(Text, default="")         # 긴 자기소개
+    skills     = Column(Text, default="[]")       # JSON: [{"skill":"Python","category":"개발"}]
+    links      = Column(Text, default="[]")       # JSON: [{"label":"GitHub","url":"https://..."}]
     comment_muted_until = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
 
@@ -219,3 +222,57 @@ class CompetitionScrap(Base):
     competition_id = Column(Integer, nullable=False, index=True)
     member_id      = Column(Integer, nullable=False, index=True)
     scrapped_at    = Column(DateTime, default=datetime.now)
+
+
+class Follow(Base):
+    """팔로우 관계 (승인 필요)"""
+    __tablename__ = "follows"
+    __table_args__ = (UniqueConstraint("follower_id", "following_id", name="uq_follow"),)
+
+    id           = Column(Integer, primary_key=True, index=True)
+    follower_id  = Column(Integer, nullable=False, index=True)   # 팔로우 신청자
+    following_id = Column(Integer, nullable=False, index=True)   # 대상
+    status       = Column(String(20), default="pending")         # pending / approved
+    created_at   = Column(DateTime, default=datetime.now)
+    approved_at  = Column(DateTime, nullable=True)
+
+
+class DirectMessage(Base):
+    """1:1 DM"""
+    __tablename__ = "direct_messages"
+
+    id          = Column(Integer, primary_key=True, index=True)
+    thread_key  = Column(String(50), nullable=False, index=True)  # f"{min(a,b)}:{max(a,b)}"
+    sender_id   = Column(Integer, nullable=False, index=True)
+    receiver_id = Column(Integer, nullable=False, index=True)
+    content     = Column(Text, nullable=False)
+    is_read     = Column(Boolean, default=False)
+    created_at  = Column(DateTime, default=datetime.now)
+
+
+class Notification(Base):
+    """알림"""
+    __tablename__ = "notifications"
+
+    id         = Column(Integer, primary_key=True, index=True)
+    member_id  = Column(Integer, nullable=False, index=True)  # 수신자
+    type       = Column(String(50))   # follow_request / follow_approved / team_recruit
+    actor_id   = Column(Integer, nullable=True)
+    ref_id     = Column(Integer, nullable=True)
+    message    = Column(String(300))
+    is_read    = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.now)
+
+
+class ExternalAchievement(Base):
+    """자기 기재 외부 이력 (증빙 없음)"""
+    __tablename__ = "external_achievements"
+
+    id             = Column(Integer, primary_key=True, index=True)
+    member_id      = Column(Integer, nullable=False, index=True)
+    title          = Column(String(200), nullable=False)
+    organizer      = Column(String(100), default="")
+    result         = Column(String(100), default="")   # 수상/참가/장려상 등
+    achieved_year  = Column(Integer, nullable=True)
+    note           = Column(Text, default="")
+    created_at     = Column(DateTime, default=datetime.now)

@@ -18,7 +18,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from dotenv import load_dotenv
-from sqlalchemy import case, func, or_
+from sqlalchemy import and_, case, func, or_
 from sqlalchemy import update as _sa_update
 from sqlalchemy.orm import Session
 
@@ -35,6 +35,7 @@ from models import (
     ChatMessage, ChatRoom, ChatRoomMember,
     Comment, CommentLike,
     Competition, CompetitionScrap, InviteCode, InviteCodeUseLog, Member,
+    DirectMessage, ExternalAchievement, Follow, Notification,
     Post, PostLike,
     Team, TeamMember, TeamResult,
 )
@@ -291,6 +292,18 @@ def _ctx(request: Request, db: Session, **extra) -> dict:
         "boards": BOARDS,
         "now": datetime.now(),
     }
+    # 알림 / DM 미읽음 뱃지
+    notif_count = 0
+    dm_unread   = 0
+    if cm:
+        notif_count = db.query(Notification).filter(
+            Notification.member_id == cm.id, Notification.is_read.is_(False)
+        ).count()
+        dm_unread = db.query(DirectMessage).filter(
+            DirectMessage.receiver_id == cm.id, DirectMessage.is_read.is_(False)
+        ).count()
+    base["notif_count"] = notif_count
+    base["dm_unread"]   = dm_unread
     base.update(extra)
     return base
 
@@ -652,6 +665,12 @@ async def record_stage_result(
             )
             if matched:
                 tm.member_id = matched.id
+
+    # 수상 단계 통과 시 팀원 award_rank 자동 기록
+    if stage == "award" and passed_bool is True:
+        for tm in team_members:
+            if not tm.award_rank:
+                tm.award_rank = "수상"   # 기본값; 관리자가 세부 수정 가능
 
     db.commit()
     return RedirectResponse(url=f"/my#team-{team_id}", status_code=303)
@@ -1293,12 +1312,46 @@ async def profile_view(request: Request, activity_name: str, db: Session = Depen
         sr.stage_label = stage_label_map.get(sr.stage, sr.stage)
         stage_results_map.setdefault(sr.team_id, []).append(sr)
 
+    # 팔로우 상태
+    follow_status = None   # None / "pending" / "approved" / "self"
+    follow_obj = None
+    if cm:
+        if cm.id == target.id:
+            follow_status = "self"
+        else:
+            fq = db.query(Follow).filter(
+                Follow.follower_id == cm.id, Follow.following_id == target.id
+            ).first()
+            if fq:
+                follow_status = fq.status
+                follow_obj = fq
+
+    # 팔로워/팔로잉 수
+    follower_count  = db.query(Follow).filter(Follow.following_id == target.id, Follow.status == "approved").count()
+    following_count = db.query(Follow).filter(Follow.follower_id == target.id, Follow.status == "approved").count()
+
+    # 외부 이력
+    external_achievements = (
+        db.query(ExternalAchievement)
+        .filter(ExternalAchievement.member_id == target.id)
+        .order_by(ExternalAchievement.achieved_year.desc().nullslast(), ExternalAchievement.created_at.desc())
+        .all()
+    )
+
+    # skills/links 파싱
+    target_skills = _from_json(target.skills)
+    target_links  = _from_json(target.links)
+
     return _render(request,
         "profile.html",
         _ctx(request, db, target=target, is_own=bool(cm and cm.id == target.id),
              team_rows=team_rows, comps_map=comps_map,
              stats={"total": total, "submitted": submitted, "awarded": awarded},
-             stage_results_map=stage_results_map),
+             stage_results_map=stage_results_map,
+             follow_status=follow_status, follow_obj=follow_obj,
+             follower_count=follower_count, following_count=following_count,
+             external_achievements=external_achievements,
+             target_skills=target_skills, target_links=target_links),
     )
 
 
@@ -1307,7 +1360,16 @@ async def profile_edit_page(request: Request, db: Session = Depends(get_db)):
     cm = _current_member(request, db)
     if not cm:
         return RedirectResponse(url="/member/login", status_code=303)
-    return _render(request, "profile_edit.html", _ctx(request, db, member=cm, error=None))
+    external_achievements = (
+        db.query(ExternalAchievement)
+        .filter(ExternalAchievement.member_id == cm.id)
+        .order_by(ExternalAchievement.created_at.desc())
+        .all()
+    )
+    return _render(request, "profile_edit.html", _ctx(request, db,
+        member=cm, error=None,
+        external_achievements=external_achievements,
+    ))
 
 
 @app.post("/profile/edit/me")
@@ -1316,6 +1378,9 @@ async def profile_edit(
     bio: str = Form(""), real_name: str = Form(...), phone: str = Form(""),
     new_password: str = Form(""), current_password: str = Form(...),
     profile_image: Optional[UploadFile] = File(None),
+    intro_text: str = Form(""),
+    skills_json: str = Form("[]"),
+    links_json: str = Form("[]"),
     db: Session = Depends(get_db),
 ):
     cm = _current_member(request, db)
@@ -1325,6 +1390,20 @@ async def profile_edit(
         return _render(request, "profile_edit.html", _ctx(request, db, member=cm, error="현재 비밀번호가 올바르지 않습니다."), status_code=400)
 
     cm.bio = bio.strip(); cm.real_name = real_name.strip(); cm.phone = phone.strip()
+    cm.intro_text = intro_text.strip()
+    # skills/links: 클라이언트에서 JSON 문자열로 전송
+    try:
+        skills_list = json.loads(skills_json)
+        if isinstance(skills_list, list):
+            cm.skills = json.dumps(skills_list, ensure_ascii=False)
+    except Exception:
+        pass
+    try:
+        links_list = json.loads(links_json)
+        if isinstance(links_list, list):
+            cm.links = json.dumps(links_list, ensure_ascii=False)
+    except Exception:
+        pass
     new_img = await _save_image(profile_image)
     if new_img:
         cm.profile_image = new_img
@@ -1334,6 +1413,296 @@ async def profile_edit(
         cm.password_hash = hash_password(new_password)
     db.commit()
     return RedirectResponse(url=f"/profile/{cm.activity_name}", status_code=303)
+
+
+# ════════════════════════════════════════════════════════════════════════════
+#  팔로우 시스템
+# ════════════════════════════════════════════════════════════════════════════
+
+def _dm_thread_key(a: int, b: int) -> str:
+    return f"{min(a,b)}:{max(a,b)}"
+
+
+def _create_notification(db: Session, member_id: int, type_: str,
+                          actor_id: Optional[int], ref_id: Optional[int], message: str):
+    db.add(Notification(
+        member_id=member_id, type=type_,
+        actor_id=actor_id, ref_id=ref_id, message=message,
+    ))
+
+
+@app.post("/follow/{target_id}")
+async def send_follow_request(request: Request, target_id: int, db: Session = Depends(get_db)):
+    cm = _current_member(request, db)
+    if not cm:
+        raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
+    if cm.id == target_id:
+        raise HTTPException(status_code=400, detail="자신을 팔로우할 수 없습니다.")
+    target = db.query(Member).filter(Member.id == target_id).first()
+    if not target:
+        raise HTTPException(status_code=404)
+    existing = db.query(Follow).filter(
+        Follow.follower_id == cm.id, Follow.following_id == target_id
+    ).first()
+    if existing:
+        # 이미 요청이 있으면 취소(삭제)
+        db.delete(existing)
+        db.commit()
+        return RedirectResponse(url=f"/profile/{target.activity_name}", status_code=303)
+    follow = Follow(follower_id=cm.id, following_id=target_id)
+    db.add(follow)
+    db.flush()
+    _create_notification(db, target_id, "follow_request", cm.id, follow.id,
+                          f"{cm.activity_name}님이 팔로우를 요청했습니다.")
+    db.commit()
+    return RedirectResponse(url=f"/profile/{target.activity_name}", status_code=303)
+
+
+@app.post("/follow/{follow_id}/approve")
+async def approve_follow(request: Request, follow_id: int, db: Session = Depends(get_db)):
+    cm = _current_member(request, db)
+    if not cm:
+        raise HTTPException(status_code=401)
+    follow = db.query(Follow).filter(Follow.id == follow_id, Follow.following_id == cm.id).first()
+    if not follow:
+        raise HTTPException(status_code=404)
+    follow.status = "approved"
+    follow.approved_at = datetime.now()
+    _create_notification(db, follow.follower_id, "follow_approved", cm.id, follow.id,
+                          f"{cm.activity_name}님이 팔로우 요청을 수락했습니다.")
+    db.commit()
+    return RedirectResponse(url="/my/follows", status_code=303)
+
+
+@app.post("/follow/{follow_id}/reject")
+async def reject_follow(request: Request, follow_id: int, db: Session = Depends(get_db)):
+    cm = _current_member(request, db)
+    if not cm:
+        raise HTTPException(status_code=401)
+    follow = db.query(Follow).filter(
+        Follow.id == follow_id,
+        or_(Follow.following_id == cm.id, Follow.follower_id == cm.id)
+    ).first()
+    if follow:
+        db.delete(follow)
+        db.commit()
+    return RedirectResponse(url="/my/follows", status_code=303)
+
+
+@app.get("/my/follows", response_class=HTMLResponse)
+async def my_follows(request: Request, db: Session = Depends(get_db)):
+    cm = _current_member(request, db)
+    if not cm:
+        return RedirectResponse(url="/member/login", status_code=303)
+
+    # 나에게 온 팔로우 요청 (pending)
+    pending_follows = db.query(Follow).filter(
+        Follow.following_id == cm.id, Follow.status == "pending"
+    ).order_by(Follow.created_at.desc()).all()
+    pf_actor_ids = [f.follower_id for f in pending_follows]
+    pf_members = _member_map(db, pf_actor_ids)
+    for f in pending_follows:
+        f.actor = pf_members.get(f.follower_id)
+
+    # 내가 팔로우하는 사람 (approved)
+    following = db.query(Follow).filter(
+        Follow.follower_id == cm.id, Follow.status == "approved"
+    ).all()
+    following_ids = [f.following_id for f in following]
+    following_members = _member_map(db, following_ids)
+    for f in following:
+        f.target = following_members.get(f.following_id)
+
+    # 나를 팔로우하는 사람 (approved)
+    followers = db.query(Follow).filter(
+        Follow.following_id == cm.id, Follow.status == "approved"
+    ).all()
+    follower_ids = [f.follower_id for f in followers]
+    follower_members = _member_map(db, follower_ids)
+    for f in followers:
+        f.actor = follower_members.get(f.follower_id)
+
+    return _render(request, "follows.html", _ctx(request, db,
+        pending_follows=pending_follows,
+        following=following,
+        followers=followers,
+    ))
+
+
+# ════════════════════════════════════════════════════════════════════════════
+#  DM (1:1 메시지)
+# ════════════════════════════════════════════════════════════════════════════
+
+def _can_dm(db: Session, a_id: int, b_id: int) -> bool:
+    """a→b 또는 b→a 팔로우가 approved 상태이면 DM 가능"""
+    return bool(db.query(Follow).filter(
+        or_(
+            and_(Follow.follower_id == a_id, Follow.following_id == b_id),
+            and_(Follow.follower_id == b_id, Follow.following_id == a_id),
+        ),
+        Follow.status == "approved",
+    ).first())
+
+
+@app.get("/dm", response_class=HTMLResponse)
+async def dm_list(request: Request, db: Session = Depends(get_db)):
+    cm = _current_member(request, db)
+    if not cm:
+        return RedirectResponse(url="/member/login", status_code=303)
+
+    # 최신 메시지 기준으로 대화 목록
+    sent_keys = [r[0] for r in db.query(DirectMessage.thread_key).filter(
+        DirectMessage.sender_id == cm.id).distinct().all()]
+    recv_keys = [r[0] for r in db.query(DirectMessage.thread_key).filter(
+        DirectMessage.receiver_id == cm.id).distinct().all()]
+    all_keys = list(set(sent_keys + recv_keys))
+
+    threads = []
+    for key in all_keys:
+        last_msg = db.query(DirectMessage).filter(
+            DirectMessage.thread_key == key
+        ).order_by(DirectMessage.created_at.desc()).first()
+        if not last_msg:
+            continue
+        partner_id = last_msg.receiver_id if last_msg.sender_id == cm.id else last_msg.sender_id
+        partner = db.query(Member).filter(Member.id == partner_id).first()
+        unread = db.query(DirectMessage).filter(
+            DirectMessage.thread_key == key,
+            DirectMessage.receiver_id == cm.id,
+            DirectMessage.is_read.is_(False),
+        ).count()
+        threads.append({"key": key, "partner": partner, "last_msg": last_msg, "unread": unread})
+
+    threads.sort(key=lambda t: t["last_msg"].created_at, reverse=True)
+    return _render(request, "dm/list.html", _ctx(request, db, threads=threads))
+
+
+@app.get("/dm/{partner_id}", response_class=HTMLResponse)
+async def dm_thread(request: Request, partner_id: int, db: Session = Depends(get_db)):
+    cm = _current_member(request, db)
+    if not cm:
+        return RedirectResponse(url="/member/login", status_code=303)
+    partner = db.query(Member).filter(Member.id == partner_id).first()
+    if not partner:
+        raise HTTPException(status_code=404)
+    if not _can_dm(db, cm.id, partner_id):
+        raise HTTPException(status_code=403, detail="팔로우 관계인 회원과만 DM 가능합니다.")
+
+    key = _dm_thread_key(cm.id, partner_id)
+    messages = db.query(DirectMessage).filter(
+        DirectMessage.thread_key == key
+    ).order_by(DirectMessage.created_at.asc()).all()
+
+    # 읽음 처리
+    db.query(DirectMessage).filter(
+        DirectMessage.thread_key == key,
+        DirectMessage.receiver_id == cm.id,
+        DirectMessage.is_read.is_(False),
+    ).update({"is_read": True})
+    db.commit()
+
+    return _render(request, "dm/thread.html", _ctx(request, db,
+        partner=partner, messages=messages, thread_key=key,
+    ))
+
+
+@app.post("/dm/{partner_id}/send")
+async def dm_send(
+    request: Request,
+    partner_id: int,
+    content: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    cm = _current_member(request, db)
+    if not cm:
+        raise HTTPException(status_code=401)
+    if not _can_dm(db, cm.id, partner_id):
+        raise HTTPException(status_code=403)
+    content = content.strip()
+    if not content:
+        raise HTTPException(status_code=400, detail="메시지를 입력하세요.")
+    if len(content) > 2000:
+        raise HTTPException(status_code=400, detail="메시지는 2,000자 이하로 입력하세요.")
+    key = _dm_thread_key(cm.id, partner_id)
+    db.add(DirectMessage(
+        thread_key=key, sender_id=cm.id, receiver_id=partner_id, content=content,
+    ))
+    db.commit()
+    return RedirectResponse(url=f"/dm/{partner_id}", status_code=303)
+
+
+# ════════════════════════════════════════════════════════════════════════════
+#  알림
+# ════════════════════════════════════════════════════════════════════════════
+
+@app.post("/notifications/{notif_id}/read")
+async def mark_notification_read(request: Request, notif_id: int, db: Session = Depends(get_db)):
+    cm = _current_member(request, db)
+    if not cm:
+        raise HTTPException(status_code=401)
+    notif = db.query(Notification).filter(
+        Notification.id == notif_id, Notification.member_id == cm.id
+    ).first()
+    if notif:
+        notif.is_read = True
+        db.commit()
+    return RedirectResponse(url="/my/follows", status_code=303)
+
+
+@app.post("/notifications/read-all")
+async def mark_all_read(request: Request, db: Session = Depends(get_db)):
+    cm = _current_member(request, db)
+    if not cm:
+        raise HTTPException(status_code=401)
+    db.query(Notification).filter(
+        Notification.member_id == cm.id, Notification.is_read.is_(False)
+    ).update({"is_read": True})
+    db.commit()
+    return RedirectResponse(url=request.headers.get("referer", "/"), status_code=303)
+
+
+# ════════════════════════════════════════════════════════════════════════════
+#  프로필 확장 — 외부 이력
+# ════════════════════════════════════════════════════════════════════════════
+
+@app.post("/profile/external/add")
+async def add_external_achievement(
+    request: Request,
+    title: str = Form(...),
+    organizer: str = Form(""),
+    result: str = Form(""),
+    achieved_year: Optional[str] = Form(None),
+    note: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    cm = _current_member(request, db)
+    if not cm:
+        raise HTTPException(status_code=401)
+    if not title.strip():
+        raise HTTPException(status_code=400, detail="이력 제목을 입력하세요.")
+    year = _optional_int(achieved_year, "연도")
+    db.add(ExternalAchievement(
+        member_id=cm.id, title=title.strip(), organizer=organizer.strip(),
+        result=result.strip(), achieved_year=year, note=note.strip(),
+    ))
+    db.commit()
+    return RedirectResponse(url="/profile/edit/me#external", status_code=303)
+
+
+@app.post("/profile/external/{ach_id}/delete")
+async def delete_external_achievement(
+    request: Request, ach_id: int, db: Session = Depends(get_db),
+):
+    cm = _current_member(request, db)
+    if not cm:
+        raise HTTPException(status_code=401)
+    ach = db.query(ExternalAchievement).filter(
+        ExternalAchievement.id == ach_id, ExternalAchievement.member_id == cm.id
+    ).first()
+    if ach:
+        db.delete(ach)
+        db.commit()
+    return RedirectResponse(url="/profile/edit/me#external", status_code=303)
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -1370,10 +1739,9 @@ async def create_team(
             requirements=(team_requirements or "").strip(),
         )
         db.add(team)
-        db.commit()
-        db.refresh(team)
+        db.flush()  # team.id 확보
         cm = _current_member(request, db)
-        db.add(TeamMember(
+        leader = TeamMember(
             team_id=team.id,
             competition_id=comp_id,
             nickname=nickname.strip(),
@@ -1382,7 +1750,20 @@ async def create_team(
             memo=(memo or "").strip(),
             is_leader=True,
             member_id=cm.id if cm else None,
-        ))
+        )
+        db.add(leader)
+        db.flush()  # team.id, leader.id 확보
+        # 팔로워 알림
+        creator = cm
+        if creator:
+            follower_rows = db.query(Follow).filter(
+                Follow.following_id == creator.id, Follow.status == "approved"
+            ).all()
+            for fr in follower_rows:
+                _create_notification(
+                    db, fr.follower_id, "team_recruit", creator.id, team.id,
+                    f"{creator.activity_name}님이 '{comp.title}' 팀 '{team_name}'을 모집합니다.",
+                )
         db.commit()
     except Exception as exc:
         db.rollback()

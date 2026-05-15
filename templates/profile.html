@@ -29,6 +29,17 @@
 
         <p class="profile-since">가입일: {{ target.created_at.strftime('%Y년 %m월 %d일') }}</p>
 
+        <div class="follow-counts">
+          <a href="/my/follows" class="follow-count-item">
+            <span class="follow-count-num">{{ follower_count }}</span>
+            <span class="follow-count-label">팔로워</span>
+          </a>
+          <a href="/my/follows" class="follow-count-item">
+            <span class="follow-count-num">{{ following_count }}</span>
+            <span class="follow-count-label">팔로잉</span>
+          </a>
+        </div>
+
         {# 관리자/중간관리자에게만 개인정보 공개 #}
         {% if is_privileged %}
         <div class="profile-private-info">
@@ -78,9 +89,61 @@
               {% endif %}
             </form>
           {% endif %}
+          {% if not is_own and current_member %}
+            {% if follow_status == 'approved' %}
+              <form method="post" action="/follow/{{ follow_obj.id }}/reject" style="display:inline">
+                <button type="submit" class="btn btn-outline">팔로우 중 ✓</button>
+              </form>
+            {% elif follow_status == 'pending' %}
+              <form method="post" action="/follow/{{ target.id }}" style="display:inline">
+                <button type="submit" class="btn btn-ghost">요청 취소</button>
+              </form>
+            {% else %}
+              <form method="post" action="/follow/{{ target.id }}" style="display:inline">
+                <button type="submit" class="btn btn-primary">+ 팔로우</button>
+              </form>
+            {% endif %}
+            {% if follow_status == 'approved' %}
+              <a href="/dm/{{ target.id }}" class="btn btn-outline">💬 DM</a>
+            {% endif %}
+          {% endif %}
         </div>
       </div>
     </div>
+
+    {# ── 긴 소개 ──────────────────────────────────────────────────── #}
+    {% if target.intro_text %}
+    <section class="profile-intro-section">
+      <h2 class="section-title">소개</h2>
+      <div class="profile-intro-text markdown-body" data-raw="{{ target.intro_text | e }}"></div>
+    </section>
+    {% endif %}
+
+    {# ── 기술 스택 ────────────────────────────────────────────────── #}
+    {% if target_skills %}
+    <section class="profile-skills-section">
+      <h2 class="section-title">기술 스택 / 역량</h2>
+      <div class="skill-tags">
+        {% for s in target_skills %}
+          <span class="skill-tag {% if s.category %}cat-{{ s.category | lower | replace(' ','') }}{% endif %}">{{ s.skill }}</span>
+        {% endfor %}
+      </div>
+    </section>
+    {% endif %}
+
+    {# ── 포트폴리오 링크 ──────────────────────────────────────────── #}
+    {% if target_links %}
+    <section class="profile-links-section">
+      <h2 class="section-title">포트폴리오 / 링크</h2>
+      <div class="portfolio-links">
+        {% for l in target_links %}
+          <a href="{{ l.url }}" target="_blank" rel="noopener" class="portfolio-link-item">
+            🔗 {{ l.label or l.url[:40] }}
+          </a>
+        {% endfor %}
+      </div>
+    </section>
+    {% endif %}
 
     {# ── 공모전 이력 ──────────────────────────────────────────────── #}
     {% if team_rows is defined %}
@@ -97,6 +160,7 @@
         <div class="history-card {% if tm.award_rank %}history-card--awarded{% endif %}">
           {% if tm.award_rank %}
           <div class="history-ribbon rank-{{ tm.award_rank }}">🏆 {{ tm.award_rank }}</div>
+          <div class="verified-badge">✅ 사이트 인증</div>
           {% endif %}
 
           <div class="history-card-body">
@@ -150,6 +214,32 @@
         {% endfor %}
       </div>
       {% endif %}
+    </section>
+    {% endif %}
+
+    {# ── 외부 이력 ────────────────────────────────────────────────── #}
+    {% if external_achievements %}
+    <section class="portfolio-history">
+      <h2 class="section-title">📋 외부 이력 <span class="unverified-badge">자기 기재</span></h2>
+      <div class="history-list">
+        {% for ach in external_achievements %}
+        <div class="history-card">
+          <div class="history-card-body">
+            <div class="history-card-top">
+              <div>
+                <span class="history-title">{{ ach.title }}</span>
+                {% if ach.organizer %}<span class="history-organizer">{{ ach.organizer }}</span>{% endif %}
+              </div>
+              <div class="history-badges">
+                {% if ach.result %}<span class="role-tag">{{ ach.result }}</span>{% endif %}
+                {% if ach.achieved_year %}<span class="muted" style="font-size:.8rem">{{ ach.achieved_year }}년</span>{% endif %}
+              </div>
+            </div>
+            {% if ach.note %}<p class="history-award-note">{{ ach.note }}</p>{% endif %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
     </section>
     {% endif %}
 

@@ -34,6 +34,12 @@
           {{ current_member.activity_name }}
         </a>
         <a href="/my" class="btn btn-ghost btn-sm">마이페이지</a>
+        <a href="/dm" class="btn btn-ghost btn-sm nav-dm-btn">
+          💬 DM{% if dm_unread %}<span class="nav-badge">{{ dm_unread }}</span>{% endif %}
+        </a>
+        <a href="/my/follows" class="btn btn-ghost btn-sm nav-notif-btn">
+          🔔{% if notif_count %}<span class="nav-badge">{{ notif_count }}</span>{% endif %}
+        </a>
         <a href="/member/logout" class="btn btn-ghost btn-sm">로그아웃</a>
         <a href="/admin/login" class="btn btn-ghost btn-sm nav-admin-link">관리자</a>
       {% else %}

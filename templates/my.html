@@ -172,6 +172,19 @@
       {% endif %}
     </section>
 
+    {# ── 알림 섹션 — 팔로우 + 팀 모집 #}
+    {% if notif_count %}
+    <section class="my-section">
+      <h2 class="my-section-title">🔔 읽지 않은 알림 <span class="muted" style="font-weight:400;font-size:.9rem">{{ notif_count }}개</span></h2>
+      <div style="text-align:right;margin-bottom:.5rem">
+        <form method="post" action="/notifications/read-all" style="display:inline">
+          <button type="submit" class="btn btn-ghost btn-sm">모두 읽음</button>
+        </form>
+      </div>
+      <a href="/my/follows" class="btn btn-outline btn-sm">팔로우 관리에서 확인</a>
+    </section>
+    {% endif %}
+
   </div>
 </main>
 {% endblock %}

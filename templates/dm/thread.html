@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}{{ partner.activity_name }}와 대화 · 공모전 보드{% endblock %}
+
+{% block content %}
+<main class="my-page">
+  <div class="container" style="max-width:700px">
+    <div class="dm-header">
+      <a href="/dm" class="back-link">← 메시지 목록</a>
+      <div class="dm-partner-info">
+        {% if partner.profile_image %}
+          <img src="/uploads/{{ partner.profile_image }}" class="mini-avatar" alt="">
+        {% else %}
+          <span class="mini-avatar-letter">{{ partner.activity_name[0] | upper }}</span>
+        {% endif %}
+        <a href="/profile/{{ partner.activity_name }}"><strong>{{ partner.activity_name }}</strong></a>
+      </div>
+    </div>
+
+    <div class="dm-messages" id="dmMessages">
+      {% if not messages %}
+        <p class="dm-empty-msg muted">아직 대화가 없습니다. 첫 메시지를 보내보세요!</p>
+      {% endif %}
+      {% for msg in messages %}
+      <div class="dm-msg {% if msg.sender_id == current_member.id %}dm-mine{% else %}dm-theirs{% endif %}">
+        <div class="dm-bubble">{{ msg.content }}</div>
+        <div class="dm-time">{{ msg.created_at.strftime('%m/%d %H:%M') }}</div>
+      </div>
+      {% endfor %}
+    </div>
+
+    <form method="post" action="/dm/{{ partner.id }}/send" class="dm-input-form">
+      <textarea name="content" rows="3" placeholder="메시지 입력 (Enter: 전송, Shift+Enter: 줄바꿈)" required maxlength="2000" id="dmInput"></textarea>
+      <button type="submit" class="btn btn-primary">전송</button>
+    </form>
+  </div>
+</main>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById("dmMessages").scrollTop = 9999999;
+document.getElementById("dmInput").addEventListener("keydown", e => {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); e.target.closest("form").submit(); }
+});
+</script>
+{% endblock %}

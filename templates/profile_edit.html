@@ -2,65 +2,208 @@
 {% block title %}프로필 수정 · 공모전 보드{% endblock %}
 
 {% block content %}
-<main class="auth-page">
-  <div class="auth-box" style="max-width:560px">
+<main class="my-page">
+  <div class="container" style="max-width:680px">
     <p class="eyebrow">내 계정</p>
-    <h1 class="auth-title">프로필 수정</h1>
+    <h1 style="margin-bottom:1.5rem">프로필 수정</h1>
 
     {% if error %}
     <div class="alert alert-error">{{ error }}</div>
     {% endif %}
 
-    <form method="post" action="/profile/edit/me" enctype="multipart/form-data" class="auth-form">
-      <label class="field">
-        <span>활동명</span>
-        <input type="text" value="{{ member.activity_name }}" disabled class="input-disabled">
-        <small class="field-hint">활동명은 변경할 수 없습니다</small>
-      </label>
+    {# ── 기본 정보 ── #}
+    <section class="form-section">
+      <h2>기본 정보</h2>
+      <form method="post" action="/profile/edit/me" enctype="multipart/form-data" id="basicForm">
+        <label class="field">
+          <span>활동명</span>
+          <input type="text" value="{{ member.activity_name }}" disabled class="input-disabled">
+          <small class="field-hint">변경 불가</small>
+        </label>
+        <div class="form-grid two-col">
+          <label class="field">
+            <span>실명</span>
+            <input type="text" name="real_name" value="{{ member.real_name }}" required maxlength="50">
+          </label>
+          <label class="field">
+            <span>전화번호</span>
+            <input type="tel" name="phone" value="{{ member.phone }}" placeholder="010-0000-0000" maxlength="20">
+          </label>
+        </div>
+        <label class="field">
+          <span>한 줄 소개</span>
+          <input type="text" name="bio" value="{{ member.bio }}" maxlength="200" placeholder="프로필에 짧게 표시됩니다">
+        </label>
+        <label class="field">
+          <span>긴 자기소개 <small>(마크다운 지원)</small></span>
+          <textarea name="intro_text" rows="6" maxlength="3000" placeholder="자신을 더 자세히 소개해보세요.">{{ member.intro_text or '' }}</textarea>
+        </label>
+        <label class="field">
+          <span>프로필 이미지</span>
+          {% if member.profile_image %}
+            <img src="/uploads/{{ member.profile_image }}" alt="현재 프로필" class="profile-img-preview">
+          {% endif %}
+          <input type="file" name="profile_image" accept="image/*">
+        </label>
 
-      <label class="field">
-        <span>실명</span>
-        <input type="text" name="real_name" value="{{ member.real_name }}" required maxlength="50">
-      </label>
+        {# skills/links hidden — JS로 채워짐 #}
+        <input type="hidden" name="skills_json" id="skillsJsonInput" value="{{ member.skills or '[]' }}">
+        <input type="hidden" name="links_json"  id="linksJsonInput"  value="{{ member.links  or '[]' }}">
 
-      <label class="field">
-        <span>전화번호</span>
-        <input type="tel" name="phone" value="{{ member.phone }}" placeholder="010-0000-0000" maxlength="20">
-      </label>
+        <div class="field-divider"></div>
+        <p class="section-label">비밀번호 변경 <small>(변경하지 않으면 빈칸)</small></p>
+        <div class="form-grid two-col">
+          <label class="field">
+            <span>새 비밀번호</span>
+            <input type="password" name="new_password" placeholder="6자 이상" minlength="6">
+          </label>
+          <label class="field">
+            <span>현재 비밀번호 <span class="required">*</span></span>
+            <input type="password" name="current_password" required placeholder="변경 적용에 필수">
+          </label>
+        </div>
+        <button type="submit" class="btn btn-primary btn-full">저장</button>
+      </form>
+    </section>
 
-      <label class="field">
-        <span>한 줄 소개</span>
-        <textarea name="bio" rows="3" maxlength="200">{{ member.bio }}</textarea>
-      </label>
-
-      <label class="field">
-        <span>프로필 이미지</span>
-        {% if member.profile_image %}
-          <img src="/uploads/{{ member.profile_image }}" alt="현재 프로필" class="profile-img-preview">
-        {% endif %}
-        <input type="file" name="profile_image" accept="image/*">
-      </label>
-
-      <div class="field-divider"></div>
-      <p class="section-label">비밀번호 변경 <small>(변경하지 않으면 빈칸으로 두세요)</small></p>
-
-      <label class="field">
-        <span>새 비밀번호</span>
-        <input type="password" name="new_password" placeholder="6자 이상 (선택)" minlength="6">
-      </label>
-
-      <div class="field-divider"></div>
-
-      <label class="field">
-        <span>현재 비밀번호 확인 <span class="required">*</span></span>
-        <input type="password" name="current_password" placeholder="변경을 적용하려면 필수" required>
-      </label>
-
-      <div style="display:flex; gap:12px; margin-top:8px">
-        <button type="submit" class="btn btn-primary" style="flex:1">저장</button>
-        <a href="/profile/{{ member.activity_name }}" class="btn btn-outline" style="flex:1; text-align:center">취소</a>
+    {# ── 기술 스택 ── #}
+    <section class="form-section" style="margin-top:2rem">
+      <h2>기술 스택 / 역량 태그</h2>
+      <p class="muted" style="font-size:.85rem;margin-bottom:.75rem">태그를 추가하면 프로필에 표시됩니다.</p>
+      <div id="skillTagsWrap" class="skill-tags" style="margin-bottom:.75rem"></div>
+      <div style="display:flex;gap:8px">
+        <input type="text" id="skillInput" placeholder="예: Python, UI/UX, 기획" maxlength="30" class="field" style="flex:1;padding:8px">
+        <select id="skillCat" class="compact-select">
+          <option value="개발">개발</option>
+          <option value="디자인">디자인</option>
+          <option value="기획">기획</option>
+          <option value="마케팅">마케팅</option>
+          <option value="기타">기타</option>
+        </select>
+        <button type="button" id="addSkillBtn" class="btn btn-outline">추가</button>
       </div>
-    </form>
+    </section>
+
+    {# ── 포트폴리오 링크 ── #}
+    <section class="form-section" style="margin-top:2rem">
+      <h2>포트폴리오 / 링크</h2>
+      <div id="linksWrap" style="margin-bottom:.75rem;display:flex;flex-direction:column;gap:.4rem"></div>
+      <div style="display:flex;gap:8px">
+        <input type="text" id="linkLabel" placeholder="레이블 (예: GitHub)" maxlength="50" class="field" style="flex:1;padding:8px">
+        <input type="url" id="linkUrl" placeholder="https://..." maxlength="300" class="field" style="flex:2;padding:8px">
+        <button type="button" id="addLinkBtn" class="btn btn-outline">추가</button>
+      </div>
+    </section>
+
+    {# ── 외부 이력 ── #}
+    <section class="form-section" style="margin-top:2rem" id="external">
+      <h2>외부 이력 <span class="unverified-badge">자기 기재</span></h2>
+      <p class="muted" style="font-size:.85rem;margin-bottom:.75rem">사이트 외부 대회·공모전 참가 기록을 직접 추가할 수 있습니다. 증빙은 없습니다.</p>
+
+      {% if external_achievements %}
+      <div style="margin-bottom:1rem">
+        {% for ach in external_achievements %}
+        <div class="history-card" style="margin-bottom:.5rem">
+          <div class="history-card-body" style="display:flex;justify-content:space-between;align-items:center">
+            <div>
+              <strong>{{ ach.title }}</strong>
+              {% if ach.organizer %}<span class="muted"> · {{ ach.organizer }}</span>{% endif %}
+              {% if ach.result %} — <span class="role-tag">{{ ach.result }}</span>{% endif %}
+              {% if ach.achieved_year %}<span class="muted"> ({{ ach.achieved_year }})</span>{% endif %}
+            </div>
+            <form method="post" action="/profile/external/{{ ach.id }}/delete" style="display:inline">
+              <button type="submit" class="btn btn-ghost btn-xs text-danger" onclick="return confirm('삭제할까요?')">삭제</button>
+            </form>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      <form method="post" action="/profile/external/add" class="join-form">
+        <div class="join-grid">
+          <label class="field">
+            <span>대회/공모전명 <span class="required">*</span></span>
+            <input type="text" name="title" placeholder="예: 2024 POSCO 청년 공모전" required maxlength="200">
+          </label>
+          <label class="field">
+            <span>주최기관</span>
+            <input type="text" name="organizer" placeholder="예: POSCO" maxlength="100">
+          </label>
+          <label class="field">
+            <span>결과</span>
+            <input type="text" name="result" placeholder="예: 최우수상, 참가" maxlength="100">
+          </label>
+          <label class="field">
+            <span>연도</span>
+            <input type="number" name="achieved_year" placeholder="예: 2024" min="2000" max="2100">
+          </label>
+          <label class="field" style="grid-column:1/-1">
+            <span>메모</span>
+            <input type="text" name="note" placeholder="간단한 메모" maxlength="200">
+          </label>
+        </div>
+        <button type="submit" class="btn btn-outline" style="margin-top:8px">이력 추가</button>
+      </form>
+    </section>
+
   </div>
 </main>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function escapeHtml(str) {
+  return String(str).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+
+// ── 기술 스택 관리 ──
+let skills = [];
+try { skills = JSON.parse(document.getElementById("skillsJsonInput").value) || []; } catch(e){}
+
+function renderSkills() {
+  const wrap = document.getElementById("skillTagsWrap");
+  wrap.innerHTML = skills.map((s, i) =>
+    `<span class="skill-tag">${escapeHtml(s.skill)} <span class="muted" style="font-size:.7rem">${escapeHtml(s.category)}</span>
+     <button type="button" onclick="removeSkill(${i})" style="border:none;background:none;cursor:pointer;color:#999;margin-left:2px">✕</button></span>`
+  ).join("");
+  document.getElementById("skillsJsonInput").value = JSON.stringify(skills);
+}
+window.removeSkill = function(i) { skills.splice(i,1); renderSkills(); };
+document.getElementById("addSkillBtn").addEventListener("click", () => {
+  const val = document.getElementById("skillInput").value.trim();
+  const cat = document.getElementById("skillCat").value;
+  if (!val) return;
+  skills.push({skill: val, category: cat});
+  document.getElementById("skillInput").value = "";
+  renderSkills();
+});
+renderSkills();
+
+// ── 링크 관리 ──
+let links = [];
+try { links = JSON.parse(document.getElementById("linksJsonInput").value) || []; } catch(e){}
+
+function renderLinks() {
+  const wrap = document.getElementById("linksWrap");
+  wrap.innerHTML = links.map((l, i) =>
+    `<div style="display:flex;align-items:center;gap:.5rem;background:var(--bg-2);padding:6px 10px;border-radius:6px">
+      <span style="font-size:.85rem">🔗 <strong>${escapeHtml(l.label)}</strong> — <a href="${escapeHtml(l.url)}" target="_blank" style="color:var(--primary)">${escapeHtml(l.url.slice(0,50))}</a></span>
+      <button type="button" onclick="removeLink(${i})" style="border:none;background:none;cursor:pointer;color:#999;margin-left:auto">✕</button>
+    </div>`
+  ).join("");
+  document.getElementById("linksJsonInput").value = JSON.stringify(links);
+}
+window.removeLink = function(i) { links.splice(i,1); renderLinks(); };
+document.getElementById("addLinkBtn").addEventListener("click", () => {
+  const label = document.getElementById("linkLabel").value.trim();
+  const url   = document.getElementById("linkUrl").value.trim();
+  if (!url) return;
+  links.push({label: label || url, url});
+  document.getElementById("linkLabel").value = "";
+  document.getElementById("linkUrl").value = "";
+  renderLinks();
+});
+renderLinks();
+</script>
 {% endblock %}

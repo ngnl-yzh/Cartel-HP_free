@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}메시지 · 공모전 보드{% endblock %}
+
+{% block content %}
+<main class="my-page">
+  <div class="container" style="max-width:700px">
+    <h1 style="margin-bottom:1.5rem">📨 메시지</h1>
+    {% if threads %}
+    <div class="dm-thread-list">
+      {% for t in threads %}
+      <a href="/dm/{{ t.partner.id if t.partner else 0 }}" class="dm-thread-row {% if t.unread %}dm-unread{% endif %}">
+        <div class="dm-thread-avatar">
+          {% if t.partner and t.partner.profile_image %}
+            <img src="/uploads/{{ t.partner.profile_image }}" class="mini-avatar" alt="">
+          {% else %}
+            <span class="mini-avatar-letter">{{ (t.partner.activity_name[0] if t.partner else '?') | upper }}</span>
+          {% endif %}
+        </div>
+        <div class="dm-thread-body">
+          <div class="dm-thread-name">
+            <strong>{{ t.partner.activity_name if t.partner else '알 수 없음' }}</strong>
+            {% if t.unread %}<span class="dm-badge">{{ t.unread }}</span>{% endif %}
+          </div>
+          <div class="dm-thread-preview">{{ t.last_msg.content[:60] }}{% if t.last_msg.content | length > 60 %}…{% endif %}</div>
+        </div>
+        <div class="dm-thread-time muted">{{ t.last_msg.created_at.strftime('%m/%d %H:%M') }}</div>
+      </a>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">
+      <p class="empty-text">메시지가 없습니다. 팔로우 승인된 회원과 DM을 시작해보세요!</p>
+      <a href="/my/follows" class="btn btn-primary">팔로우 관리</a>
+    </div>
+    {% endif %}
+  </div>
+</main>
+{% endblock %}

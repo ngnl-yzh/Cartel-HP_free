@@ -25,6 +25,7 @@
             <th>학번</th>
             <th>전화번호</th>
             <th>역할</th>
+            <th>댓글 제한</th>
             <th>가입일</th>
             <th></th>
           </tr>
@@ -45,6 +46,13 @@
                 <span class="deadline-badge open">일반회원</span>
               {% endif %}
             </td>
+            <td>
+              {% if m.comment_muted_until and m.comment_muted_until > now %}
+                <span class="deadline-badge urgent">{{ m.comment_muted_until.strftime('%m/%d %H:%M') }}까지</span>
+              {% else %}
+                <span class="muted">없음</span>
+              {% endif %}
+            </td>
             <td>{{ m.created_at.strftime('%Y.%m.%d') }}</td>
             <td class="table-actions">
               <form method="post" action="/admin/members/{{ m.id }}/set-role" style="display:inline">
@@ -58,6 +66,15 @@
               </form>
               <form method="post" action="/admin/members/{{ m.id }}/delete" data-confirm="{{ m.activity_name }} 회원을 삭제하시겠습니까?" style="display:inline">
                 <button type="submit" class="btn btn-danger btn-sm">삭제</button>
+              </form>
+              <form method="post" action="/admin/members/{{ m.id }}/mute-comments" style="display:inline-flex;gap:4px">
+                <select name="duration_minutes" class="compact-select">
+                  <option value="60">1시간 댓글 금지</option>
+                  <option value="1440">24시간 댓글 금지</option>
+                  <option value="10080">7일 댓글 금지</option>
+                  <option value="">해제</option>
+                </select>
+                <button type="submit" class="btn btn-outline btn-sm">적용</button>
               </form>
             </td>
           </tr>

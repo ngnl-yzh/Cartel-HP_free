@@ -219,10 +219,11 @@ document.addEventListener("DOMContentLoaded", () => {
     btn.addEventListener("click", () => {
       const memberId = btn.dataset.memberId;
       const compId   = btn.dataset.compId;
+      const teamId   = btn.dataset.teamId;
       const nickname = btn.dataset.nickname;
       const isAdmin  = btn.dataset.admin === "true";
 
-      leaveForm.action = `/competition/${compId}/leave/${memberId}`;
+      leaveForm.action = `/competition/${compId}/team/${teamId}/leave/${memberId}`;
       leaveDesc.textContent = `'${nickname}' 님의 팀 참여를 취소합니다.`;
 
       if (isAdmin) {

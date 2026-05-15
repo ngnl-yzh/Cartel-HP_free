@@ -9,69 +9,124 @@
         <p class="eyebrow">Admin</p>
         <h1>초대 코드 관리</h1>
       </div>
-      <a href="/admin/members" class="btn btn-ghost">← 회원 관리</a>
+      <a href="/admin/members" class="btn btn-ghost">회원 관리</a>
     </div>
 
-    {# 코드 발급 폼 #}
-    <section class="form-section" style="margin-bottom:2rem">
+    <section class="form-section invite-create-panel">
       <h2>새 초대 코드 발급</h2>
-      <form method="post" action="/admin/invite-codes/create" style="display:flex;gap:12px;align-items:flex-end">
-        <label class="field" style="flex:1;margin:0">
-          <span>메모 <small>(선택 — 누구에게 줄 코드인지)</small></span>
-          <input type="text" name="note" placeholder="예: 김철수에게" maxlength="100">
-        </label>
+      <form method="post" action="/admin/invite-codes/create" class="invite-create-form">
+        <div class="form-grid two-col">
+          <label class="field">
+            <span>초대 유형</span>
+            <select name="code_type" id="inviteType">
+              <option value="personal">개인 초대 코드</option>
+              <option value="group">단체 초대 코드</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>최대 사용 인원</span>
+            <input type="number" name="max_uses" id="maxUses" min="1" max="500" placeholder="단체 코드일 때 입력">
+          </label>
+        </div>
+        <div class="form-grid three-col">
+          <label class="field">
+            <span>메모</span>
+            <input type="text" name="note" placeholder="예: 26기 신입 부원" maxlength="100">
+          </label>
+          <label class="field">
+            <span>유효 기간</span>
+            <input type="number" name="valid_days" min="1" max="365" placeholder="예: 7">
+          </label>
+          <label class="field">
+            <span>만료 일시</span>
+            <input type="datetime-local" name="expires_at">
+          </label>
+        </div>
         <button type="submit" class="btn btn-primary">발급</button>
       </form>
     </section>
 
     {% if codes %}
-    <section class="table-wrap">
-      <table class="admin-table">
-        <thead>
-          <tr>
-            <th>코드</th>
-            <th>메모</th>
-            <th>상태</th>
-            <th>사용 회원</th>
-            <th>발급일</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for c in codes %}
-          <tr class="{% if c.used_by_member_id %}row-used{% endif %}">
-            <td>
+    <section class="invite-code-list">
+      {% for c in codes %}
+      {% set used = c.use_count or (1 if c.used_by_member_id else 0) %}
+      {% set limit = c.max_uses or (1 if c.code_type != 'group' else 0) %}
+      {% set expired = c.expires_at and c.expires_at < now %}
+      <article class="invite-code-card {% if not c.is_active or expired %}is-disabled{% endif %}">
+        <div class="invite-code-main">
+          <div>
+            <div class="invite-code-title">
               <code class="invite-code-text">{{ c.code }}</code>
-            </td>
-            <td>{{ c.note or "-" }}</td>
-            <td>
-              {% if c.used_by_member_id %}
-                <span class="deadline-badge closed">사용됨</span>
-              {% elif c.expires_at and c.expires_at < now %}
-                <span class="deadline-badge closed">만료됨</span>
+              {% if c.code_type == 'group' %}
+                <span class="deadline-badge soon">단체</span>
               {% else %}
-                <span class="deadline-badge open">사용 가능</span>
+                <span class="deadline-badge open">개인</span>
               {% endif %}
-            </td>
-            <td>
-              {% if c.used_by_member_id and members_map.get(c.used_by_member_id) %}
-                <a href="/profile/{{ members_map[c.used_by_member_id] }}">{{ members_map[c.used_by_member_id] }}</a>
-              {% else %}
-                -
-              {% endif %}
-            </td>
-            <td>{{ c.created_at.strftime('%Y.%m.%d') }}</td>
-            <td>
-              {% if not c.used_by_member_id %}
-              <form method="post" action="/admin/invite-codes/delete/{{ c.id }}" data-confirm="이 코드를 삭제하시겠습니까?">
-                <button type="submit" class="btn btn-danger btn-sm">삭제</button>
-              </form>
-              {% endif %}
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+            </div>
+            <p class="muted">{{ c.note or "메모 없음" }}</p>
+          </div>
+          <div class="invite-code-status">
+            {% if expired %}
+              <span class="deadline-badge closed">만료됨</span>
+            {% elif not c.is_active %}
+              <span class="deadline-badge closed">비활성화</span>
+            {% elif c.code_type == 'group' and c.max_uses and used >= c.max_uses %}
+              <span class="deadline-badge closed">정원 마감</span>
+            {% else %}
+              <span class="deadline-badge open">사용 가능</span>
+            {% endif %}
+            <strong>{{ used }}{% if limit %}/{{ limit }}{% endif %}</strong>
+          </div>
+        </div>
+
+        <div class="invite-code-meta">
+          <span>발급 {{ c.created_at.strftime('%Y.%m.%d %H:%M') }}</span>
+          <span>만료 {{ c.expires_at.strftime('%Y.%m.%d %H:%M') if c.expires_at else '없음' }}</span>
+        </div>
+
+        <div class="invite-code-actions">
+          <details>
+            <summary class="btn btn-outline btn-sm">로그</summary>
+            {% set logs = logs_by_code.get(c.id, []) %}
+            {% if logs %}
+            <div class="invite-log-list">
+              {% for log in logs %}
+              <div class="invite-log-row {% if log.revoked_at %}is-revoked{% endif %}">
+                <div>
+                  <strong>
+                    {% if log.member_id and members_map.get(log.member_id) %}
+                      <a href="/profile/{{ members_map[log.member_id] }}">{{ log.activity_name }}</a>
+                    {% else %}
+                      {{ log.activity_name or "삭제된 회원" }}
+                    {% endif %}
+                  </strong>
+                  <span class="muted">{{ log.real_name }}</span>
+                  <div class="muted">{{ log.used_at.strftime('%Y.%m.%d %H:%M') }}</div>
+                  {% if log.revoked_at %}
+                    <div class="text-danger">내보냄 · {{ log.revoked_at.strftime('%Y.%m.%d %H:%M') }}</div>
+                  {% endif %}
+                </div>
+                {% if not log.revoked_at and log.member_id %}
+                <form method="post" action="/admin/invite-codes/logs/{{ log.id }}/kick" data-confirm="{{ log.activity_name }} 회원을 내보내시겠습니까?">
+                  <button type="submit" class="btn btn-danger btn-sm">내보내기</button>
+                </form>
+                {% endif %}
+              </div>
+              {% endfor %}
+            </div>
+            {% else %}
+              <p class="muted invite-empty-log">아직 사용 기록이 없습니다.</p>
+            {% endif %}
+          </details>
+
+          {% if not c.used_by_member_id %}
+          <form method="post" action="/admin/invite-codes/delete/{{ c.id }}" data-confirm="이 코드를 삭제하시겠습니까?">
+            <button type="submit" class="btn btn-danger btn-sm">삭제</button>
+          </form>
+          {% endif %}
+        </div>
+      </article>
+      {% endfor %}
     </section>
     {% else %}
     <div class="empty-state">
@@ -80,4 +135,22 @@
     {% endif %}
   </div>
 </main>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const inviteType = document.getElementById("inviteType");
+const maxUses = document.getElementById("maxUses");
+function syncInviteType() {
+  if (!inviteType || !maxUses) return;
+  const isGroup = inviteType.value === "group";
+  maxUses.disabled = !isGroup;
+  maxUses.required = isGroup;
+  if (!isGroup) maxUses.value = "";
+}
+if (inviteType) {
+  inviteType.addEventListener("change", syncInviteType);
+  syncInviteType();
+}
+</script>
 {% endblock %}

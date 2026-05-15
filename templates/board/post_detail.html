@@ -140,6 +140,9 @@
 
       {# 댓글 작성 폼 #}
       {% if current_member %}
+      {% if current_member.comment_muted_until and current_member.comment_muted_until > now %}
+      <div class="alert alert-error">댓글 작성이 {{ current_member.comment_muted_until.strftime('%Y.%m.%d %H:%M') }}까지 제한되었습니다.</div>
+      {% else %}
       <form method="post" action="/board/{{ board }}/post/{{ post.id }}/comment#comments" class="comment-write-form">
         <div class="comment-write-row">
           <div class="mini-avatar-letter small">{{ current_member.activity_name[0] | upper }}</div>
@@ -149,6 +152,7 @@
           </div>
         </div>
       </form>
+      {% endif %}
       {% else %}
       <p class="login-notice"><a href="/member/login">로그인</a>하면 댓글을 남길 수 있습니다.</p>
       {% endif %}

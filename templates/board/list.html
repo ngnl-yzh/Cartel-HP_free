@@ -17,6 +17,11 @@
       {% endif %}
     </div>
 
+    <form method="get" action="/board/{{ board }}" class="board-search-bar">
+      <input type="search" name="q" value="{{ query or '' }}" placeholder="제목, 내용 검색">
+      <button type="submit" class="btn btn-outline">검색</button>
+    </form>
+
     {% if posts %}
     <div class="post-list">
       {% for post in posts %}
@@ -55,7 +60,7 @@
     {% if total_pages > 1 %}
     <div class="pagination">
       {% for p in range(1, total_pages + 1) %}
-        <a href="/board/{{ board }}?page={{ p }}"
+        <a href="/board/{{ board }}?page={{ p }}&q={{ query | urlencode }}"
            class="page-btn {% if p == page %}active{% endif %}">{{ p }}</a>
       {% endfor %}
     </div>

@@ -30,7 +30,7 @@
       {% for label, cnt in cache.counts.items() %}
       <span class="crawl-site-badge">{{ label }} <strong>{{ cnt }}</strong></span>
       {% endfor %}
-      <span class="crawl-site-badge total">전체 <strong>{{ cache.items | length }}</strong></span>
+      <span class="crawl-site-badge total">전체 <strong>{{ cache['items'] | length }}</strong></span>
     </div>
     {% endif %}
 
@@ -47,14 +47,14 @@
     {% endif %}
 
     {# ── 결과 없음 ──────────────────────────────────────────────── #}
-    {% if not cache.items and not cache.errors %}
+    {% if not cache['items'] and not cache.errors %}
     <section class="empty-state">
       <p class="empty-title">아직 크롤링 결과가 없습니다.</p>
       <p class="muted">위 버튼을 눌러 공모전 정보를 수집하세요.</p>
     </section>
 
     {# ── 결과 목록 ──────────────────────────────────────────────── #}
-    {% elif cache.items %}
+    {% elif cache['items'] %}
     <section class="table-wrap">
       <table class="admin-table crawl-table">
         <thead>
@@ -67,7 +67,7 @@
           </tr>
         </thead>
         <tbody>
-          {% for item in cache.items %}
+          {% for item in cache['items'] %}
           <tr>
             <td>
               <span class="source-badge source-{{ item.source }}">{{ item.source_label }}</span>

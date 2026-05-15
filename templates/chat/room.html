@@ -131,8 +131,8 @@
 <script>
 const ROOM_ID = {{ room.id }};
 const HAS_PASSWORD = {{ 'true' if has_password else 'false' }};
-const MY_NAME = "{{ current_member.activity_name if current_member else '' }}";
-let roomPassword = localStorage.getItem(`chat_room_${ROOM_ID}_password`) || "";
+const MY_NAME = {{ (current_member.activity_name if current_member else '') | tojson }};
+let roomPassword = sessionStorage.getItem(`chat_room_${ROOM_ID}_password`) || "";
 
 function escapeHtml(str) {
   return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
@@ -191,7 +191,7 @@ function connectWS() {
     }));
     document.getElementById("chatStatus").textContent = "연결됨";
     document.getElementById("chatStatus").className = "chat-status connected";
-    if (roomPassword) localStorage.setItem(`chat_room_${ROOM_ID}_password`, roomPassword);
+    if (roomPassword) sessionStorage.setItem(`chat_room_${ROOM_ID}_password`, roomPassword);
     const modal = document.getElementById("passwordModal");
     if (modal) modal.style.display = "none";
     scrollToBottom();
@@ -212,7 +212,7 @@ function connectWS() {
 
   ws.onclose = (e) => {
     if (e.code === 4003) {
-      localStorage.removeItem(`chat_room_${ROOM_ID}_password`);
+      sessionStorage.removeItem(`chat_room_${ROOM_ID}_password`);
       const errEl = document.getElementById("passwordError");
       if (errEl) {
         errEl.textContent = "비밀번호가 올바르지 않습니다.";
@@ -225,8 +225,9 @@ function connectWS() {
     } else if (e.code === 4001) {
       location.href = "/member/login";
     } else {
-      document.getElementById("chatStatus").textContent = "연결 끊김";
+      document.getElementById("chatStatus").textContent = "연결 끊김 (재연결 중...)";
       document.getElementById("chatStatus").className = "chat-status disconnected";
+      setTimeout(connectWS, 3000);
     }
   };
 }

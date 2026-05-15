@@ -59,10 +59,23 @@
     {# 페이지네이션 #}
     {% if total_pages > 1 %}
     <div class="pagination">
+      {% if page > 1 %}
+        <a href="/board/{{ board }}?page=1&q={{ query | urlencode }}" class="page-btn">«</a>
+        <a href="/board/{{ board }}?page={{ page - 1 }}&q={{ query | urlencode }}" class="page-btn">‹</a>
+      {% endif %}
       {% for p in range(1, total_pages + 1) %}
-        <a href="/board/{{ board }}?page={{ p }}&q={{ query | urlencode }}"
-           class="page-btn {% if p == page %}active{% endif %}">{{ p }}</a>
+        {% if p == 1 or p == total_pages or (p >= page - 2 and p <= page + 2) %}
+          {% if p == page - 3 or p == page + 3 %}
+            <span class="page-ellipsis">…</span>
+          {% endif %}
+          <a href="/board/{{ board }}?page={{ p }}&q={{ query | urlencode }}"
+             class="page-btn {% if p == page %}active{% endif %}">{{ p }}</a>
+        {% endif %}
       {% endfor %}
+      {% if page < total_pages %}
+        <a href="/board/{{ board }}?page={{ page + 1 }}&q={{ query | urlencode }}" class="page-btn">›</a>
+        <a href="/board/{{ board }}?page={{ total_pages }}&q={{ query | urlencode }}" class="page-btn">»</a>
+      {% endif %}
     </div>
     {% endif %}
 

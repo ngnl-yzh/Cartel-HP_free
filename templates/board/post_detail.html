@@ -58,7 +58,7 @@
 
     {# ── 댓글 ── #}
     <section class="comments-section" id="comments">
-      <h2 class="comments-title">댓글 {{ top_comments | length + (replies.values() | sum(start=[]) | list | length) }}개</h2>
+      <h2 class="comments-title">댓글 {{ total_comments }}개</h2>
 
       {% for c in top_comments %}
       <div class="comment {% if c.user_liked %}comment-liked{% endif %}" id="comment-{{ c.id }}">

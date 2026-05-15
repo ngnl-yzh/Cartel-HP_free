@@ -29,7 +29,7 @@ from ai_parser import parse_document_file, parse_image_file, parse_text
 from crawler import crawl_all as _do_crawl_all
 from auth import create_token, verify_token
 from database import SessionLocal, get_db, init_db
-from member_auth import create_member_token, hash_password, verify_member_token, verify_password
+from member_auth import create_member_token, hash_password, verify_member_token, verify_password, verify_team_password
 from models import (
     BOARDS,
     ChatMessage, ChatRoom, ChatRoomMember,
@@ -174,9 +174,9 @@ def _prune_fail_counter(counter: dict) -> None:
         del counter[ip]
 
 
-def _is_locked(counter: dict, ip: str) -> bool:
+def _is_locked(counter: dict, ip: str, max_fail: int = _LOGIN_MAX_FAIL) -> bool:
     count, last = counter.get(ip, (0, datetime.min))
-    return count >= _LOGIN_MAX_FAIL and (datetime.now() - last).total_seconds() < _LOGIN_LOCKOUT
+    return count >= max_fail and (datetime.now() - last).total_seconds() < _LOGIN_LOCKOUT
 
 
 def _record_fail(counter: dict, ip: str) -> None:
@@ -310,28 +310,6 @@ async def _save_files(files: List[UploadFile]) -> list:
         (UPLOAD_DIR / name).write_bytes(content)
         saved.append({"name": f.filename, "path": name})
     return saved
-
-
-# ── 팀원 비밀번호 헬퍼 (PBKDF2-SHA256) ──────────────────────────────────────
-
-def _hash_pw(password: str) -> str:
-    """팀원 비밀번호 해시 (PBKDF2-SHA256)"""
-    salt = os.urandom(16).hex()
-    dk = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), 100_000)
-    return f"{salt}:{dk.hex()}"
-
-
-def _verify_pw(password: str, stored: str) -> bool:
-    try:
-        salt, dk_hex = stored.split(":", 1)
-        new_dk = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), 100_000).hex()
-        if hmac.compare_digest(new_dk, dk_hex):
-            return True
-        # fallback: 기존 SHA-256 단순 해시 (마이그레이션 기간 호환)
-        legacy_h = hashlib.sha256(f"{salt}{password}".encode()).hexdigest()
-        return hmac.compare_digest(legacy_h, dk_hex)
-    except Exception:
-        return False
 
 
 # ── 공통 헬퍼: 회원 이름 매핑 ────────────────────────────────────────────────
@@ -526,7 +504,7 @@ async def admin_login_page(request: Request, db: Session = Depends(get_db)):
 async def admin_login(request: Request, password: str = Form(...), db: Session = Depends(get_db)):
     client_ip = request.client.host if request.client else "unknown"
 
-    if _is_locked(_admin_fail_count, client_ip):
+    if _is_locked(_admin_fail_count, client_ip, max_fail=5):
         return _render(request, "admin/login.html", _ctx(request, db, error="너무 많은 로그인 시도입니다. 5분 후 다시 시도하세요."), status_code=429)
 
     if hmac.compare_digest(password, ADMIN_PASSWORD):
@@ -1087,7 +1065,7 @@ async def create_team(
             team_id=team.id,
             competition_id=comp_id,
             nickname=nickname.strip(),
-            password_hash=_hash_pw(password),
+            password_hash=hash_password(password),
             role=role if role in ROLES else "기타",
             memo=(memo or "").strip(),
             is_leader=True,
@@ -1125,7 +1103,7 @@ async def team_join(
         team_id=team_id,
         competition_id=comp_id,
         nickname=nickname,
-        password_hash=_hash_pw(password),
+        password_hash=hash_password(password),
         role=role if role in ROLES else "기타",
         memo=memo,
         is_leader=len(members) == 0,
@@ -1148,7 +1126,7 @@ async def team_leave(
     if not member:
         raise HTTPException(status_code=404)
     if not _is_privileged(request, db):
-        if member.nickname != nickname or not _verify_pw(password, member.password_hash):
+        if member.nickname != nickname or not verify_team_password(password, member.password_hash):
             raise HTTPException(status_code=400, detail="닉네임 또는 비밀번호가 올바르지 않습니다.")
     was_leader = member.is_leader
     db.delete(member)
@@ -1343,6 +1321,11 @@ async def board_new_post(
     if not cm:
         raise HTTPException(status_code=401)
 
+    if len(title.strip()) > 200:
+        raise HTTPException(status_code=400, detail="제목은 200자를 초과할 수 없습니다.")
+    if len(content) > 10000:
+        raise HTTPException(status_code=400, detail="본문은 10,000자를 초과할 수 없습니다.")
+
     saved_images = await _save_images(images)
     post = Post(
         board=board, title=title.strip(), content=content,
@@ -1407,6 +1390,8 @@ async def board_post_detail(request: Request, board: str, post_id: int, db: Sess
         if c.parent_id is not None:
             replies[c.parent_id].append(c)
 
+    total_comments = len(all_comments)
+
     return _render(request,
         "board/post_detail.html",
         _ctx(request, db,
@@ -1414,7 +1399,8 @@ async def board_post_detail(request: Request, board: str, post_id: int, db: Sess
              post=post, author=author,
              images=_from_json(post.images),
              top_comments=top_comments, replies=dict(replies),
-             post_likes=post_likes, user_liked_post=user_liked_post),
+             post_likes=post_likes, user_liked_post=user_liked_post,
+             total_comments=total_comments),
     )
 
 
@@ -1465,6 +1451,8 @@ async def board_add_comment(
         raise HTTPException(status_code=403, detail=f"댓글 작성이 {cm.comment_muted_until.strftime('%Y.%m.%d %H:%M')}까지 제한되었습니다.")
     if not content.strip():
         raise HTTPException(status_code=400, detail="댓글 내용을 입력하세요.")
+    if len(content.strip()) > 2000:
+        raise HTTPException(status_code=400, detail="댓글은 2,000자를 초과할 수 없습니다.")
     db.add(Comment(post_id=post_id, parent_id=parent_id, author_id=cm.id, content=content.strip()))
     db.commit()
     return RedirectResponse(url=f"/board/{board}/post/{post_id}#comments", status_code=303)
@@ -1475,14 +1463,17 @@ async def board_delete_comment(request: Request, board: str, comment_id: int, db
     comment = db.query(Comment).filter(Comment.id == comment_id).first()
     if not comment:
         raise HTTPException(status_code=404)
+    # 댓글이 해당 게시판의 게시글에 속하는지 확인
+    post = db.query(Post).filter(Post.id == comment.post_id, Post.board == board).first()
+    if not post:
+        raise HTTPException(status_code=404)
     cm = _current_member(request, db)
     is_author = cm and cm.id == comment.author_id
     if not is_author and not _is_privileged(request, db):
         raise HTTPException(status_code=403)
-    post_id = comment.post_id
     db.delete(comment)
     db.commit()
-    return RedirectResponse(url=f"/board/{board}/post/{post_id}#comments", status_code=303)
+    return RedirectResponse(url=f"/board/{board}/post/{comment.post_id}#comments", status_code=303)
 
 
 @app.post("/board/{board}/comment/{comment_id}/like")
@@ -1619,7 +1610,7 @@ async def chat_create(
         raise HTTPException(status_code=401)
     room = ChatRoom(
         name=name.strip(), description=description.strip(),
-        password_hash=_hash_pw(password) if password else None,
+        password_hash=hash_password(password) if password else None,
         created_by_id=cm.id,
     )
     db.add(room)
@@ -1800,7 +1791,7 @@ async def ws_chat(ws: WebSocket, room_id: int):
             return
         room_member = _chat_member(db, room_id, member.id)
         if room.password_hash and not room_member:
-            if not password or not _verify_pw(password, room.password_hash):
+            if not password or not verify_team_password(password, room.password_hash):
                 await ws.close(code=4003, reason="Wrong password")
                 return
         room_member = _ensure_chat_member(db, room, member)
@@ -1933,9 +1924,9 @@ async def admin_crawl_add_with_gpt(
 
     try:
         async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
-            r = await client.get(link, headers={"User-Agent": "Mozilla/5.0"})
+            resp = await client.get(link, headers={"User-Agent": "Mozilla/5.0"})
         from bs4 import BeautifulSoup as _BS
-        soup = _BS(r.text, "lxml")
+        soup = _BS(resp.text, "lxml")
         # 본문 텍스트 추출 (script/style 제거 후 앞 6000자)
         for tag in soup(["script", "style", "nav", "footer", "header"]):
             tag.decompose()

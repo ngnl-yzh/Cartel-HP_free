@@ -26,6 +26,20 @@ def verify_password(password: str, stored: str) -> bool:
         return False
 
 
+def verify_team_password(password: str, stored: str) -> bool:
+    """TeamMember 비밀번호 검증 — PBKDF2 우선, 레거시 SHA-256 fallback 포함"""
+    try:
+        salt, dk_hex = stored.split(":", 1)
+        dk = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), 100_000)
+        if hmac.compare_digest(dk.hex(), dk_hex):
+            return True
+        # 마이그레이션 기간 호환: 기존 SHA-256 단순 해시
+        legacy_h = hashlib.sha256(f"{salt}{password}".encode()).hexdigest()
+        return hmac.compare_digest(legacy_h, dk_hex)
+    except Exception:
+        return False
+
+
 # ── 토큰 ────────────────────────────────────────────────────────────────────
 
 def create_member_token(member_id: int) -> str:

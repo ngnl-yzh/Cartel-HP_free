@@ -11,6 +11,7 @@ from collections import defaultdict
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import List, Optional
+from urllib.parse import urlparse
 
 import httpx
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile, WebSocket, WebSocketDisconnect
@@ -362,6 +363,40 @@ async def _save_files(files: List[UploadFile]) -> list:
         (UPLOAD_DIR / name).write_bytes(content)
         saved.append({"name": f.filename, "path": name})
     return saved
+
+
+# ── 파일 삭제 헬퍼 ────────────────────────────────────────────────────────────
+
+def _delete_upload(filename: Optional[str]) -> None:
+    """업로드 파일 안전 삭제 (없거나 실패해도 무시)"""
+    if not filename:
+        return
+    try:
+        (UPLOAD_DIR / filename).unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+# ── 리다이렉트 보안 헬퍼 ──────────────────────────────────────────────────────
+
+def _safe_referer(request: Request, fallback: str = "/") -> str:
+    """Referer 헤더를 검증해 같은 호스트의 경로만 허용 (open redirect 방지)"""
+    ref = request.headers.get("referer", "")
+    if not ref:
+        return fallback
+    try:
+        parsed = urlparse(ref)
+        host = request.headers.get("host", "")
+        if parsed.netloc and parsed.netloc == host:
+            path = parsed.path
+            if parsed.query:
+                path += f"?{parsed.query}"
+            return path or fallback
+        if not parsed.netloc and ref.startswith("/") and not ref.startswith("//"):
+            return ref
+    except Exception:
+        pass
+    return fallback
 
 
 # ── 공통 헬퍼: 회원 이름 매핑 ────────────────────────────────────────────────
@@ -953,6 +988,7 @@ async def admin_edit(
     comp.prize = prize; comp.link = link; comp.description = description
     comp.is_featured = is_featured; comp.max_members = _optional_int(max_members, "최대 팀 인원")
     if new_image:
+        _delete_upload(comp.image)      # 구 이미지 파일 삭제
         comp.image = new_image          # 새로 직접 업로드한 파일
     elif _safe_path:
         comp.image = _safe_path         # GPT 파싱 또는 폼의 기존 경로
@@ -1460,6 +1496,7 @@ async def profile_edit(
         pass
     new_img = await _save_image(profile_image)
     if new_img:
+        _delete_upload(cm.profile_image)  # 구 프로필 이미지 삭제
         cm.profile_image = new_img
     if new_password:
         if len(new_password) < 6:
@@ -1721,7 +1758,7 @@ async def mark_notification_read(request: Request, notif_id: int, db: Session = 
     if notif:
         notif.is_read = True
         db.commit()
-    return RedirectResponse(url=request.headers.get("referer", "/my/follows"), status_code=303)
+    return RedirectResponse(url=_safe_referer(request, "/my"), status_code=303)
 
 
 @app.post("/notifications/read-all")
@@ -1733,7 +1770,7 @@ async def mark_all_read(request: Request, db: Session = Depends(get_db)):
         Notification.member_id == cm.id, Notification.is_read.is_(False)
     ).update({"is_read": True})
     db.commit()
-    return RedirectResponse(url=request.headers.get("referer", "/"), status_code=303)
+    return RedirectResponse(url=_safe_referer(request, "/my"), status_code=303)
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -1887,6 +1924,10 @@ async def team_leave(
     nickname: str = Form(...), password: str = Form(...),
     db: Session = Depends(get_db),
 ):
+    # team이 해당 comp_id에 속하는지 검증 (IDOR 방지)
+    team_check = db.query(Team).filter(Team.id == team_id, Team.competition_id == comp_id).first()
+    if not team_check:
+        raise HTTPException(status_code=404)
     member = db.query(TeamMember).filter(
         TeamMember.id == member_id,
         TeamMember.team_id == team_id,
@@ -2170,6 +2211,46 @@ async def board_post_detail(request: Request, board: str, post_id: int, db: Sess
              post_likes=post_likes, user_liked_post=user_liked_post,
              total_comments=total_comments),
     )
+
+
+@app.get("/board/{board}/post/{post_id}/edit", response_class=HTMLResponse)
+async def board_edit_page(request: Request, board: str, post_id: int, db: Session = Depends(get_db)):
+    if board not in BOARDS:
+        raise HTTPException(status_code=404)
+    post = db.query(Post).filter(Post.id == post_id, Post.board == board).first()
+    if not post:
+        raise HTTPException(status_code=404)
+    cm = _current_member(request, db)
+    if not cm or (cm.id != post.author_id and not _is_privileged(request, db)):
+        raise HTTPException(status_code=403, detail="수정 권한이 없습니다.")
+    return _render(request, "board/post_edit.html", _ctx(request, db,
+        board=board, board_name=BOARDS[board], post=post, error=None,
+    ))
+
+
+@app.post("/board/{board}/post/{post_id}/edit")
+async def board_edit_post(
+    request: Request, board: str, post_id: int,
+    title: str = Form(...), content: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    if board not in BOARDS:
+        raise HTTPException(status_code=404)
+    post = db.query(Post).filter(Post.id == post_id, Post.board == board).first()
+    if not post:
+        raise HTTPException(status_code=404)
+    cm = _current_member(request, db)
+    if not cm or (cm.id != post.author_id and not _is_privileged(request, db)):
+        raise HTTPException(status_code=403, detail="수정 권한이 없습니다.")
+    if len(title.strip()) > 200:
+        raise HTTPException(status_code=400, detail="제목은 200자를 초과할 수 없습니다.")
+    if len(content) > 10000:
+        raise HTTPException(status_code=400, detail="본문은 10,000자를 초과할 수 없습니다.")
+    post.title = title.strip()
+    post.content = content
+    post.updated_at = datetime.now()
+    db.commit()
+    return RedirectResponse(url=f"/board/{board}/post/{post_id}", status_code=303)
 
 
 @app.post("/board/{board}/post/{post_id}/delete")
@@ -2537,6 +2618,39 @@ async def chat_room(request: Request, room_id: int, db: Session = Depends(get_db
     ws_tok = create_member_token(cm.id)
     resp.set_cookie("ws_token", ws_tok, httponly=False, max_age=3600, samesite="lax", secure=IS_PRODUCTION)
     return resp
+
+
+@app.get("/chat/{room_id}/history")
+async def chat_history(
+    request: Request, room_id: int,
+    before_id: int = Query(0),
+    db: Session = Depends(get_db),
+):
+    """채팅 이전 메시지 페이지네이션 API (JSON 반환)"""
+    cm = _current_member(request, db)
+    if not cm:
+        raise HTTPException(status_code=401)
+    room_member = _chat_member(db, room_id, cm.id)
+    if not room_member:
+        raise HTTPException(status_code=403, detail="채팅방 멤버가 아닙니다.")
+    query = db.query(ChatMessage).filter(ChatMessage.room_id == room_id)
+    if before_id:
+        query = query.filter(ChatMessage.id < before_id)
+    msgs = query.order_by(ChatMessage.created_at.desc()).limit(50).all()
+    author_ids = list({m.author_id for m in msgs})
+    authors = _member_map(db, author_ids)
+    result = []
+    for msg in reversed(msgs):   # 오래된 순으로 반환
+        author = authors.get(msg.author_id)
+        result.append({
+            "id": msg.id,
+            "author": author.activity_name if author else "",
+            "profile_image": author.profile_image if author else None,
+            "content": msg.content,
+            "time": msg.created_at.strftime("%H:%M"),
+            "is_mine": msg.author_id == cm.id,
+        })
+    return JSONResponse({"messages": result, "has_more": len(msgs) == 50})
 
 
 @app.websocket("/ws/chat/{room_id}")

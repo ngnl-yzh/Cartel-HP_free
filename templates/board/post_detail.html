@@ -48,6 +48,7 @@
         </form>
         {% set cm = current_member %}
         {% if cm and (cm.id == post.author_id or is_privileged) %}
+        <a href="/board/{{ board }}/post/{{ post.id }}/edit" class="btn btn-outline btn-sm">수정</a>
         <form method="post" action="/board/{{ board }}/post/{{ post.id }}/delete"
               data-confirm="게시글을 삭제하시겠습니까?">
           <button type="submit" class="btn btn-danger btn-sm">삭제</button>

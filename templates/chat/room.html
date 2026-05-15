@@ -81,8 +81,12 @@
 
     <div class="chat-main">
       <div id="messages" class="chat-messages">
+        <div id="loadMoreWrap" style="text-align:center;padding:8px 0;display:{% if messages|length >= 100 %}block{% else %}none{% endif %}">
+          <button id="loadMoreBtn" class="btn btn-ghost btn-sm">이전 메시지 더 보기</button>
+        </div>
         {% for msg in messages %}
-        <div class="chat-message {% if current_member and msg.author_id == current_member.id %}mine{% else %}theirs{% endif %}">
+        <div class="chat-message {% if current_member and msg.author_id == current_member.id %}mine{% else %}theirs{% endif %}"
+             data-msg-id="{{ msg.id }}">
           {% if not (current_member and msg.author_id == current_member.id) %}
           <div class="chat-author-info">
             {% if msg.author %}
@@ -276,6 +280,55 @@ document.getElementById("chatInput").addEventListener("keydown", (e) => {
   }
 });
 document.getElementById("sendBtn").addEventListener("click", sendMessage);
+
+// ── 이전 메시지 더 불러오기 ────────────────────────────────────────────
+const loadMoreBtn = document.getElementById("loadMoreBtn");
+const loadMoreWrap = document.getElementById("loadMoreWrap");
+
+loadMoreBtn && loadMoreBtn.addEventListener("click", async () => {
+  const msgs = document.getElementById("messages");
+  const firstMsg = msgs.querySelector(".chat-message[data-msg-id]");
+  const beforeId = firstMsg ? parseInt(firstMsg.dataset.msgId, 10) : 0;
+  if (!beforeId) return;
+
+  loadMoreBtn.disabled = true;
+  loadMoreBtn.textContent = "불러오는 중...";
+  try {
+    const res = await fetch(`/chat/${ROOM_ID}/history?before_id=${beforeId}`);
+    if (!res.ok) throw new Error();
+    const data = await res.json();
+    const fragment = document.createDocumentFragment();
+    data.messages.forEach((m) => {
+      const div = document.createElement("div");
+      div.className = `chat-message ${m.is_mine ? "mine" : "theirs"}`;
+      div.dataset.msgId = m.id;
+      let authorHtml = "";
+      if (!m.is_mine) {
+        const avatar = m.profile_image
+          ? `<img src="/uploads/${m.profile_image}" class="mini-avatar" alt="">`
+          : `<span class="mini-avatar-letter small">${escapeHtml((m.author[0] || "?").toUpperCase())}</span>`;
+        authorHtml = `<div class="chat-author-info">${avatar}<span class="chat-author">${escapeHtml(m.author)}</span></div>`;
+      }
+      div.innerHTML = `${authorHtml}<div class="chat-bubble">${escapeHtml(m.content)}</div><div class="chat-time">${m.time}</div>`;
+      fragment.appendChild(div);
+    });
+    // 스크롤 위치 유지
+    const prevHeight = msgs.scrollHeight;
+    const anchor = msgs.querySelector(".chat-message[data-msg-id]");
+    msgs.insertBefore(fragment, anchor);
+    msgs.scrollTop += msgs.scrollHeight - prevHeight;
+
+    if (!data.has_more) {
+      loadMoreWrap.style.display = "none";
+    } else {
+      loadMoreBtn.disabled = false;
+      loadMoreBtn.textContent = "이전 메시지 더 보기";
+    }
+  } catch {
+    loadMoreBtn.disabled = false;
+    loadMoreBtn.textContent = "이전 메시지 더 보기";
+  }
+});
 
 if (HAS_PASSWORD) {
   const submitBtn = document.getElementById("passwordSubmitBtn");

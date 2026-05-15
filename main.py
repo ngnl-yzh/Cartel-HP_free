@@ -2759,7 +2759,10 @@ async def admin_crawl_run(request: Request, db: Session = Depends(get_db)):
     if r := _admin_redirect(request):
         return r
     global _crawl_cache
-    result = await _do_crawl_all()
+    try:
+        result = await _do_crawl_all()
+    except Exception as exc:
+        result = {"items": [], "errors": [f"크롤링 전체 실패: {type(exc).__name__}: {exc}"], "counts": {}}
     result["crawled_at"] = datetime.now().strftime("%Y년 %m월 %d일 %H:%M")
     _crawl_cache = result
     return RedirectResponse(url="/admin/crawl", status_code=303)

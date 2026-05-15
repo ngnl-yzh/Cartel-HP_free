@@ -1090,16 +1090,20 @@ select {
 
 /* ── 모바일 오버레이 메뉴 ────────────────────────────────────── */
 .mobile-nav-overlay {
-  display: none;
+  /* visibility + pointer-events 사용: display:none/block은 터치 차단 버그 유발 */
+  visibility: hidden;
+  pointer-events: none;
   position: fixed;
   inset: 0;
   z-index: 200;
   background: rgba(0,0,0,.45);
   backdrop-filter: blur(2px);
   opacity: 0;
-  transition: opacity .2s ease;
+  transition: opacity .2s ease, visibility .2s ease;
 }
 .mobile-nav-overlay.is-open {
+  visibility: visible;
+  pointer-events: all;
   opacity: 1;
 }
 .mobile-nav-panel {

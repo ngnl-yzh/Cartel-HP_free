@@ -134,6 +134,10 @@ const HAS_PASSWORD = {{ 'true' if has_password else 'false' }};
 const MY_NAME = "{{ current_member.activity_name if current_member else '' }}";
 let roomPassword = localStorage.getItem(`chat_room_${ROOM_ID}_password`) || "";
 
+function escapeHtml(str) {
+  return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
 function getCookie(name) {
   const m = document.cookie.match(new RegExp("(?:^|;)\\s*" + name + "=([^;]*)"));
   return m ? decodeURIComponent(m[1]) : "";
@@ -173,11 +177,18 @@ function renderPresence(data) {
 function connectWS() {
   const wsToken = getCookie("ws_token");
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
-  const url = `${proto}//${location.host}/ws/chat/${ROOM_ID}?token=${encodeURIComponent(wsToken)}&password=${encodeURIComponent(roomPassword)}`;
+  // 토큰/비밀번호를 URL에서 제거 — 연결 후 첫 메시지로 전송
+  const url = `${proto}//${location.host}/ws/chat/${ROOM_ID}`;
   const ws = new WebSocket(url);
   window._ws = ws;
 
   ws.onopen = () => {
+    // 연결 후 첫 메시지로 인증 정보 전송
+    ws.send(JSON.stringify({
+      type: "auth",
+      token: wsToken,
+      password: roomPassword
+    }));
     document.getElementById("chatStatus").textContent = "연결됨";
     document.getElementById("chatStatus").className = "chat-status connected";
     if (roomPassword) localStorage.setItem(`chat_room_${ROOM_ID}_password`, roomPassword);

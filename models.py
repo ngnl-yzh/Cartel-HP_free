@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, Column, Date, DateTime, Integer, String, Text
+from sqlalchemy import Boolean, Column, Date, DateTime, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import declarative_base
 
 Base = declarative_base()
@@ -141,6 +141,7 @@ class Comment(Base):
 
 class PostLike(Base):
     __tablename__ = "post_likes"
+    __table_args__ = (UniqueConstraint("post_id", "member_id", name="uq_post_like"),)
 
     id = Column(Integer, primary_key=True, index=True)
     post_id = Column(Integer, nullable=False, index=True)
@@ -149,6 +150,7 @@ class PostLike(Base):
 
 class CommentLike(Base):
     __tablename__ = "comment_likes"
+    __table_args__ = (UniqueConstraint("comment_id", "member_id", name="uq_comment_like"),)
 
     id = Column(Integer, primary_key=True, index=True)
     comment_id = Column(Integer, nullable=False, index=True)
@@ -170,6 +172,7 @@ class ChatRoom(Base):
 
 class ChatRoomMember(Base):
     __tablename__ = "chat_room_members"
+    __table_args__ = (UniqueConstraint("room_id", "member_id", name="uq_chat_room_member"),)
 
     id = Column(Integer, primary_key=True, index=True)
     room_id = Column(Integer, nullable=False, index=True)

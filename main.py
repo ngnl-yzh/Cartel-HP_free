@@ -1,7 +1,9 @@
 import hashlib
+import hmac
 import html
 import json
 import os
+import re
 import secrets
 import uuid
 from collections import defaultdict
@@ -9,12 +11,14 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import List, Optional
 
+import httpx
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from dotenv import load_dotenv
 from sqlalchemy import case, func, or_
+from sqlalchemy import update as _sa_update
 from sqlalchemy.orm import Session
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -129,6 +133,31 @@ TAGS = ["IT/SW", "디자인", "기획·마케팅", "사회혁신", "예술·문�
 ROLES = ["기획", "개발", "디자인", "마케팅", "기타"]
 AWARD_RANKS = ["대상", "최우수상", "우수상", "장려상", "입선"]
 
+# ── 프로덕션 분기 ──────────────────────────────────────────────────────────────
+IS_PRODUCTION = os.getenv("RAILWAY_ENVIRONMENT") is not None or os.getenv("PRODUCTION", "").lower() == "true"
+
+# ── CSRF 기본 구현 (함수 준비, samesite=lax 이미 적용 중) ─────────────────────
+SECRET_KEY = os.getenv("SECRET_KEY", "change-me-in-production")
+CSRF_SECRET = os.getenv("CSRF_SECRET", SECRET_KEY + "_csrf")
+
+
+def _generate_csrf(session_token: str) -> str:
+    """세션 토큰 기반 CSRF 토큰 생성"""
+    return hmac.new(CSRF_SECRET.encode(), session_token.encode(), hashlib.sha256).hexdigest()[:32]
+
+
+def _validate_csrf(request: Request, form_token: str) -> bool:
+    """폼에서 전달된 CSRF 토큰 검증"""
+    session_token = request.cookies.get("admin_token") or request.cookies.get("member_token") or ""
+    if not session_token:
+        return False
+    expected = _generate_csrf(session_token)
+    return hmac.compare_digest(expected, form_token or "")
+
+
+# ── 관리자 로그인 실패 카운터 ─────────────────────────────────────────────────
+_admin_fail_count: dict = {}  # ip → (count, last_fail_time)
+
 
 @app.on_event("startup")
 def startup():
@@ -207,13 +236,19 @@ def _render(request: Request, name: str, context: dict, status_code: int = 200):
 
 # ── 파일 저장 헬퍼 ────────────────────────────────────────────────────────────
 
+ALLOWED_IMAGE_EXT = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
+ALLOWED_FILE_EXT = {".pdf", ".hwp", ".hwpx", ".zip", ".docx", ".pptx", ".xlsx", ".txt", ".png", ".jpg", ".jpeg"}
+
+
 async def _save_image(upload: Optional[UploadFile]) -> Optional[str]:
     if not upload or not upload.filename:
         return None
+    ext = Path(upload.filename).suffix.lower()
+    if ext not in ALLOWED_IMAGE_EXT:
+        raise HTTPException(status_code=400, detail=f"이미지 파일만 업로드 가능합니다. (허용: {', '.join(ALLOWED_IMAGE_EXT)})")
     content = await upload.read()
     if not content:
         return None
-    ext = Path(upload.filename).suffix.lower()
     name = f"{uuid.uuid4().hex}{ext}"
     (UPLOAD_DIR / name).write_bytes(content)
     return name
@@ -233,28 +268,36 @@ async def _save_files(files: List[UploadFile]) -> list:
     for f in files or []:
         if not f.filename:
             continue
+        ext = Path(f.filename).suffix.lower()
+        if ext not in ALLOWED_FILE_EXT:
+            continue  # 허용되지 않은 확장자는 건너뜀
         content = await f.read()
         if not content:
             continue
-        ext = Path(f.filename).suffix.lower()
         name = f"{uuid.uuid4().hex}{ext}"
         (UPLOAD_DIR / name).write_bytes(content)
         saved.append({"name": f.filename, "path": name})
     return saved
 
 
-# ── 팀원 비밀번호 헬퍼 (기존 SHA-256 방식 유지) ──────────────────────────────
+# ── 팀원 비밀번호 헬퍼 (PBKDF2-SHA256) ──────────────────────────────────────
 
 def _hash_pw(password: str) -> str:
+    """팀원 비밀번호 해시 (PBKDF2-SHA256)"""
     salt = os.urandom(16).hex()
-    h = hashlib.sha256(f"{salt}{password}".encode()).hexdigest()
-    return f"{salt}:{h}"
+    dk = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), 100_000)
+    return f"{salt}:{dk.hex()}"
 
 
 def _verify_pw(password: str, stored: str) -> bool:
     try:
-        salt, h = stored.split(":", 1)
-        return hashlib.sha256(f"{salt}{password}".encode()).hexdigest() == h
+        salt, dk_hex = stored.split(":", 1)
+        new_dk = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), 100_000).hex()
+        if hmac.compare_digest(new_dk, dk_hex):
+            return True
+        # fallback: 기존 SHA-256 단순 해시 (마이그레이션 기간 호환)
+        legacy_h = hashlib.sha256(f"{salt}{password}".encode()).hexdigest()
+        return hmac.compare_digest(legacy_h, dk_hex)
     except Exception:
         return False
 
@@ -394,7 +437,9 @@ async def detail(request: Request, comp_id: int, db: Session = Depends(get_db)):
     if not comp:
         raise HTTPException(status_code=404, detail="공모전을 찾을 수 없습니다.")
 
-    comp.view_count += 1
+    db.execute(
+        _sa_update(Competition).where(Competition.id == comp_id).values(view_count=Competition.view_count + 1)
+    )
     db.commit()
     db.refresh(comp)
 
@@ -447,10 +492,22 @@ async def admin_login_page(request: Request, db: Session = Depends(get_db)):
 
 @app.post("/admin/login")
 async def admin_login(request: Request, password: str = Form(...), db: Session = Depends(get_db)):
-    if password == ADMIN_PASSWORD:
+    client_ip = request.client.host if request.client else "unknown"
+    fail_info = _admin_fail_count.get(client_ip, (0, datetime.min))
+    fail_count, last_fail = fail_info
+
+    # 5회 실패 후 5분 잠금
+    if fail_count >= 5 and (datetime.now() - last_fail).total_seconds() < 300:
+        return _render(request, "admin/login.html", _ctx(request, db, error="너무 많은 로그인 시도입니다. 5분 후 다시 시도하세요."), status_code=429)
+
+    if hmac.compare_digest(password, ADMIN_PASSWORD):
+        _admin_fail_count.pop(client_ip, None)
         resp = RedirectResponse(url="/admin", status_code=303)
-        resp.set_cookie("admin_token", create_token(), httponly=True, max_age=86400, samesite="lax")
+        resp.set_cookie("admin_token", create_token(), httponly=True, max_age=86400, samesite="lax", secure=IS_PRODUCTION)
         return resp
+
+    # 실패 카운터 증가
+    _admin_fail_count[client_ip] = (fail_count + 1, datetime.now())
     return _render(request,
         "admin/login.html",
         _ctx(request, db, error="비밀번호가 올바르지 않습니다."),
@@ -509,7 +566,8 @@ async def admin_add(
 ):
     if r := _admin_redirect(request):
         return r
-    image = await _save_image(comp_image) or comp_image_path or None
+    _safe_path = Path(comp_image_path).name if comp_image_path else None
+    image = await _save_image(comp_image) or _safe_path or None
     comp = Competition(
         title=title, organizer=organizer,
         tags=json.dumps(tags, ensure_ascii=False),
@@ -561,6 +619,7 @@ async def admin_edit(
         raise HTTPException(status_code=404)
 
     new_image = await _save_image(comp_image)
+    _safe_path = Path(comp_image_path).name if comp_image_path else None
     existing_files = _from_json(comp.files)
     comp.title = title; comp.organizer = organizer
     comp.tags = json.dumps(tags, ensure_ascii=False)
@@ -569,7 +628,7 @@ async def admin_edit(
     comp.announcement_date = date.fromisoformat(announcement_date) if announcement_date else None
     comp.prize = prize; comp.link = link; comp.description = description
     comp.is_featured = is_featured; comp.max_members = _optional_int(max_members, "최대 팀 인원")
-    comp.image = new_image or comp_image_path or comp.image
+    comp.image = new_image or _safe_path or comp.image
     comp.files = json.dumps(existing_files + await _save_files(files), ensure_ascii=False)
     db.commit()
     return RedirectResponse(url="/admin", status_code=303)
@@ -597,11 +656,14 @@ async def delete_file(request: Request, comp_id: int, filename: str = Form(...),
         return r
     comp = db.query(Competition).filter(Competition.id == comp_id).first()
     if comp:
-        updated = [f for f in _from_json(comp.files) if f.get("path") != filename]
+        safe_name = Path(filename).name
+        updated = [f for f in _from_json(comp.files) if f.get("path") != safe_name]
         comp.files = json.dumps(updated, ensure_ascii=False)
         db.commit()
         try:
-            (UPLOAD_DIR / filename).unlink(missing_ok=True)
+            file_path = UPLOAD_DIR / safe_name
+            if file_path.is_relative_to(UPLOAD_DIR):
+                file_path.unlink(missing_ok=True)
         except OSError:
             pass
     return RedirectResponse(url=f"/admin/edit/{comp_id}", status_code=303)
@@ -843,7 +905,7 @@ async def register(
     db.commit()
 
     resp = RedirectResponse(url="/", status_code=303)
-    resp.set_cookie("member_token", create_member_token(member.id), httponly=True, max_age=604800, samesite="lax")
+    resp.set_cookie("member_token", create_member_token(member.id), httponly=True, max_age=604800, samesite="lax", secure=IS_PRODUCTION)
     return resp
 
 
@@ -864,7 +926,7 @@ async def member_login(request: Request, activity_name: str = Form(...), passwor
             status_code=401,
         )
     resp = RedirectResponse(url="/", status_code=303)
-    resp.set_cookie("member_token", create_member_token(m.id), httponly=True, max_age=604800, samesite="lax")
+    resp.set_cookie("member_token", create_member_token(m.id), httponly=True, max_age=604800, samesite="lax", secure=IS_PRODUCTION)
     return resp
 
 
@@ -1052,17 +1114,18 @@ async def team_leave(
             raise HTTPException(status_code=400, detail="닉네임 또는 비밀번호가 올바르지 않습니다.")
     was_leader = member.is_leader
     db.delete(member)
-    db.commit()
+    db.flush()  # 삭제 반영하되 커밋은 보류
+
     # 남은 팀원 있으면 리더 재배정, 없으면 팀 삭제
     remaining = db.query(TeamMember).filter(TeamMember.team_id == team_id).order_by(TeamMember.created_at.asc()).all()
     if not remaining:
         team = db.query(Team).filter(Team.id == team_id).first()
         if team:
             db.delete(team)
-            db.commit()
     elif was_leader:
         remaining[0].is_leader = True
-        db.commit()
+
+    db.commit()  # 단일 트랜잭션으로 커밋
     return RedirectResponse(url=f"/competition/{comp_id}#team", status_code=303)
 
 
@@ -1261,7 +1324,9 @@ async def board_post_detail(request: Request, board: str, post_id: int, db: Sess
     if not post:
         raise HTTPException(status_code=404)
 
-    post.view_count += 1
+    db.execute(
+        _sa_update(Post).where(Post.id == post_id).values(view_count=Post.view_count + 1)
+    )
     db.commit()
     db.refresh(post)
 
@@ -1408,7 +1473,6 @@ class _RoomManager:
         self.connections: dict[int, dict] = defaultdict(dict)
 
     async def join(self, room_id: int, ws: WebSocket, member: Member):
-        await ws.accept()
         self.connections[room_id][ws] = {
             "id": member.id,
             "name": member.activity_name,
@@ -1660,25 +1724,34 @@ async def chat_room(request: Request, room_id: int, db: Session = Depends(get_db
             can_manage_room=_can_manage_room(room_member, request, db),
         ),
     )
-    # ws_token: non-httpOnly, JS에서 읽어 WebSocket URL에 사용
+    # ws_token: non-httpOnly, JS에서 읽어 첫 메시지 인증에 사용
     ws_tok = create_member_token(cm.id)
-    resp.set_cookie("ws_token", ws_tok, httponly=False, max_age=3600, samesite="lax")
+    resp.set_cookie("ws_token", ws_tok, httponly=False, max_age=3600, samesite="lax", secure=IS_PRODUCTION)
     return resp
 
 
 @app.websocket("/ws/chat/{room_id}")
-async def ws_chat(
-    ws: WebSocket, room_id: int,
-    token: str = Query(""),
-    password: str = Query(""),
-):
-    mid = verify_member_token(token)
-    if not mid:
-        await ws.close(code=4001, reason="Unauthorized")
-        return
-
+async def ws_chat(ws: WebSocket, room_id: int):
+    await ws.accept()
     db = SessionLocal()
     try:
+        # 첫 메시지에서 인증 정보 수신 (타임아웃 10초)
+        try:
+            import asyncio
+            auth_text = await asyncio.wait_for(ws.receive_text(), timeout=10.0)
+            auth_data = json.loads(auth_text)
+        except Exception:
+            await ws.close(code=4001, reason="Auth required")
+            return
+
+        token = auth_data.get("token", "")
+        password = auth_data.get("password", "")
+
+        mid = verify_member_token(token)
+        if not mid:
+            await ws.close(code=4001, reason="Unauthorized")
+            return
+
         room = db.query(ChatRoom).filter(ChatRoom.id == room_id).first()
         if not room:
             await ws.close(code=4004, reason="Room not found")
@@ -1822,7 +1895,7 @@ async def admin_crawl_add_with_gpt(
     link = item.get("link", "")
 
     try:
-        async with __import__("httpx").AsyncClient(timeout=15, follow_redirects=True) as client:
+        async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
             r = await client.get(link, headers={"User-Agent": "Mozilla/5.0"})
         from bs4 import BeautifulSoup as _BS
         soup = _BS(r.text, "lxml")

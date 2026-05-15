@@ -147,9 +147,43 @@ async function parseWithDocument() {
   setParseStatus("입력 폼에 반영했습니다.", "success");
 }
 
+// ── 모바일 햄버거 메뉴 ───────────────────────────────────────────────────────
+
+function initMobileNav() {
+  const hamburger = document.getElementById("navHamburger");
+  const overlay   = document.getElementById("mobileNavOverlay");
+  const closeBtn  = document.getElementById("mobileNavClose");
+  if (!hamburger || !overlay) return;
+
+  function openMenu() {
+    overlay.classList.add("is-open");
+    hamburger.setAttribute("aria-expanded", "true");
+    document.body.style.overflow = "hidden";
+  }
+  function closeMenu() {
+    overlay.classList.remove("is-open");
+    hamburger.setAttribute("aria-expanded", "false");
+    document.body.style.overflow = "";
+  }
+
+  hamburger.addEventListener("click", openMenu);
+  if (closeBtn) closeBtn.addEventListener("click", closeMenu);
+
+  // 패널 바깥(어두운 오버레이) 클릭 시 닫기
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay) closeMenu();
+  });
+
+  // ESC 키로 닫기
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeMenu();
+  });
+}
+
 // ── DOMContentLoaded ─────────────────────────────────────────────────────────
 
 document.addEventListener("DOMContentLoaded", () => {
+  initMobileNav();
   // data-confirm 폼
   document.querySelectorAll("[data-confirm]").forEach((form) => {
     form.addEventListener("submit", (event) => {
@@ -255,6 +289,8 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // 직접 이미지 업로드 미리보기
+  // ※ comp_image_path(기존 이미지 경로)는 지우지 않음 — 서버에서 새 파일이 있으면 우선 사용,
+  //    없으면 기존 경로 보존. 직접 업로드가 성공하면 서버가 new_image를 우선하므로 안전.
   const compImageInput = document.getElementById("comp_image_input");
   if (compImageInput) {
     compImageInput.addEventListener("change", () => {
@@ -265,8 +301,6 @@ document.addEventListener("DOMContentLoaded", () => {
       if (wrap && preview) {
         preview.src = URL.createObjectURL(file);
         wrap.style.display = "flex";
-        const hiddenPath = document.getElementById("comp_image_path");
-        if (hiddenPath) hiddenPath.value = "";
       }
     });
   }

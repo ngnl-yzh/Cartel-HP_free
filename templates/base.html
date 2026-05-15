@@ -48,7 +48,66 @@
         <a href="/admin/login" class="btn btn-ghost btn-sm nav-admin-link">관리자</a>
       {% endif %}
     </div>
+    {# 모바일 햄버거 버튼 #}
+    <button class="nav-hamburger" id="navHamburger" aria-label="메뉴 열기" aria-expanded="false">
+      <span></span><span></span><span></span>
+    </button>
   </nav>
+
+  {# 모바일 전용 오버레이 메뉴 #}
+  <div class="mobile-nav-overlay" id="mobileNavOverlay">
+    <div class="mobile-nav-panel" id="mobileNavPanel">
+      <div class="mobile-nav-header">
+        <a href="/" class="nav-logo">공모전 보드</a>
+        <button class="mobile-nav-close" id="mobileNavClose" aria-label="메뉴 닫기">✕</button>
+      </div>
+      <form class="mobile-nav-search" action="/" method="get">
+        {% if current_tag is defined and current_tag and current_tag != 'all' %}
+          <input type="hidden" name="tag" value="{{ current_tag }}">
+        {% endif %}
+        <input type="search" name="q" placeholder="공모전 검색" value="{{ query if query is defined else '' }}">
+        <button type="submit">검색</button>
+      </form>
+      <nav class="mobile-nav-links">
+        <a href="/" class="mobile-nav-link">🏆 공모전</a>
+        <a href="/board/free" class="mobile-nav-link">💬 자유게시판</a>
+        <a href="/board/social" class="mobile-nav-link">🤝 친목게시판</a>
+        <a href="/board/project" class="mobile-nav-link">🛠 프로젝트</a>
+        <a href="/chat" class="mobile-nav-link">💬 채팅</a>
+        <div class="mobile-nav-divider"></div>
+        {% if is_admin is defined and is_admin %}
+          <a href="/admin" class="mobile-nav-link">⚙️ 관리자 패널</a>
+          <a href="/admin/logout" class="mobile-nav-link">로그아웃</a>
+        {% elif current_member is defined and current_member %}
+          <a href="/profile/{{ current_member.activity_name }}" class="mobile-nav-link">
+            {% if current_member.profile_image %}
+              <img src="/uploads/{{ current_member.profile_image }}" class="nav-avatar" alt="">
+            {% else %}
+              <span class="nav-avatar-letter">{{ current_member.activity_name[0] | upper }}</span>
+            {% endif %}
+            {{ current_member.activity_name }}
+            {% if current_member.role == 'sub_admin' %}<span class="nav-badge-role" style="margin-left:6px">중간관리자</span>{% endif %}
+          </a>
+          <a href="/my" class="mobile-nav-link">🏠 마이페이지</a>
+          <a href="/dm" class="mobile-nav-link">
+            💬 DM{% if dm_unread %} <span class="nav-badge">{{ dm_unread }}</span>{% endif %}
+          </a>
+          <a href="/my#notifications" class="mobile-nav-link">
+            🔔 알림{% if notif_count %} <span class="nav-badge">{{ notif_count }}</span>{% endif %}
+          </a>
+          <a href="/my/follows" class="mobile-nav-link">👥 팔로우</a>
+          {% if current_member.role == 'sub_admin' %}
+            <a href="/admin" class="mobile-nav-link">⚙️ 관리</a>
+          {% endif %}
+          <a href="/member/logout" class="mobile-nav-link">로그아웃</a>
+        {% else %}
+          <a href="/member/login" class="mobile-nav-link btn-primary-style">로그인</a>
+          <a href="/register" class="mobile-nav-link">회원가입</a>
+          <a href="/admin/login" class="mobile-nav-link" style="opacity:.5;font-size:.85rem">관리자 로그인</a>
+        {% endif %}
+      </nav>
+    </div>
+  </div>
 
   {# 2차 네비 — 게시판 + 채팅 #}
   <nav class="sub-nav">

@@ -939,7 +939,8 @@ async def admin_edit(
         raise HTTPException(status_code=404)
 
     new_image = await _save_image(comp_image)
-    _safe_path = Path(comp_image_path).name if comp_image_path else None
+    # 이미지 우선순위: 새 직접 업로드 > GPT/기존 경로 (hidden field) > 기존 DB 값 유지
+    _safe_path = Path(comp_image_path).name if comp_image_path and comp_image_path.strip() else None
     existing_files = _from_json(comp.files)
     comp.title = title; comp.organizer = organizer
     comp.tags = json.dumps(tags, ensure_ascii=False)
@@ -951,7 +952,11 @@ async def admin_edit(
     comp.award_date = date.fromisoformat(award_date) if award_date else None
     comp.prize = prize; comp.link = link; comp.description = description
     comp.is_featured = is_featured; comp.max_members = _optional_int(max_members, "최대 팀 인원")
-    comp.image = new_image or _safe_path or comp.image
+    if new_image:
+        comp.image = new_image          # 새로 직접 업로드한 파일
+    elif _safe_path:
+        comp.image = _safe_path         # GPT 파싱 또는 폼의 기존 경로
+    # else: comp.image 변경 없음 — DB 기존 값 그대로 유지
     comp.files = json.dumps(existing_files + await _save_files(files), ensure_ascii=False)
     db.commit()
     return RedirectResponse(url="/admin", status_code=303)

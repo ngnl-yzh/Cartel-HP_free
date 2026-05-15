@@ -18,6 +18,11 @@
   --radius: 12px;
   --radius-lg: 16px;
   --transition: 0.15s ease;
+  /* 별칭 — 일부 컴포넌트에서 사용 */
+  --bg-card: var(--surface);
+  --bg-2: var(--surface-soft);
+  --border: var(--line);
+  --color-urgent: #ef4444;
 }
 
 * {
@@ -1057,14 +1062,140 @@ select {
   text-align: center;
 }
 
+/* ── 햄버거 버튼 (PC에서 숨김) ──────────────────────────────── */
+.nav-hamburger {
+  display: none;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 5px;
+  width: 40px;
+  height: 40px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 8px;
+  transition: background var(--transition);
+}
+.nav-hamburger:hover { background: var(--surface-soft); }
+.nav-hamburger span {
+  display: block;
+  width: 22px;
+  height: 2px;
+  background: var(--text);
+  border-radius: 2px;
+  transition: all var(--transition);
+}
+
+/* ── 모바일 오버레이 메뉴 ────────────────────────────────────── */
+.mobile-nav-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(0,0,0,.45);
+  backdrop-filter: blur(2px);
+  opacity: 0;
+  transition: opacity .2s ease;
+}
+.mobile-nav-overlay.is-open {
+  opacity: 1;
+}
+.mobile-nav-panel {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: min(320px, 88vw);
+  background: var(--surface);
+  box-shadow: -4px 0 24px rgba(0,0,0,.18);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  transform: translateX(100%);
+  transition: transform .22s ease;
+}
+.mobile-nav-overlay.is-open .mobile-nav-panel {
+  transform: translateX(0);
+}
+.mobile-nav-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid var(--line);
+}
+.mobile-nav-close {
+  border: none;
+  background: none;
+  font-size: 1.3rem;
+  cursor: pointer;
+  color: var(--muted);
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+.mobile-nav-close:hover { background: var(--surface-soft); color: var(--text); }
+.mobile-nav-search {
+  display: flex;
+  gap: 0;
+  padding: 14px 16px 10px;
+  border-bottom: 1px solid var(--line);
+}
+.mobile-nav-search input {
+  flex: 1;
+  border: 1px solid var(--line);
+  border-right: 0;
+  border-radius: 8px 0 0 8px;
+  padding: 10px 12px;
+  font: inherit;
+  font-size: .9rem;
+}
+.mobile-nav-search button {
+  border: 1px solid var(--line);
+  border-radius: 0 8px 8px 0;
+  background: var(--surface-soft);
+  padding: 0 14px;
+  cursor: pointer;
+  font-size: .85rem;
+}
+.mobile-nav-links {
+  display: flex;
+  flex-direction: column;
+  padding: 10px 10px 20px;
+  gap: 2px;
+}
+.mobile-nav-link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 14px;
+  border-radius: 10px;
+  font-size: .95rem;
+  color: var(--text);
+  text-decoration: none;
+  transition: background var(--transition);
+}
+.mobile-nav-link:hover { background: var(--surface-soft); }
+.mobile-nav-link.btn-primary-style {
+  background: var(--primary);
+  color: #fff;
+  font-weight: 600;
+  justify-content: center;
+  margin-bottom: 4px;
+}
+.mobile-nav-divider {
+  height: 1px;
+  background: var(--line);
+  margin: 8px 4px;
+}
+
+/* ════ 반응형 브레이크포인트 ═══════════════════════════════════ */
+
 @media (max-width: 980px) {
   .navbar {
-    grid-template-columns: 1fr;
+    grid-template-columns: auto 1fr auto;
     gap: 12px;
-  }
-
-  .nav-actions {
-    justify-content: flex-start;
   }
 
   .featured-grid,
@@ -1090,9 +1221,49 @@ select {
   }
 }
 
+/* 태블릿/모바일 — 768px 이하에서 햄버거 메뉴 전환 */
+@media (max-width: 768px) {
+  .nav-search,
+  .nav-actions {
+    display: none !important;
+  }
+
+  .nav-hamburger {
+    display: flex;
+  }
+
+  .mobile-nav-overlay {
+    display: block;
+  }
+
+  .navbar {
+    grid-template-columns: 1fr auto;
+    padding: 12px 16px;
+    gap: 8px;
+  }
+
+  .sub-nav {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .sub-nav::-webkit-scrollbar { display: none; }
+  .sub-nav-inner {
+    width: auto;
+    min-width: max-content;
+    padding: 0 12px;
+    gap: 0;
+  }
+  .sub-nav-link {
+    padding: 10px 14px;
+    font-size: .85rem;
+    white-space: nowrap;
+  }
+}
+
 @media (max-width: 640px) {
   .container {
-    width: min(100% - 28px, 1180px);
+    width: calc(100% - 24px);
   }
 
   .featured-grid,
@@ -1101,12 +1272,9 @@ select {
     grid-template-columns: 1fr;
   }
 
-  .navbar {
-    padding: 12px 14px;
-  }
-
   .featured-section {
-    padding-top: 28px;
+    padding-top: 24px;
+    padding-bottom: 20px;
   }
 
   .featured-card,
@@ -1115,15 +1283,145 @@ select {
   }
 
   .detail-title {
-    font-size: 2rem;
+    font-size: 1.7rem;
   }
 
+  /* 공모전 상세 헤더 스택 */
+  .detail-hero-head {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  /* 테이블 가로 스크롤 */
+  .table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .admin-table {
+    min-width: 680px;
+  }
+
+  /* 버튼/폼 영역 세로 배치 */
   .table-actions,
   .form-actions,
   .file-item {
     align-items: stretch;
     flex-direction: column;
   }
+
+  /* 페이지 헤딩 */
+  .page-heading {
+    gap: 10px;
+  }
+  .page-heading h1 {
+    font-size: 1.5rem;
+  }
+
+  /* 툴바 */
+  .toolbar {
+    gap: 10px;
+  }
+  .board-search-bar {
+    flex-wrap: wrap;
+  }
+
+  /* 인증 박스 */
+  .auth-box {
+    padding: 26px 20px;
+  }
+
+  /* 프로필 카드 */
+  .profile-card {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 16px;
+  }
+  .profile-name-row {
+    justify-content: center;
+  }
+  .profile-actions {
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+  .follow-counts {
+    justify-content: center;
+  }
+
+  /* 마이페이지 히어로 */
+  .my-hero {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
+  .my-hero-actions {
+    justify-content: center;
+  }
+
+  /* 초대 코드 카드 */
+  .invite-code-main {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .invite-code-actions {
+    flex-wrap: wrap;
+  }
+
+  /* 팀 그리드 */
+  .teams-grid {
+    grid-template-columns: 1fr;
+  }
+
+  /* 공모전 단계 배지 */
+  .stage-results {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  /* 폼 그리드 */
+  .form-grid.three-col,
+  .form-grid.two-col {
+    grid-template-columns: 1fr;
+  }
+
+  /* 어드민 멤버 그룹 테이블 */
+  .invite-group-section .table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* DM 목록 */
+  .dm-thread-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+
+  /* 팔로우 */
+  .follow-request-card {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  /* 채팅 */
+  .chat-sidebar { display: none; }
+  .chat-layout { margin: 0; border-radius: 0; height: calc(100dvh - 110px); }
+  .chat-message { max-width: 88%; }
+
+  /* 게시판 목록 */
+  .post-row { flex-direction: column; align-items: flex-start; }
+  .post-row-meta { width: 100%; justify-content: space-between; }
+
+  /* 히스토리 카드 */
+  .award-form-row { grid-template-columns: 1fr; }
+  .history-card-top { flex-direction: column; gap: 8px; }
+  .history-badges { justify-content: flex-start; flex-wrap: wrap; }
+
+  /* 알림 */
+  .notif-item { flex-direction: column; align-items: flex-start; gap: 6px; }
+  .notif-time { margin-left: 0; }
 }
 
 /* ════════════════════════════════════════════════════════════
@@ -2497,16 +2795,7 @@ select {
   margin: 4px 0 0;
 }
 
-@media (max-width: 640px) {
-  .post-row { flex-direction: column; align-items: flex-start; }
-  .post-row-meta { width: 100%; justify-content: space-between; }
-  .chat-sidebar { display: none; }
-  .chat-layout { margin: 0; border-radius: 0; height: calc(100vh - 110px); }
-  .chat-message { max-width: 85%; }
-  .award-form-row { grid-template-columns: 1fr; }
-  .history-card-top { flex-direction: column; }
-  .history-badges { justify-content: flex-start; }
-}
+/* (640px 모바일 규칙은 위 통합 미디어 쿼리로 이동됨) */
 
 /* ── 팀 그리드 / 카드 ─────────────────────────────────────── */
 .teams-grid {

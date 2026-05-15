@@ -5,6 +5,8 @@ import os
 import struct
 import zlib
 
+from typing import Optional
+
 from openai import AsyncOpenAI
 
 MODEL = os.getenv("OPENAI_MODEL", "gpt-4o")
@@ -27,12 +29,18 @@ tags는 ["IT/SW","디자인","기획·마케팅","사회혁신","예술·문화"
   "description": "마크다운 형식의 상세 내용"
 }"""
 
+# 싱글턴 클라이언트 — 매 호출마다 생성하지 않음
+_openai_client: Optional[AsyncOpenAI] = None
+
 
 def _client() -> AsyncOpenAI:
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        raise RuntimeError("OPENAI_API_KEY가 설정되어 있지 않습니다.")
-    return AsyncOpenAI(api_key=api_key)
+    global _openai_client
+    if _openai_client is None:
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise RuntimeError("OPENAI_API_KEY가 설정되어 있지 않습니다.")
+        _openai_client = AsyncOpenAI(api_key=api_key)
+    return _openai_client
 
 
 async def parse_text(text: str) -> dict:

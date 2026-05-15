@@ -12,7 +12,8 @@ from typing import Optional
 import httpx
 from bs4 import BeautifulSoup
 
-CURRENT_YEAR = date.today().year
+def _current_year() -> int:
+    return date.today().year
 
 HEADERS = {
     "User-Agent": (
@@ -54,7 +55,7 @@ def _is_current_year(deadline_str: Optional[str]) -> bool:
     if not deadline_str:
         return True  # 날짜 파싱 실패 시 포함
     try:
-        return datetime.fromisoformat(deadline_str).year >= CURRENT_YEAR
+        return datetime.fromisoformat(deadline_str).year >= _current_year()
     except Exception:
         return True
 
@@ -254,7 +255,7 @@ async def _crawl_gongmoju(client: httpx.AsyncClient) -> list[dict]:
                     pub_date = post.get("date", "")
                     if pub_date:
                         pub_year = int(pub_date[:4])
-                        if pub_year < CURRENT_YEAR:
+                        if pub_year < _current_year():
                             continue
 
                     if title and href:

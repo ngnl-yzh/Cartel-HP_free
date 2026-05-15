@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import hmac
 import html
@@ -155,8 +156,33 @@ def _validate_csrf(request: Request, form_token: str) -> bool:
     return hmac.compare_digest(expected, form_token or "")
 
 
-# ── 관리자 로그인 실패 카운터 ─────────────────────────────────────────────────
-_admin_fail_count: dict = {}  # ip → (count, last_fail_time)
+# ── 로그인 실패 카운터 (IP → (횟수, 마지막 실패 시각)) ──────────────────────────
+_admin_fail_count: dict = {}   # 관리자
+_member_fail_count: dict = {}  # 회원
+
+_LOGIN_MAX_FAIL = 10          # 최대 허용 실패 횟수
+_LOGIN_LOCKOUT  = 300         # 잠금 시간(초)
+_FAIL_TTL       = 3600        # 오래된 항목 청소 기준(초)
+
+
+def _prune_fail_counter(counter: dict) -> None:
+    """1시간 이상 된 항목 제거 (메모리 누수 방지)"""
+    now = datetime.now()
+    stale = [ip for ip, (_, last) in counter.items()
+             if (now - last).total_seconds() > _FAIL_TTL]
+    for ip in stale:
+        del counter[ip]
+
+
+def _is_locked(counter: dict, ip: str) -> bool:
+    count, last = counter.get(ip, (0, datetime.min))
+    return count >= _LOGIN_MAX_FAIL and (datetime.now() - last).total_seconds() < _LOGIN_LOCKOUT
+
+
+def _record_fail(counter: dict, ip: str) -> None:
+    count, _ = counter.get(ip, (0, datetime.min))
+    counter[ip] = (count + 1, datetime.now())
+    _prune_fail_counter(counter)
 
 
 @app.on_event("startup")
@@ -238,6 +264,8 @@ def _render(request: Request, name: str, context: dict, status_code: int = 200):
 
 ALLOWED_IMAGE_EXT = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 ALLOWED_FILE_EXT = {".pdf", ".hwp", ".hwpx", ".zip", ".docx", ".pptx", ".xlsx", ".txt", ".png", ".jpg", ".jpeg"}
+MAX_IMAGE_SIZE = int(os.getenv("MAX_IMAGE_SIZE", str(10 * 1024 * 1024)))   # 10 MB
+MAX_FILE_SIZE  = int(os.getenv("MAX_FILE_SIZE",  str(50 * 1024 * 1024)))   # 50 MB
 
 
 async def _save_image(upload: Optional[UploadFile]) -> Optional[str]:
@@ -249,6 +277,8 @@ async def _save_image(upload: Optional[UploadFile]) -> Optional[str]:
     content = await upload.read()
     if not content:
         return None
+    if len(content) > MAX_IMAGE_SIZE:
+        raise HTTPException(status_code=413, detail=f"이미지 파일 크기는 {MAX_IMAGE_SIZE // 1024 // 1024}MB를 초과할 수 없습니다.")
     name = f"{uuid.uuid4().hex}{ext}"
     (UPLOAD_DIR / name).write_bytes(content)
     return name
@@ -274,6 +304,8 @@ async def _save_files(files: List[UploadFile]) -> list:
         content = await f.read()
         if not content:
             continue
+        if len(content) > MAX_FILE_SIZE:
+            raise HTTPException(status_code=413, detail=f"첨부 파일 크기는 {MAX_FILE_SIZE // 1024 // 1024}MB를 초과할 수 없습니다.")
         name = f"{uuid.uuid4().hex}{ext}"
         (UPLOAD_DIR / name).write_bytes(content)
         saved.append({"name": f.filename, "path": name})
@@ -493,11 +525,8 @@ async def admin_login_page(request: Request, db: Session = Depends(get_db)):
 @app.post("/admin/login")
 async def admin_login(request: Request, password: str = Form(...), db: Session = Depends(get_db)):
     client_ip = request.client.host if request.client else "unknown"
-    fail_info = _admin_fail_count.get(client_ip, (0, datetime.min))
-    fail_count, last_fail = fail_info
 
-    # 5회 실패 후 5분 잠금
-    if fail_count >= 5 and (datetime.now() - last_fail).total_seconds() < 300:
+    if _is_locked(_admin_fail_count, client_ip):
         return _render(request, "admin/login.html", _ctx(request, db, error="너무 많은 로그인 시도입니다. 5분 후 다시 시도하세요."), status_code=429)
 
     if hmac.compare_digest(password, ADMIN_PASSWORD):
@@ -506,8 +535,7 @@ async def admin_login(request: Request, password: str = Form(...), db: Session =
         resp.set_cookie("admin_token", create_token(), httponly=True, max_age=86400, samesite="lax", secure=IS_PRODUCTION)
         return resp
 
-    # 실패 카운터 증가
-    _admin_fail_count[client_ip] = (fail_count + 1, datetime.now())
+    _record_fail(_admin_fail_count, client_ip)
     return _render(request,
         "admin/login.html",
         _ctx(request, db, error="비밀번호가 올바르지 않습니다."),
@@ -918,13 +946,21 @@ async def member_login_page(request: Request, db: Session = Depends(get_db)):
 
 @app.post("/member/login")
 async def member_login(request: Request, activity_name: str = Form(...), password: str = Form(...), db: Session = Depends(get_db)):
+    client_ip = request.client.host if request.client else "unknown"
+
+    if _is_locked(_member_fail_count, client_ip):
+        return _render(request, "member_login.html", _ctx(request, db, error="너무 많은 로그인 시도입니다. 잠시 후 다시 시도하세요."), status_code=429)
+
     m = db.query(Member).filter(Member.activity_name == activity_name.strip()).first()
     if not m or not verify_password(password, m.password_hash):
+        _record_fail(_member_fail_count, client_ip)
         return _render(request,
             "member_login.html",
             _ctx(request, db, error="활동명 또는 비밀번호가 올바르지 않습니다."),
             status_code=401,
         )
+
+    _member_fail_count.pop(client_ip, None)
     resp = RedirectResponse(url="/", status_code=303)
     resp.set_cookie("member_token", create_member_token(m.id), httponly=True, max_age=604800, samesite="lax", secure=IS_PRODUCTION)
     return resp
@@ -1074,6 +1110,8 @@ async def team_join(
     comp = db.query(Competition).filter(Competition.id == comp_id).first()
     if not comp:
         raise HTTPException(status_code=404)
+    if date.today() > comp.deadline:
+        raise HTTPException(status_code=400, detail="마감된 공모전입니다.")
     team = db.query(Team).filter(Team.id == team_id, Team.competition_id == comp_id).first()
     if not team:
         raise HTTPException(status_code=404)
@@ -1737,7 +1775,6 @@ async def ws_chat(ws: WebSocket, room_id: int):
     try:
         # 첫 메시지에서 인증 정보 수신 (타임아웃 10초)
         try:
-            import asyncio
             auth_text = await asyncio.wait_for(ws.receive_text(), timeout=10.0)
             auth_data = json.loads(auth_text)
         except Exception:

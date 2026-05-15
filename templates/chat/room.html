@@ -4,28 +4,83 @@
 {% block content %}
 <div class="chat-page">
   <div class="chat-layout">
-
-    {# 사이드바 #}
     <aside class="chat-sidebar">
-      <a href="/chat" class="back-link">← 채팅방 목록</a>
-      <h2 class="chat-room-name">
-        {% if has_password %}🔒{% else %}🌐{% endif %}
+      <a href="/chat" class="back-link">채팅방 목록</a>
+      <h1 class="chat-room-name">
+        {% if room.password_hash %}🔒{% else %}공개{% endif %}
         {{ room.name }}
-      </h2>
+      </h1>
       {% if room.description %}
         <p class="chat-room-desc muted">{{ room.description }}</p>
       {% endif %}
       <div id="chatStatus" class="chat-status">연결 중...</div>
-      <div id="onlineList" class="online-list">
-        <p class="muted" style="font-size:.8rem">접속자</p>
-        <div id="onlineNames"></div>
-      </div>
+
+      <details class="chat-side-details">
+        <summary>접속자 <span id="onlineCount">{{ online_members | length }}</span></summary>
+        <div id="onlineNames" class="chat-member-list">
+          {% for m in online_members %}
+            <span class="chat-member-chip">{{ m.name }}</span>
+          {% endfor %}
+        </div>
+      </details>
+
+      <details class="chat-side-details">
+        <summary>멤버 <span id="memberCount">{{ room_members | length }}</span></summary>
+        <div id="memberNames" class="chat-member-list">
+          {% for row in room_members %}
+          {% if row.member %}
+          <div class="chat-member-row" data-member-id="{{ row.member_id }}">
+            <div>
+              <strong>{{ row.member.activity_name }}</strong>
+              <span class="role-label role-{{ row.role }}">
+                {% if row.role == 'owner' %}방장{% elif row.role == 'co_owner' %}부방장{% else %}멤버{% endif %}
+              </span>
+              {% if row.muted_until and row.muted_until > now %}
+                <span class="muted">말 금지 {{ row.muted_until.strftime('%m/%d %H:%M') }}까지</span>
+              {% endif %}
+            </div>
+            {% if can_manage_room and row.member_id != current_member.id %}
+            <div class="chat-member-actions">
+              {% if room_member and room_member.role == 'owner' and row.role != 'owner' %}
+              <form method="post" action="/chat/{{ room.id }}/members/{{ row.member_id }}/role">
+                <input type="hidden" name="role" value="{{ 'member' if row.role == 'co_owner' else 'co_owner' }}">
+                <button type="submit" class="btn btn-ghost btn-xs">{{ '부방장 해제' if row.role == 'co_owner' else '부방장' }}</button>
+              </form>
+              {% if row.role == 'co_owner' %}
+              <form method="post" action="/chat/{{ room.id }}/members/{{ row.member_id }}/role" data-confirm="방장을 넘기시겠습니까?">
+                <input type="hidden" name="role" value="transfer_owner">
+                <button type="submit" class="btn btn-outline btn-xs">방장 위임</button>
+              </form>
+              {% endif %}
+              {% endif %}
+              {% if row.role != 'owner' %}
+              <form method="post" action="/chat/{{ room.id }}/members/{{ row.member_id }}/mute" class="inline-mute-form">
+                <select name="duration_minutes" class="compact-select">
+                  <option value="10">10분</option>
+                  <option value="60">1시간</option>
+                  <option value="1440">24시간</option>
+                  <option value="">해제</option>
+                </select>
+                <button type="submit" class="btn btn-outline btn-xs">말 금지</button>
+              </form>
+              {% endif %}
+            </div>
+            {% endif %}
+          </div>
+          {% endif %}
+          {% endfor %}
+        </div>
+      </details>
+
+      {% if room_member %}
+      <form method="post" action="/chat/{{ room.id }}/leave" data-confirm="이 채팅방에서 나가시겠습니까?">
+        <button type="submit" class="btn btn-outline btn-full">채팅방 나가기</button>
+      </form>
+      {% endif %}
     </aside>
 
-    {# 채팅 영역 #}
     <div class="chat-main">
       <div id="messages" class="chat-messages">
-        {# 기존 메시지 #}
         {% for msg in messages %}
         <div class="chat-message {% if current_member and msg.author_id == current_member.id %}mine{% else %}theirs{% endif %}">
           {% if not (current_member and msg.author_id == current_member.id) %}
@@ -54,24 +109,22 @@
   </div>
 </div>
 
-{# 비밀번호 모달 #}
 {% if has_password %}
 <div id="passwordModal" class="modal-overlay" style="display:flex">
   <div class="modal-box">
-    <h3 class="modal-title">🔒 비밀번호가 필요한 방입니다</h3>
+    <h2 class="modal-title">비밀번호가 필요한 방입니다</h2>
     <div id="passwordError" class="alert alert-error" style="display:none"></div>
     <label class="field" style="margin-top:1rem">
       <span>채팅방 비밀번호</span>
       <input type="password" id="roomPasswordInput" placeholder="비밀번호 입력" autofocus>
     </label>
-    <div class="modal-actions" style="margin-top:1rem">
+    <div class="modal-actions">
       <button id="passwordSubmitBtn" class="btn btn-primary">입장</button>
       <a href="/chat" class="btn btn-outline">취소</a>
     </div>
   </div>
 </div>
 {% endif %}
-
 {% endblock %}
 
 {% block scripts %}
@@ -79,11 +132,42 @@
 const ROOM_ID = {{ room.id }};
 const HAS_PASSWORD = {{ 'true' if has_password else 'false' }};
 const MY_NAME = "{{ current_member.activity_name if current_member else '' }}";
-let roomPassword = "";
+let roomPassword = localStorage.getItem(`chat_room_${ROOM_ID}_password`) || "";
 
 function getCookie(name) {
   const m = document.cookie.match(new RegExp("(?:^|;)\\s*" + name + "=([^;]*)"));
   return m ? decodeURIComponent(m[1]) : "";
+}
+
+function roleText(role) {
+  if (role === "owner") return "방장";
+  if (role === "co_owner") return "부방장";
+  return "멤버";
+}
+
+function renderPresence(data) {
+  const onlineNames = document.getElementById("onlineNames");
+  const memberNames = document.getElementById("memberNames");
+  document.getElementById("onlineCount").textContent = data.online.length;
+  document.getElementById("memberCount").textContent = data.members.length;
+  onlineNames.innerHTML = data.online.map((m) =>
+    `<span class="chat-member-chip ${m.name === MY_NAME ? 'is-me' : ''}">${escapeHtml(m.name)}${m.name === MY_NAME ? ' (나)' : ''}</span>`
+  ).join("");
+  data.members.forEach((payload) => {
+    let row = memberNames.querySelector(`.chat-member-row[data-member-id="${payload.id}"]`);
+    if (!row) {
+      row = document.createElement("div");
+      row.className = "chat-member-row";
+      row.dataset.memberId = payload.id;
+      row.innerHTML = `<div><strong>${escapeHtml(payload.name)}</strong><span class="role-label"></span></div>`;
+      memberNames.appendChild(row);
+    }
+    const role = row.querySelector(".role-label");
+    if (role) {
+      role.className = `role-label role-${payload.role}`;
+      role.textContent = roleText(payload.role);
+    }
+  });
 }
 
 function connectWS() {
@@ -94,8 +178,11 @@ function connectWS() {
   window._ws = ws;
 
   ws.onopen = () => {
-    document.getElementById("chatStatus").textContent = "✅ 연결됨";
+    document.getElementById("chatStatus").textContent = "연결됨";
     document.getElementById("chatStatus").className = "chat-status connected";
+    if (roomPassword) localStorage.setItem(`chat_room_${ROOM_ID}_password`, roomPassword);
+    const modal = document.getElementById("passwordModal");
+    if (modal) modal.style.display = "none";
     scrollToBottom();
   };
 
@@ -103,23 +190,31 @@ function connectWS() {
     const data = JSON.parse(e.data);
     if (data.type === "system") {
       appendSystem(data.message);
-    } else {
+    } else if (data.type === "message") {
       appendMessage(data);
+    } else if (data.type === "presence") {
+      renderPresence(data);
+    } else if (data.type === "error") {
+      appendSystem(data.message);
     }
   };
 
   ws.onclose = (e) => {
     if (e.code === 4003) {
+      localStorage.removeItem(`chat_room_${ROOM_ID}_password`);
       const errEl = document.getElementById("passwordError");
-      errEl.textContent = "비밀번호가 올바르지 않습니다.";
-      errEl.style.display = "block";
-      document.getElementById("passwordModal").style.display = "flex";
-      document.getElementById("roomPasswordInput").focus();
+      if (errEl) {
+        errEl.textContent = "비밀번호가 올바르지 않습니다.";
+        errEl.style.display = "block";
+      }
+      const modal = document.getElementById("passwordModal");
+      if (modal) modal.style.display = "flex";
+      const input = document.getElementById("roomPasswordInput");
+      if (input) input.focus();
     } else if (e.code === 4001) {
-      alert("로그인이 필요합니다.");
       location.href = "/member/login";
     } else {
-      document.getElementById("chatStatus").textContent = "⚠️ 연결 끊김 (새로고침으로 재연결)";
+      document.getElementById("chatStatus").textContent = "연결 끊김";
       document.getElementById("chatStatus").className = "chat-status disconnected";
     }
   };
@@ -135,10 +230,8 @@ function appendSystem(msg) {
 
 function appendMessage(data) {
   const isMine = data.author === MY_NAME;
-  const container = document.getElementById("messages");
   const div = document.createElement("div");
   div.className = `chat-message ${isMine ? "mine" : "theirs"}`;
-
   let authorHtml = "";
   if (!isMine) {
     const avatar = data.profile_image
@@ -146,13 +239,8 @@ function appendMessage(data) {
       : `<span class="mini-avatar-letter small">${escapeHtml(data.author[0] || "?").toUpperCase()}</span>`;
     authorHtml = `<div class="chat-author-info">${avatar}<span class="chat-author">${escapeHtml(data.author)}</span></div>`;
   }
-
-  div.innerHTML = `
-    ${authorHtml}
-    <div class="chat-bubble">${escapeHtml(data.content)}</div>
-    <div class="chat-time">${data.time}</div>
-  `;
-  container.appendChild(div);
+  div.innerHTML = `${authorHtml}<div class="chat-bubble">${escapeHtml(data.content)}</div><div class="chat-time">${data.time}</div>`;
+  document.getElementById("messages").appendChild(div);
   scrollToBottom();
 }
 
@@ -169,7 +257,6 @@ function scrollToBottom() {
   msgs.scrollTop = msgs.scrollHeight;
 }
 
-// 입력 이벤트
 document.getElementById("chatInput").addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey) {
     e.preventDefault();
@@ -178,23 +265,21 @@ document.getElementById("chatInput").addEventListener("keydown", (e) => {
 });
 document.getElementById("sendBtn").addEventListener("click", sendMessage);
 
-// 비밀번호 모달
 if (HAS_PASSWORD) {
   const submitBtn = document.getElementById("passwordSubmitBtn");
   const pwInput = document.getElementById("roomPasswordInput");
-
-  function tryConnect() {
-    roomPassword = pwInput.value;
-    document.getElementById("passwordModal").style.display = "none";
+  if (roomPassword) {
     connectWS();
   }
-
+  function tryConnect() {
+    roomPassword = pwInput.value;
+    connectWS();
+  }
   submitBtn.addEventListener("click", tryConnect);
   pwInput.addEventListener("keydown", (e) => { if (e.key === "Enter") tryConnect(); });
 } else {
   connectWS();
 }
-
 scrollToBottom();
 </script>
 {% endblock %}

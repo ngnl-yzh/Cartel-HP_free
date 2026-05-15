@@ -1,4 +1,5 @@
 import hashlib
+import html
 import json
 import os
 import secrets
@@ -26,9 +27,9 @@ from database import SessionLocal, get_db, init_db
 from member_auth import create_member_token, hash_password, verify_member_token, verify_password
 from models import (
     BOARDS,
-    ChatMessage, ChatRoom,
+    ChatMessage, ChatRoom, ChatRoomMember,
     Comment, CommentLike,
-    Competition, InviteCode, Member,
+    Competition, InviteCode, InviteCodeUseLog, Member,
     Post, PostLike,
     Team, TeamMember,
 )
@@ -44,6 +45,42 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    accepts_html = "text/html" in request.headers.get("accept", "")
+    if not accepts_html:
+        return JSONResponse({"detail": exc.detail}, status_code=exc.status_code, headers=exc.headers)
+    detail = html.escape(exc.detail if isinstance(exc.detail, str) else "요청을 처리할 수 없습니다.")
+    return HTMLResponse(
+        f"""
+        <!doctype html>
+        <html lang="ko">
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1">
+          <title>오류 · 공모전 보드</title>
+          <link rel="stylesheet" href="/static/css/style.css">
+        </head>
+        <body>
+          <main class="auth-page">
+            <section class="auth-panel">
+              <p class="eyebrow">Error {exc.status_code}</p>
+              <h1>요청을 처리하지 못했습니다.</h1>
+              <p class="muted">{detail}</p>
+              <div class="modal-actions">
+                <a href="javascript:history.back()" class="btn btn-outline">이전으로</a>
+                <a href="/" class="btn btn-primary">홈으로</a>
+              </div>
+            </section>
+          </main>
+        </body>
+        </html>
+        """,
+        status_code=exc.status_code,
+        headers=exc.headers,
+    )
 
 
 def _from_json(value) -> list:
@@ -63,6 +100,26 @@ def _optional_int(value, field_name: str) -> Optional[int]:
         return int(value)
     except (TypeError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=f"{field_name} 값이 올바른 숫자가 아닙니다.") from exc
+
+
+def _compact_text(value: str) -> str:
+    return "".join((value or "").lower().split())
+
+
+def _compact_column(column):
+    return func.replace(func.replace(func.lower(column), " ", ""), "\t", "")
+
+
+def _parse_expiry(valid_days: Optional[str], expires_at: Optional[str]) -> Optional[datetime]:
+    if expires_at:
+        try:
+            return datetime.fromisoformat(expires_at)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="만료일 형식이 올바르지 않습니다.") from exc
+    days = _optional_int(valid_days, "유효 기간")
+    if days:
+        return datetime.now() + timedelta(days=days)
+    return None
 
 
 templates.env.filters["fromjson"] = _from_json
@@ -138,9 +195,14 @@ def _ctx(request: Request, db: Session, **extra) -> dict:
         "current_member": cm,
         "is_privileged": is_admin or bool(cm and cm.role == "sub_admin"),
         "boards": BOARDS,
+        "now": datetime.now(),
     }
     base.update(extra)
     return base
+
+
+def _render(request: Request, name: str, context: dict, status_code: int = 200):
+    return templates.TemplateResponse(name=name, request=request, context=context, status_code=status_code)
 
 
 # ── 파일 저장 헬퍼 ────────────────────────────────────────────────────────────
@@ -206,6 +268,57 @@ def _member_map(db: Session, ids: list[int]) -> dict[int, Member]:
     return {m.id: m for m in members}
 
 
+def _chat_member(db: Session, room_id: int, member_id: int) -> Optional[ChatRoomMember]:
+    return (
+        db.query(ChatRoomMember)
+        .filter(ChatRoomMember.room_id == room_id, ChatRoomMember.member_id == member_id)
+        .first()
+    )
+
+
+def _ensure_chat_member(db: Session, room: ChatRoom, member: Member) -> ChatRoomMember:
+    row = _chat_member(db, room.id, member.id)
+    if row:
+        if member.id == room.created_by_id and row.role != "owner":
+            row.role = "owner"
+            db.commit()
+        return row
+    role = "owner" if member.id == room.created_by_id else "member"
+    row = ChatRoomMember(room_id=room.id, member_id=member.id, role=role)
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def _room_members(db: Session, room_id: int) -> list[ChatRoomMember]:
+    rows = (
+        db.query(ChatRoomMember)
+        .filter(ChatRoomMember.room_id == room_id)
+        .order_by(
+            case(
+                (ChatRoomMember.role == "owner", 0),
+                (ChatRoomMember.role == "co_owner", 1),
+                else_=2,
+            ),
+            ChatRoomMember.joined_at.asc(),
+        )
+        .all()
+    )
+    members = _member_map(db, [row.member_id for row in rows])
+    for row in rows:
+        row.member = members.get(row.member_id)
+    return rows
+
+
+def _can_manage_room(room_member: Optional[ChatRoomMember], request: Request, db: Session) -> bool:
+    return _is_privileged(request, db) or bool(room_member and room_member.role in ("owner", "co_owner"))
+
+
+def _is_comment_muted(member: Member) -> bool:
+    return bool(member.comment_muted_until and member.comment_muted_until > datetime.now())
+
+
 # ════════════════════════════════════════════════════════════════════════════
 #  공개 페이지 — 공모전
 # ════════════════════════════════════════════════════════════════════════════
@@ -239,7 +352,13 @@ async def index(
     if tag and tag != "all":
         query = query.filter(Competition.tags.like(f'%"{tag}"%'))
     if q:
-        query = query.filter(or_(Competition.title.contains(q), Competition.organizer.contains(q)))
+        compact_q = _compact_text(q)
+        query = query.filter(
+            or_(
+                _compact_column(Competition.title).contains(compact_q),
+                _compact_column(Competition.organizer).contains(compact_q),
+            )
+        )
 
     if sort == "views":
         query = query.order_by(Competition.view_count.desc(), active_priority.asc(), Competition.deadline.asc())
@@ -260,7 +379,7 @@ async def index(
     for c in competitions + featured:
         c.member_count = counts.get(c.id, 0)
 
-    return templates.TemplateResponse(
+    return _render(request,
         "index.html",
         _ctx(request, db,
              featured=featured, competitions=competitions,
@@ -305,7 +424,7 @@ async def detail(request: Request, comp_id: int, db: Session = Depends(get_db)):
     today = date.today()
     submission_window = comp.deadline < today <= comp.deadline + timedelta(days=7)
 
-    return templates.TemplateResponse(
+    return _render(request,
         "detail.html",
         _ctx(request, db,
              comp=comp, files=_from_json(comp.files),
@@ -323,7 +442,7 @@ async def detail(request: Request, comp_id: int, db: Session = Depends(get_db)):
 async def admin_login_page(request: Request, db: Session = Depends(get_db)):
     if _is_admin(request):
         return RedirectResponse(url="/admin", status_code=303)
-    return templates.TemplateResponse("admin/login.html", _ctx(request, db, error=None))
+    return _render(request, "admin/login.html", _ctx(request, db, error=None))
 
 
 @app.post("/admin/login")
@@ -332,7 +451,7 @@ async def admin_login(request: Request, password: str = Form(...), db: Session =
         resp = RedirectResponse(url="/admin", status_code=303)
         resp.set_cookie("admin_token", create_token(), httponly=True, max_age=86400, samesite="lax")
         return resp
-    return templates.TemplateResponse(
+    return _render(request,
         "admin/login.html",
         _ctx(request, db, error="비밀번호가 올바르지 않습니다."),
         status_code=401,
@@ -351,7 +470,7 @@ async def admin_dashboard(request: Request, db: Session = Depends(get_db)):
     if r := _admin_redirect(request):
         return r
     competitions = _annotate(db.query(Competition).order_by(Competition.deadline.asc()).all())
-    return templates.TemplateResponse(
+    return _render(request,
         "admin/dashboard.html",
         _ctx(request, db, competitions=competitions, today=date.today()),
     )
@@ -363,7 +482,7 @@ async def admin_dashboard(request: Request, db: Session = Depends(get_db)):
 async def admin_add_page(request: Request, db: Session = Depends(get_db)):
     if r := _admin_redirect(request):
         return r
-    return templates.TemplateResponse(
+    return _render(request,
         "admin/form.html",
         _ctx(request, db, comp=None, tags=TAGS, action="/admin/add", title="공모전 추가"),
     )
@@ -415,7 +534,7 @@ async def admin_edit_page(request: Request, comp_id: int, db: Session = Depends(
         raise HTTPException(status_code=404)
     comp.tags_list = _from_json(comp.tags)
     comp.files_list = _from_json(comp.files)
-    return templates.TemplateResponse(
+    return _render(request,
         "admin/form.html",
         _ctx(request, db, comp=comp, tags=TAGS, action=f"/admin/edit/{comp_id}", title="공모전 수정"),
     )
@@ -535,7 +654,7 @@ async def admin_members(request: Request, db: Session = Depends(get_db)):
     if r := _admin_redirect(request):
         return r
     members = db.query(Member).order_by(Member.created_at.asc()).all()
-    return templates.TemplateResponse("admin/members.html", _ctx(request, db, members=members))
+    return _render(request, "admin/members.html", _ctx(request, db, members=members, now=datetime.now()))
 
 
 @app.post("/admin/members/{member_id}/set-role")
@@ -560,6 +679,23 @@ async def admin_delete_member(request: Request, member_id: int, db: Session = De
     return RedirectResponse(url="/admin/members", status_code=303)
 
 
+@app.post("/admin/members/{member_id}/mute-comments")
+async def admin_mute_member_comments(
+    request: Request,
+    member_id: int,
+    duration_minutes: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+):
+    if r := _admin_redirect(request):
+        return r
+    member = db.query(Member).filter(Member.id == member_id).first()
+    if member:
+        minutes = _optional_int(duration_minutes, "댓글 금지 시간")
+        member.comment_muted_until = (datetime.now() + timedelta(minutes=minutes)) if minutes and minutes > 0 else None
+        db.commit()
+    return RedirectResponse(url="/admin/members", status_code=303)
+
+
 # ── 초대 코드 ─────────────────────────────────────────────────────────────────
 
 @app.get("/admin/invite-codes", response_class=HTMLResponse)
@@ -567,22 +703,52 @@ async def admin_invite_codes(request: Request, db: Session = Depends(get_db)):
     if r := _admin_redirect(request):
         return r
     codes = db.query(InviteCode).order_by(InviteCode.created_at.desc()).all()
-    used_ids = [c.used_by_member_id for c in codes if c.used_by_member_id]
+    code_ids = [c.id for c in codes]
+    logs = (
+        db.query(InviteCodeUseLog)
+        .filter(InviteCodeUseLog.invite_code_id.in_(code_ids))
+        .order_by(InviteCodeUseLog.used_at.desc())
+        .all()
+    ) if code_ids else []
+    logs_by_code: dict[int, list[InviteCodeUseLog]] = defaultdict(list)
+    for log in logs:
+        logs_by_code[log.invite_code_id].append(log)
+    used_ids = [c.used_by_member_id for c in codes if c.used_by_member_id] + [log.member_id for log in logs if log.member_id]
     members_map = {}
     if used_ids:
         for m in db.query(Member).filter(Member.id.in_(used_ids)).all():
             members_map[m.id] = m.activity_name
-    return templates.TemplateResponse(
+    return _render(request,
         "admin/invite_codes.html",
-        _ctx(request, db, codes=codes, members_map=members_map, now=datetime.now()),
+        _ctx(request, db, codes=codes, logs_by_code=logs_by_code, members_map=members_map, now=datetime.now()),
     )
 
 
 @app.post("/admin/invite-codes/create")
-async def admin_create_invite_code(request: Request, note: str = Form(""), db: Session = Depends(get_db)):
+async def admin_create_invite_code(
+    request: Request,
+    note: str = Form(""),
+    code_type: str = Form("personal"),
+    max_uses: Optional[str] = Form(None),
+    valid_days: Optional[str] = Form(None),
+    expires_at: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+):
     if r := _admin_redirect(request):
         return r
-    db.add(InviteCode(code=secrets.token_urlsafe(12), note=note))
+    code_type = code_type if code_type in ("personal", "group") else "personal"
+    parsed_max_uses = 1 if code_type == "personal" else _optional_int(max_uses, "최대 사용 인원")
+    if code_type == "group" and (not parsed_max_uses or parsed_max_uses < 1):
+        raise HTTPException(status_code=400, detail="단체 초대 코드는 최대 사용 인원을 1명 이상으로 입력해야 합니다.")
+    db.add(InviteCode(
+        code=secrets.token_urlsafe(12),
+        note=note.strip(),
+        code_type=code_type,
+        max_uses=parsed_max_uses,
+        expires_at=_parse_expiry(valid_days, expires_at),
+        use_count=0,
+        is_active=True,
+    ))
     db.commit()
     return RedirectResponse(url="/admin/invite-codes", status_code=303)
 
@@ -598,6 +764,25 @@ async def admin_delete_invite_code(request: Request, code_id: int, db: Session =
     return RedirectResponse(url="/admin/invite-codes", status_code=303)
 
 
+@app.post("/admin/invite-codes/logs/{log_id}/kick")
+async def admin_kick_invite_member(request: Request, log_id: int, db: Session = Depends(get_db)):
+    if r := _admin_redirect(request):
+        return r
+    log = db.query(InviteCodeUseLog).filter(InviteCodeUseLog.id == log_id).first()
+    if not log or log.revoked_at:
+        return RedirectResponse(url="/admin/invite-codes", status_code=303)
+    code = db.query(InviteCode).filter(InviteCode.id == log.invite_code_id).first()
+    member = db.query(Member).filter(Member.id == log.member_id).first() if log.member_id else None
+    if member:
+        db.delete(member)
+    log.revoked_at = datetime.now()
+    log.revoked_by = "admin"
+    if code and code.code_type == "group" and (code.use_count or 0) > 0:
+        code.use_count -= 1
+    db.commit()
+    return RedirectResponse(url="/admin/invite-codes", status_code=303)
+
+
 # ════════════════════════════════════════════════════════════════════════════
 #  회원 — 가입 / 로그인 / 로그아웃 / 프로필
 # ════════════════════════════════════════════════════════════════════════════
@@ -606,7 +791,7 @@ async def admin_delete_invite_code(request: Request, code_id: int, db: Session =
 async def register_page(request: Request, db: Session = Depends(get_db)):
     if _current_member(request, db):
         return RedirectResponse(url="/", status_code=303)
-    return templates.TemplateResponse("register.html", _ctx(request, db, error=None))
+    return _render(request, "register.html", _ctx(request, db, error=None))
 
 
 @app.post("/register")
@@ -618,16 +803,20 @@ async def register(
     db: Session = Depends(get_db),
 ):
     def err(msg):
-        return templates.TemplateResponse("register.html", _ctx(request, db, error=msg), status_code=400)
+        return _render(request, "register.html", _ctx(request, db, error=msg), status_code=400)
 
-    code_obj = db.query(InviteCode).filter(
-        InviteCode.code == invite_code.strip(),
-        InviteCode.used_by_member_id.is_(None),
-    ).first()
+    code_obj = db.query(InviteCode).filter(InviteCode.code == invite_code.strip()).first()
     if not code_obj:
-        return err("초대 코드가 올바르지 않거나 이미 사용된 코드입니다.")
+        return err("초대 코드가 올바르지 않습니다.")
+    if not code_obj.is_active:
+        return err("비활성화된 초대 코드입니다.")
     if code_obj.expires_at and datetime.now() > code_obj.expires_at:
         return err("만료된 초대 코드입니다.")
+    code_type = code_obj.code_type or "personal"
+    if code_type == "personal" and code_obj.used_by_member_id:
+        return err("이미 사용된 개인 초대 코드입니다.")
+    if code_type == "group" and code_obj.max_uses and (code_obj.use_count or 0) >= code_obj.max_uses:
+        return err("단체 초대 코드 사용 가능 인원이 모두 찼습니다.")
     if db.query(Member).filter(Member.activity_name == activity_name.strip()).first():
         return err("이미 사용 중인 활동명입니다.")
     if len(password) < 6:
@@ -641,7 +830,16 @@ async def register(
     )
     db.add(member)
     db.flush()
-    code_obj.used_by_member_id = member.id
+    db.add(InviteCodeUseLog(
+        invite_code_id=code_obj.id,
+        member_id=member.id,
+        activity_name=member.activity_name,
+        real_name=member.real_name,
+    ))
+    code_obj.use_count = (code_obj.use_count or 0) + 1
+    if code_type == "personal":
+        code_obj.used_by_member_id = member.id
+        code_obj.is_active = False
     db.commit()
 
     resp = RedirectResponse(url="/", status_code=303)
@@ -653,14 +851,14 @@ async def register(
 async def member_login_page(request: Request, db: Session = Depends(get_db)):
     if _current_member(request, db):
         return RedirectResponse(url="/", status_code=303)
-    return templates.TemplateResponse("member_login.html", _ctx(request, db, error=None))
+    return _render(request, "member_login.html", _ctx(request, db, error=None))
 
 
 @app.post("/member/login")
 async def member_login(request: Request, activity_name: str = Form(...), password: str = Form(...), db: Session = Depends(get_db)):
     m = db.query(Member).filter(Member.activity_name == activity_name.strip()).first()
     if not m or not verify_password(password, m.password_hash):
-        return templates.TemplateResponse(
+        return _render(request,
             "member_login.html",
             _ctx(request, db, error="활동명 또는 비밀번호가 올바르지 않습니다."),
             status_code=401,
@@ -708,7 +906,7 @@ async def profile_view(request: Request, activity_name: str, db: Session = Depen
     submitted = sum(1 for t in team_rows if t.is_participant)
     awarded   = sum(1 for t in team_rows if t.award_rank)
 
-    return templates.TemplateResponse(
+    return _render(request,
         "profile.html",
         _ctx(request, db, target=target, is_own=bool(cm and cm.id == target.id),
              team_rows=team_rows, comps_map=comps_map,
@@ -721,7 +919,7 @@ async def profile_edit_page(request: Request, db: Session = Depends(get_db)):
     cm = _current_member(request, db)
     if not cm:
         return RedirectResponse(url="/member/login", status_code=303)
-    return templates.TemplateResponse("profile_edit.html", _ctx(request, db, member=cm, error=None))
+    return _render(request, "profile_edit.html", _ctx(request, db, member=cm, error=None))
 
 
 @app.post("/profile/edit/me")
@@ -736,7 +934,7 @@ async def profile_edit(
     if not cm:
         return RedirectResponse(url="/member/login", status_code=303)
     if not verify_password(current_password, cm.password_hash):
-        return templates.TemplateResponse("profile_edit.html", _ctx(request, db, member=cm, error="현재 비밀번호가 올바르지 않습니다."), status_code=400)
+        return _render(request, "profile_edit.html", _ctx(request, db, member=cm, error="현재 비밀번호가 올바르지 않습니다."), status_code=400)
 
     cm.bio = bio.strip(); cm.real_name = real_name.strip(); cm.phone = phone.strip()
     new_img = await _save_image(profile_image)
@@ -744,7 +942,7 @@ async def profile_edit(
         cm.profile_image = new_img
     if new_password:
         if len(new_password) < 6:
-            return templates.TemplateResponse("profile_edit.html", _ctx(request, db, member=cm, error="새 비밀번호는 최소 6자 이상이어야 합니다."), status_code=400)
+            return _render(request, "profile_edit.html", _ctx(request, db, member=cm, error="새 비밀번호는 최소 6자 이상이어야 합니다."), status_code=400)
         cm.password_hash = hash_password(new_password)
     db.commit()
     return RedirectResponse(url=f"/profile/{cm.activity_name}", status_code=303)
@@ -759,6 +957,7 @@ async def create_team(
     request: Request, comp_id: int,
     team_name: str = Form(...),
     team_desc: str = Form(""),
+    team_requirements: str = Form(""),
     nickname: str = Form(...),
     password: str = Form(...),
     role: str = Form("기타"),
@@ -768,28 +967,38 @@ async def create_team(
     comp = db.query(Competition).filter(Competition.id == comp_id).first()
     if not comp:
         raise HTTPException(status_code=404)
-    if comp.status == "closed":
-        if date.today() > comp.deadline:
-            raise HTTPException(status_code=400, detail="마감된 공모전입니다.")
-    # 팀 이름 중복 체크
-    existing = db.query(Team).filter(Team.competition_id == comp_id, Team.name == team_name).first()
-    if existing:
+    if date.today() > comp.deadline:
+        raise HTTPException(status_code=400, detail="마감된 공모전입니다.")
+    team_name = team_name.strip()
+    if not team_name:
+        raise HTTPException(status_code=400, detail="팀 이름을 입력하세요.")
+    if db.query(Team).filter(Team.competition_id == comp_id, Team.name == team_name).first():
         raise HTTPException(status_code=400, detail="같은 이름의 팀이 이미 있습니다.")
-    team = Team(competition_id=comp_id, name=team_name, description=team_desc)
-    db.add(team)
-    db.flush()  # team.id 확보
-    cm = _current_member(request, db)
-    db.add(TeamMember(
-        team_id=team.id,
-        competition_id=comp_id,
-        nickname=nickname,
-        password_hash=_hash_pw(password),
-        role=role if role in ROLES else "기타",
-        memo=memo,
-        is_leader=True,
-        member_id=cm.id if cm else None,
-    ))
-    db.commit()
+    try:
+        team = Team(
+            competition_id=comp_id,
+            name=team_name,
+            description=(team_desc or "").strip(),
+            requirements=(team_requirements or "").strip(),
+        )
+        db.add(team)
+        db.commit()
+        db.refresh(team)
+        cm = _current_member(request, db)
+        db.add(TeamMember(
+            team_id=team.id,
+            competition_id=comp_id,
+            nickname=nickname.strip(),
+            password_hash=_hash_pw(password),
+            role=role if role in ROLES else "기타",
+            memo=(memo or "").strip(),
+            is_leader=True,
+            member_id=cm.id if cm else None,
+        ))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"팀 생성 오류: {exc}")
     return RedirectResponse(url=f"/competition/{comp_id}#team", status_code=303)
 
 
@@ -891,7 +1100,7 @@ async def admin_comp_members(request: Request, comp_id: int, db: Session = Depen
     if member_ids:
         for m in db.query(Member).filter(Member.id.in_(member_ids)).all():
             members_map[m.id] = m
-    return templates.TemplateResponse(
+    return _render(request,
         "admin/comp_members.html",
         _ctx(request, db, comp=comp, teams=teams, members_map=members_map, award_ranks=AWARD_RANKS),
     )
@@ -950,16 +1159,25 @@ async def record_submission(
 async def board_list(
     request: Request, board: str,
     page: int = Query(1, ge=1),
+    q: str = "",
     db: Session = Depends(get_db),
 ):
     if board not in BOARDS:
         raise HTTPException(status_code=404)
 
     page_size = 20
-    total = db.query(func.count(Post.id)).filter(Post.board == board).scalar()
+    post_query = db.query(Post).filter(Post.board == board)
+    if q:
+        compact_q = _compact_text(q)
+        post_query = post_query.filter(
+            or_(
+                _compact_column(Post.title).contains(compact_q),
+                _compact_column(Post.content).contains(compact_q),
+            )
+        )
+    total = post_query.with_entities(func.count(Post.id)).scalar()
     posts = (
-        db.query(Post)
-        .filter(Post.board == board)
+        post_query
         .order_by(Post.created_at.desc())
         .offset((page - 1) * page_size)
         .limit(page_size)
@@ -990,11 +1208,11 @@ async def board_list(
 
     total_pages = max(1, (total + page_size - 1) // page_size)
 
-    return templates.TemplateResponse(
+    return _render(request,
         "board/list.html",
         _ctx(request, db,
              board=board, board_name=BOARDS[board],
-             posts=posts, page=page, total_pages=total_pages),
+             posts=posts, page=page, total_pages=total_pages, query=q),
     )
 
 
@@ -1005,7 +1223,7 @@ async def board_new_page(request: Request, board: str, db: Session = Depends(get
     cm = _current_member(request, db)
     if not cm:
         return RedirectResponse(url="/member/login", status_code=303)
-    return templates.TemplateResponse(
+    return _render(request,
         "board/post_new.html",
         _ctx(request, db, board=board, board_name=BOARDS[board], error=None),
     )
@@ -1086,7 +1304,7 @@ async def board_post_detail(request: Request, board: str, post_id: int, db: Sess
         if c.parent_id is not None:
             replies[c.parent_id].append(c)
 
-    return templates.TemplateResponse(
+    return _render(request,
         "board/post_detail.html",
         _ctx(request, db,
              board=board, board_name=BOARDS[board],
@@ -1140,6 +1358,8 @@ async def board_add_comment(
     cm = _current_member(request, db)
     if not cm:
         raise HTTPException(status_code=401)
+    if _is_comment_muted(cm):
+        raise HTTPException(status_code=403, detail=f"댓글 작성이 {cm.comment_muted_until.strftime('%Y.%m.%d %H:%M')}까지 제한되었습니다.")
     if not content.strip():
         raise HTTPException(status_code=400, detail="댓글 내용을 입력하세요.")
     db.add(Comment(post_id=post_id, parent_id=parent_id, author_id=cm.id, content=content.strip()))
@@ -1185,43 +1405,105 @@ async def board_like_comment(request: Request, board: str, comment_id: int, db: 
 
 class _RoomManager:
     def __init__(self):
-        self.connections: dict[int, set] = defaultdict(set)
+        self.connections: dict[int, dict] = defaultdict(dict)
 
-    async def join(self, room_id: int, ws: WebSocket):
+    async def join(self, room_id: int, ws: WebSocket, member: Member):
         await ws.accept()
-        self.connections[room_id].add(ws)
+        self.connections[room_id][ws] = {
+            "id": member.id,
+            "name": member.activity_name,
+            "profile_image": member.profile_image,
+        }
 
     def leave(self, room_id: int, ws: WebSocket):
-        self.connections[room_id].discard(ws)
+        self.connections[room_id].pop(ws, None)
+
+    def online(self, room_id: int) -> list[dict]:
+        seen = {}
+        for item in self.connections.get(room_id, {}).values():
+            seen[item["id"]] = item
+        return sorted(seen.values(), key=lambda row: row["name"])
 
     async def broadcast(self, room_id: int, msg: dict):
         dead = set()
-        for ws in list(self.connections.get(room_id, set())):
+        for ws in list(self.connections.get(room_id, {}).keys()):
             try:
                 await ws.send_json(msg)
             except Exception:
                 dead.add(ws)
-        self.connections[room_id] -= dead
+        for ws in dead:
+            self.connections[room_id].pop(ws, None)
+
+
+async def _broadcast_room_state(room_id: int, db: Session):
+    members_payload = []
+    for row in _room_members(db, room_id):
+        if row.member:
+            members_payload.append({
+                "id": row.member_id,
+                "name": row.member.activity_name,
+                "role": row.role,
+                "muted_until": row.muted_until.strftime("%Y.%m.%d %H:%M") if row.muted_until else "",
+            })
+    await _room_mgr.broadcast(room_id, {
+        "type": "presence",
+        "online": _room_mgr.online(room_id),
+        "members": members_payload,
+    })
 
 
 _room_mgr = _RoomManager()
 
 
 @app.get("/chat", response_class=HTMLResponse)
-async def chat_list(request: Request, db: Session = Depends(get_db)):
+async def chat_list(
+    request: Request,
+    q: str = "",
+    sort: str = "created",
+    order: str = "desc",
+    db: Session = Depends(get_db),
+):
     cm = _current_member(request, db)
     if not cm:
         return RedirectResponse(url="/member/login", status_code=303)
 
-    rooms = db.query(ChatRoom).order_by(ChatRoom.created_at.desc()).all()
+    query = db.query(ChatRoom)
+    if q:
+        compact_q = _compact_text(q)
+        query = query.filter(
+            or_(
+                _compact_column(ChatRoom.name).contains(compact_q),
+                _compact_column(ChatRoom.description).contains(compact_q),
+            )
+        )
+    rooms = query.all()
+    room_ids = [room.id for room in rooms]
+    member_counts = dict(
+        db.query(ChatRoomMember.room_id, func.count(ChatRoomMember.id))
+        .filter(ChatRoomMember.room_id.in_(room_ids))
+        .group_by(ChatRoomMember.room_id)
+        .all()
+    ) if room_ids else {}
     creator_ids = list({r.created_by_id for r in rooms})
     creators = _member_map(db, creator_ids)
     for r in rooms:
         r.creator = creators.get(r.created_by_id)
-        r.online_count = len(_room_mgr.connections.get(r.id, set()))
+        r.online_count = len(_room_mgr.online(r.id))
+        r.member_count = member_counts.get(r.id, 0)
         r.has_password = bool(r.password_hash)
 
-    return templates.TemplateResponse("chat/list.html", _ctx(request, db, rooms=rooms))
+    reverse = order != "asc"
+    if sort == "name":
+        rooms.sort(key=lambda room: room.name.lower(), reverse=reverse)
+    elif sort == "members":
+        rooms.sort(key=lambda room: (room.member_count, room.name.lower()), reverse=reverse)
+    else:
+        rooms.sort(key=lambda room: room.created_at, reverse=reverse)
+
+    return _render(request,
+        "chat/list.html",
+        _ctx(request, db, rooms=rooms, query=q, current_sort=sort, current_order=order),
+    )
 
 
 @app.post("/chat/create")
@@ -1239,6 +1521,8 @@ async def chat_create(
         created_by_id=cm.id,
     )
     db.add(room)
+    db.flush()
+    db.add(ChatRoomMember(room_id=room.id, member_id=cm.id, role="owner"))
     db.commit()
     return RedirectResponse(url=f"/chat/{room.id}", status_code=303)
 
@@ -1254,6 +1538,88 @@ async def chat_delete_room(request: Request, room_id: int, db: Session = Depends
     return RedirectResponse(url="/chat", status_code=303)
 
 
+@app.post("/chat/{room_id}/leave")
+async def chat_leave_room(request: Request, room_id: int, db: Session = Depends(get_db)):
+    cm = _current_member(request, db)
+    if not cm:
+        return RedirectResponse(url="/member/login", status_code=303)
+    room = db.query(ChatRoom).filter(ChatRoom.id == room_id).first()
+    row = _chat_member(db, room_id, cm.id)
+    if not room or not row:
+        return RedirectResponse(url="/chat", status_code=303)
+    was_owner = row.role == "owner"
+    db.delete(row)
+    db.flush()
+    if was_owner:
+        next_owner = (
+            db.query(ChatRoomMember)
+            .filter(ChatRoomMember.room_id == room_id, ChatRoomMember.role == "co_owner")
+            .order_by(ChatRoomMember.joined_at.asc())
+            .first()
+        ) or (
+            db.query(ChatRoomMember)
+            .filter(ChatRoomMember.room_id == room_id)
+            .order_by(ChatRoomMember.joined_at.asc())
+            .first()
+        )
+        if next_owner:
+            next_owner.role = "owner"
+            room.created_by_id = next_owner.member_id
+        else:
+            db.delete(room)
+    db.commit()
+    return RedirectResponse(url="/chat", status_code=303)
+
+
+@app.post("/chat/{room_id}/members/{member_id}/role")
+async def chat_set_member_role(
+    request: Request,
+    room_id: int,
+    member_id: int,
+    role: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    cm = _current_member(request, db)
+    actor = _chat_member(db, room_id, cm.id) if cm else None
+    if not actor or actor.role != "owner":
+        raise HTTPException(status_code=403)
+    target = _chat_member(db, room_id, member_id)
+    room = db.query(ChatRoom).filter(ChatRoom.id == room_id).first()
+    if not target or not room:
+        raise HTTPException(status_code=404)
+    if role == "transfer_owner":
+        actor.role = "member"
+        target.role = "owner"
+        room.created_by_id = target.member_id
+    elif role in ("co_owner", "member") and target.role != "owner":
+        target.role = role
+    db.commit()
+    return RedirectResponse(url=f"/chat/{room_id}", status_code=303)
+
+
+@app.post("/chat/{room_id}/members/{member_id}/mute")
+async def chat_mute_member(
+    request: Request,
+    room_id: int,
+    member_id: int,
+    duration_minutes: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+):
+    cm = _current_member(request, db)
+    actor = _chat_member(db, room_id, cm.id) if cm else None
+    if not _is_privileged(request, db) and not (actor and actor.role in ("owner", "co_owner")):
+        raise HTTPException(status_code=403)
+    target = _chat_member(db, room_id, member_id)
+    if not target:
+        raise HTTPException(status_code=404)
+    if target.role == "owner" and not _is_privileged(request, db):
+        raise HTTPException(status_code=403, detail="방장은 채팅 제한할 수 없습니다.")
+    minutes = _optional_int(duration_minutes, "채팅 금지 시간")
+    target.muted_until = (datetime.now() + timedelta(minutes=minutes)) if minutes and minutes > 0 else None
+    db.commit()
+    return RedirectResponse(url=f"/chat/{room_id}", status_code=303)
+
+
 @app.get("/chat/{room_id}", response_class=HTMLResponse)
 async def chat_room(request: Request, room_id: int, db: Session = Depends(get_db)):
     cm = _current_member(request, db)
@@ -1263,6 +1629,9 @@ async def chat_room(request: Request, room_id: int, db: Session = Depends(get_db
     room = db.query(ChatRoom).filter(ChatRoom.id == room_id).first()
     if not room:
         raise HTTPException(status_code=404)
+    room_member = _chat_member(db, room.id, cm.id)
+    if not room.password_hash:
+        room_member = _ensure_chat_member(db, room, cm)
 
     # 최근 메시지 100개
     messages = (
@@ -1277,9 +1646,19 @@ async def chat_room(request: Request, room_id: int, db: Session = Depends(get_db
     for msg in messages:
         msg.author = authors.get(msg.author_id)
 
-    resp = templates.TemplateResponse(
+    resp = _render(request,
         "chat/room.html",
-        _ctx(request, db, room=room, messages=messages, has_password=bool(room.password_hash)),
+        _ctx(
+            request,
+            db,
+            room=room,
+            messages=messages,
+            has_password=bool(room.password_hash and not room_member),
+            room_member=room_member,
+            room_members=_room_members(db, room.id),
+            online_members=_room_mgr.online(room.id),
+            can_manage_room=_can_manage_room(room_member, request, db),
+        ),
     )
     # ws_token: non-httpOnly, JS에서 읽어 WebSocket URL에 사용
     ws_tok = create_member_token(cm.id)
@@ -1305,16 +1684,19 @@ async def ws_chat(
             await ws.close(code=4004, reason="Room not found")
             return
 
-        if room.password_hash and not _verify_pw(password, room.password_hash):
-            await ws.close(code=4003, reason="Wrong password")
-            return
-
         member = db.query(Member).filter(Member.id == mid).first()
         if not member:
             await ws.close(code=4001, reason="Member not found")
             return
+        room_member = _chat_member(db, room_id, member.id)
+        if room.password_hash and not room_member:
+            if not password or not _verify_pw(password, room.password_hash):
+                await ws.close(code=4003, reason="Wrong password")
+                return
+        room_member = _ensure_chat_member(db, room, member)
 
-        await _room_mgr.join(room_id, ws)
+        await _room_mgr.join(room_id, ws, member)
+        await _broadcast_room_state(room_id, db)
         await _room_mgr.broadcast(room_id, {
             "type": "system",
             "message": f"{member.activity_name}님이 입장했습니다.",
@@ -1325,6 +1707,13 @@ async def ws_chat(
                 text = await ws.receive_text()
                 content = text.strip()[:2000]
                 if not content:
+                    continue
+                db.refresh(room_member)
+                if room_member.muted_until and room_member.muted_until > datetime.now():
+                    await ws.send_json({
+                        "type": "error",
+                        "message": f"{room_member.muted_until.strftime('%Y.%m.%d %H:%M')}까지 채팅이 제한되었습니다.",
+                    })
                     continue
                 msg = ChatMessage(room_id=room_id, author_id=mid, content=content)
                 db.add(msg)
@@ -1342,6 +1731,7 @@ async def ws_chat(
             pass
         finally:
             _room_mgr.leave(room_id, ws)
+            await _broadcast_room_state(room_id, db)
             await _room_mgr.broadcast(room_id, {
                 "type": "system",
                 "message": f"{member.activity_name}님이 퇴장했습니다.",
@@ -1362,7 +1752,7 @@ _crawl_cache: dict = {"items": [], "errors": [], "counts": {}, "crawled_at": Non
 async def admin_crawl_page(request: Request, db: Session = Depends(get_db)):
     if r := _admin_redirect(request):
         return r
-    return templates.TemplateResponse(
+    return _render(request,
         "admin/crawl.html",
         _ctx(request, db, cache=_crawl_cache),
     )

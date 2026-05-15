@@ -41,6 +41,7 @@ class Team(Base):
     competition_id = Column(Integer, nullable=False, index=True)
     name           = Column(String(100), nullable=False)
     description    = Column(String(300), default="")
+    requirements   = Column(Text, default="")   # 팀 참여 요건 (연락처, 지원 조건 등)
     submitted      = Column(Boolean, default=False)
     submitted_at   = Column(DateTime, nullable=True)
     created_at     = Column(DateTime, default=datetime.now)
@@ -79,6 +80,7 @@ class Member(Base):
     profile_image = Column(String(500), nullable=True)
     role = Column(String(20), default="member")   # member / sub_admin
     invite_code_used = Column(String(100), nullable=True)
+    comment_muted_until = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
 
 
@@ -88,9 +90,26 @@ class InviteCode(Base):
     id = Column(Integer, primary_key=True, index=True)
     code = Column(String(100), unique=True, nullable=False, index=True)
     note = Column(String(200), default="")
+    code_type = Column(String(20), default="personal")  # personal / group
+    max_uses = Column(Integer, nullable=True)
+    use_count = Column(Integer, default=0)
+    is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.now)
     expires_at = Column(DateTime, nullable=True)
     used_by_member_id = Column(Integer, nullable=True)
+
+
+class InviteCodeUseLog(Base):
+    __tablename__ = "invite_code_use_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    invite_code_id = Column(Integer, nullable=False, index=True)
+    member_id = Column(Integer, nullable=True, index=True)
+    activity_name = Column(String(100), default="")
+    real_name = Column(String(100), default="")
+    used_at = Column(DateTime, default=datetime.now)
+    revoked_at = Column(DateTime, nullable=True)
+    revoked_by = Column(String(100), default="")
 
 
 # ── 게시판 ────────────────────────────────────────────────────────────────────
@@ -147,6 +166,17 @@ class ChatRoom(Base):
     password_hash = Column(String(300), nullable=True)   # None = 공개방
     created_by_id = Column(Integer, nullable=False)
     created_at = Column(DateTime, default=datetime.now)
+
+
+class ChatRoomMember(Base):
+    __tablename__ = "chat_room_members"
+
+    id = Column(Integer, primary_key=True, index=True)
+    room_id = Column(Integer, nullable=False, index=True)
+    member_id = Column(Integer, nullable=False, index=True)
+    role = Column(String(20), default="member")  # owner / co_owner / member
+    muted_until = Column(DateTime, nullable=True)
+    joined_at = Column(DateTime, default=datetime.now)
 
 
 class ChatMessage(Base):

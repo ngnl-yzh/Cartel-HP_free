@@ -29,7 +29,7 @@ def _add_col(conn, inspector, table: str, col: str, col_def: str):
 def init_db():
     Base.metadata.create_all(bind=engine)
 
-    from sqlalchemy import inspect
+    from sqlalchemy import inspect, text as _t
     with engine.connect() as conn:
         inspector = inspect(engine)
         tables = inspector.get_table_names()
@@ -40,7 +40,21 @@ def init_db():
             _add_col(conn, inspector, "competitions", "submitted",    "submitted BOOLEAN DEFAULT FALSE")
             _add_col(conn, inspector, "competitions", "submitted_at", "submitted_at TIMESTAMP")
 
-        # teams 테이블은 create_all로 자동 생성됨
+        if "members" in tables:
+            _add_col(conn, inspector, "members", "comment_muted_until", "comment_muted_until TIMESTAMP")
+
+        if "invite_codes" in tables:
+            _add_col(conn, inspector, "invite_codes", "code_type", "code_type VARCHAR(20) DEFAULT 'personal'")
+            _add_col(conn, inspector, "invite_codes", "max_uses", "max_uses INTEGER")
+            _add_col(conn, inspector, "invite_codes", "use_count", "use_count INTEGER DEFAULT 0")
+            _add_col(conn, inspector, "invite_codes", "is_active", "is_active BOOLEAN DEFAULT TRUE")
+
+        if "chat_room_members" in tables:
+            _add_col(conn, inspector, "chat_room_members", "role", "role VARCHAR(20) DEFAULT 'member'")
+            _add_col(conn, inspector, "chat_room_members", "muted_until", "muted_until TIMESTAMP")
+
+        if "teams" in tables:
+            _add_col(conn, inspector, "teams", "requirements", "requirements TEXT DEFAULT ''")
 
         if "team_members" in tables:
             _add_col(conn, inspector, "team_members", "is_participant", "is_participant BOOLEAN DEFAULT FALSE")
@@ -50,8 +64,21 @@ def init_db():
             _add_col(conn, inspector, "team_members", "award_prize",    "award_prize VARCHAR(300) DEFAULT ''")
             _add_col(conn, inspector, "team_members", "award_note",     "award_note TEXT DEFAULT ''")
 
+        if "chat_rooms" in tables and "chat_room_members" in tables:
+            rooms = conn.execute(_t(
+                "SELECT id, created_by_id FROM chat_rooms WHERE created_by_id IS NOT NULL"
+            )).fetchall()
+            for room_id, owner_id in rooms:
+                existing = conn.execute(_t(
+                    "SELECT id FROM chat_room_members WHERE room_id = :rid AND member_id = :mid LIMIT 1"
+                ), {"rid": room_id, "mid": owner_id}).fetchone()
+                if not existing:
+                    conn.execute(_t(
+                        "INSERT INTO chat_room_members (room_id, member_id, role, joined_at) "
+                        "VALUES (:rid, :mid, 'owner', CURRENT_TIMESTAMP)"
+                    ), {"rid": room_id, "mid": owner_id})
+
         # 기존 TeamMember(team_id=NULL) 데이터를 위해 기본 팀 생성
-        from sqlalchemy import text as _t
         rows = conn.execute(_t(
             "SELECT DISTINCT competition_id FROM team_members WHERE team_id IS NULL AND competition_id IS NOT NULL"
         )).fetchall()

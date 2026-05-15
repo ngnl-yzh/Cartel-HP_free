@@ -136,6 +136,12 @@
             {% if team.description %}
             <p class="team-card-desc">{{ team.description }}</p>
             {% endif %}
+            {% if team.requirements %}
+            <div class="team-requirements">
+              <span class="req-label">📋 참여 요건</span>
+              <p>{{ team.requirements }}</p>
+            </div>
+            {% endif %}
           </div>
           <div style="display:flex;gap:6px;align-items:center">
             <span class="team-count">{{ team.members | length }}{% if comp.max_members %}/{{ comp.max_members }}{% endif %}명</span>
@@ -295,6 +301,10 @@
             <label class="field">
               <span>팀 소개 <small>(선택)</small></span>
               <input type="text" name="team_desc" placeholder="팀을 한 줄로 소개해주세요" maxlength="100">
+            </label>
+            <label class="field" style="grid-column:1/-1">
+              <span>참여 요건 / 연락처 <small>(선택 – 지원자가 보게 됩니다)</small></span>
+              <textarea name="team_requirements" placeholder="예) 카카오톡 오픈채팅 참여 필수, 인스타그램 DM: @cartel_yzh, 매주 수요일 회의 참석 가능자" rows="3" maxlength="500"></textarea>
             </label>
           </div>
           <h3 style="margin:16px 0 12px;font-size:1rem">내 정보 (팀장으로 자동 등록)</h3>

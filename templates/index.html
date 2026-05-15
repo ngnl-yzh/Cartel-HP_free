@@ -29,6 +29,8 @@
             <span class="deadline-badge urgent">D-{{ comp.days_left }}</span>
           {% elif comp.status == 'soon' %}
             <span class="deadline-badge soon">D-{{ comp.days_left }}</span>
+          {% elif comp.status == 'upcoming' %}
+            <span class="deadline-badge open">📅 이벤트 진행 중</span>
           {% else %}
             <span class="deadline-badge open">D-{{ comp.days_left }}</span>
           {% endif %}
@@ -102,6 +104,8 @@
           <div class="comp-meta">
             {% if comp.status == 'closed' %}
               <span class="deadline-badge closed">마감</span>
+            {% elif comp.status == 'upcoming' %}
+              <span class="deadline-badge open">📅 이벤트 진행 중</span>
             {% elif comp.status == 'urgent' %}
               <span class="deadline-badge urgent">D-{{ comp.days_left }}</span>
             {% elif comp.status == 'soon' %}

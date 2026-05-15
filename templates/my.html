@@ -1,0 +1,194 @@
+{% extends "base.html" %}
+{% block title %}마이페이지 · 공모전 보드{% endblock %}
+
+{% block content %}
+<main class="my-page">
+  <div class="container" style="max-width:900px">
+
+    {# ── 프로필 요약 #}
+    <div class="my-hero">
+      <div class="my-avatar">
+        {% if current_member.profile_image %}
+          <img src="/uploads/{{ current_member.profile_image }}" alt="" class="profile-avatar-img" style="width:64px;height:64px;border-radius:50%;object-fit:cover">
+        {% else %}
+          <div class="profile-avatar-placeholder" style="width:64px;height:64px;font-size:1.8rem">{{ current_member.activity_name[0] | upper }}</div>
+        {% endif %}
+      </div>
+      <div>
+        <h1 class="my-name">{{ current_member.activity_name }}
+          {% if current_member.role == 'sub_admin' %}<span class="role-badge sub-admin">중간관리자</span>{% endif %}
+        </h1>
+        <div class="my-hero-actions">
+          <a href="/profile/{{ current_member.activity_name }}" class="btn btn-ghost btn-sm">공개 프로필</a>
+          <a href="/profile/edit/me" class="btn btn-outline btn-sm">프로필 수정</a>
+        </div>
+      </div>
+    </div>
+
+    {# ── 팀장 이벤트 알림 #}
+    {% if leader_events %}
+    <section class="my-section my-section--alert">
+      <h2 class="my-section-title">⚡ 임박한 일정 (내가 팀장인 공모전)</h2>
+      {% for ev in leader_events %}
+      <div class="leader-event-card" id="team-{{ ev.team.id if ev.team else '' }}">
+        <div class="leader-event-header">
+          <div>
+            <a href="/competition/{{ ev.comp.id }}" class="leader-event-comp">{{ ev.comp.title }}</a>
+            <span class="leader-event-team">{{ ev.team.name if ev.team else '' }}</span>
+          </div>
+          <div class="leader-event-badge">
+            {% if ev.event[3] == 0 %}
+              <span class="deadline-badge urgent">📅 오늘! {{ ev.event[1] }}</span>
+            {% else %}
+              <span class="deadline-badge soon">📅 D-{{ ev.event[3] }} {{ ev.event[1] }}</span>
+            {% endif %}
+          </div>
+        </div>
+
+        {% if ev.existing_result %}
+        <div class="existing-result">
+          <strong>기존 기록:</strong>
+          {% if ev.existing_result.passed is none %}
+            <span class="muted">미정</span>
+          {% elif ev.existing_result.passed %}
+            <span class="deadline-badge open">✅ 통과</span>
+          {% else %}
+            <span class="deadline-badge closed">❌ 탈락</span>
+          {% endif %}
+          {% if ev.existing_result.note %}<span class="muted"> — {{ ev.existing_result.note }}</span>{% endif %}
+        </div>
+        {% endif %}
+
+        <details class="result-entry-details" {% if not ev.existing_result %}open{% endif %}>
+          <summary class="btn btn-outline btn-sm" style="cursor:pointer">
+            {% if ev.existing_result %}수정{% else %}결과 기입{% endif %}
+          </summary>
+          <form method="post" action="/competition/{{ ev.comp.id }}/team/{{ ev.team.id if ev.team else 0 }}/stage-result" class="result-form">
+            <input type="hidden" name="stage" value="{{ ev.event[0] }}">
+
+            <div class="result-form-grid">
+              <label class="field">
+                <span>결과</span>
+                <select name="passed">
+                  <option value="" {% if ev.existing_result and ev.existing_result.passed is none %}selected{% endif %}>미정</option>
+                  <option value="true" {% if ev.existing_result and ev.existing_result.passed == true %}selected{% endif %}>✅ 통과 / 수상</option>
+                  <option value="false" {% if ev.existing_result and ev.existing_result.passed == false %}selected{% endif %}>❌ 탈락</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>메모</span>
+                <input type="text" name="note" value="{{ ev.existing_result.note if ev.existing_result else '' }}" placeholder="간단한 메모" maxlength="200">
+              </label>
+            </div>
+
+            {% if ev.team_members %}
+            <div class="member-link-section">
+              <p class="member-link-hint">💡 팀원 학번·실명을 입력하면 각 팀원의 프로필에 자동으로 기록됩니다.</p>
+              <div class="member-link-grid">
+                {% for tm in ev.team_members %}
+                <div class="member-link-row">
+                  <span class="member-link-nick">
+                    {% if tm.is_leader %}👑{% endif %}{{ tm.nickname }}
+                    {% if tm.member_id %}<span class="linked-badge">✔ 연결됨</span>{% endif %}
+                  </span>
+                  {% if not tm.member_id %}
+                  <input type="text" name="tm_{{ tm.id }}_real_name" placeholder="실명" maxlength="50" class="compact-input">
+                  <input type="text" name="tm_{{ tm.id }}_student_id" placeholder="학번" maxlength="20" class="compact-input">
+                  {% endif %}
+                </div>
+                {% endfor %}
+              </div>
+            </div>
+            {% endif %}
+
+            <button type="submit" class="btn btn-primary" style="margin-top:.75rem">저장</button>
+          </form>
+        </details>
+      </div>
+      {% endfor %}
+    </section>
+    {% endif %}
+
+    {# ── 참여 중인 프로젝트 #}
+    <section class="my-section">
+      <h2 class="my-section-title">🔨 참여 중인 프로젝트</h2>
+      {% if active_projects %}
+      <div class="my-project-list">
+        {% for item in active_projects %}
+        <a href="/competition/{{ item.comp.id }}#team-{{ item.team.id if item.team else '' }}" class="my-project-card status-{{ item.comp.status }}">
+          <div class="my-project-top">
+            <span class="my-project-title">{{ item.comp.title }}</span>
+            {% if item.comp.status == 'urgent' %}
+              <span class="deadline-badge urgent">D-{{ item.comp.days_left }}</span>
+            {% elif item.comp.status == 'soon' %}
+              <span class="deadline-badge soon">D-{{ item.comp.days_left }}</span>
+            {% elif item.comp.status == 'upcoming' %}
+              <span class="deadline-badge open">접수마감 · 이벤트 진행 중</span>
+            {% else %}
+              <span class="deadline-badge open">D-{{ item.comp.days_left }}</span>
+            {% endif %}
+          </div>
+          <div class="my-project-meta">
+            <span>팀: {{ item.team.name if item.team else '-' }}</span>
+            <span>역할: {{ item.tm.role }}</span>
+            {% if item.tm.is_leader %}<span class="leader-crown">👑 팀장</span>{% endif %}
+          </div>
+        </a>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="muted" style="padding:16px 0">현재 참여 중인 프로젝트가 없습니다.</p>
+      {% endif %}
+    </section>
+
+    {# ── 스크랩한 공모전 #}
+    <section class="my-section">
+      <h2 class="my-section-title">📌 스크랩한 공모전</h2>
+      {% if scrapped_comps %}
+      <div class="my-scrap-list">
+        {% for comp in scrapped_comps %}
+        <div class="my-scrap-card status-{{ comp.status }}">
+          <a href="/competition/{{ comp.id }}" class="my-scrap-title">{{ comp.title }}</a>
+          <span class="my-scrap-org muted">{{ comp.organizer }}</span>
+          <div style="display:flex;gap:8px;align-items:center;margin-top:4px">
+            {% if comp.status == 'closed' %}
+              <span class="deadline-badge closed">마감</span>
+            {% elif comp.status == 'upcoming' %}
+              <span class="deadline-badge open">이벤트 진행 중</span>
+            {% elif comp.status == 'urgent' %}
+              <span class="deadline-badge urgent">D-{{ comp.days_left }}</span>
+            {% elif comp.status == 'soon' %}
+              <span class="deadline-badge soon">D-{{ comp.days_left }}</span>
+            {% else %}
+              <span class="deadline-badge open">D-{{ comp.days_left }}</span>
+            {% endif %}
+            <button class="scrap-btn scrapped" data-comp-id="{{ comp.id }}" title="스크랩 해제">📌</button>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="muted" style="padding:16px 0">스크랩한 공모전이 없습니다. 공모전 페이지에서 📌 버튼으로 저장해보세요!</p>
+      {% endif %}
+    </section>
+
+  </div>
+</main>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.querySelectorAll(".scrap-btn").forEach(btn => {
+  btn.addEventListener("click", async () => {
+    const compId = btn.dataset.compId;
+    const res = await fetch(`/competition/${compId}/scrap`, { method: "POST" });
+    if (res.ok) {
+      const data = await res.json();
+      if (!data.scrapped) {
+        btn.closest(".my-scrap-card").remove();
+      }
+    }
+  });
+});
+</script>
+{% endblock %}

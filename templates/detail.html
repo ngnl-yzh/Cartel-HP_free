@@ -18,6 +18,8 @@
     <div class="detail-hero-meta">
       {% if comp.status == 'closed' %}
         <span class="deadline-badge closed lg">마감됨</span>
+      {% elif comp.status == 'upcoming' %}
+        <span class="deadline-badge open lg">📅 이벤트 진행 중</span>
       {% elif comp.status == 'urgent' %}
         <span class="deadline-badge urgent lg">D-{{ comp.days_left }} 마감 임박</span>
       {% elif comp.status == 'soon' %}
@@ -26,6 +28,11 @@
         <span class="deadline-badge open lg">D-{{ comp.days_left }}</span>
       {% endif %}
       <span class="view-count">조회 {{ comp.view_count }}회</span>
+      {% if current_member %}
+      <button class="scrap-btn {% if user_scrapped %}scrapped{% endif %}" data-comp-id="{{ comp.id }}" title="스크랩">
+        {{ '📌' if user_scrapped else '🔖' }} {{ '스크랩 해제' if user_scrapped else '스크랩' }}
+      </button>
+      {% endif %}
     </div>
   </div>
 </div>
@@ -155,6 +162,25 @@
             {% endif %}
           </div>
         </div>
+
+        {# 단계별 결과 표시 #}
+        {% set t_results = team_result_map.get(team.id, {}) %}
+        {% if t_results %}
+        <div class="stage-results" style="margin-bottom:8px;display:flex;flex-wrap:wrap;gap:6px">
+          {% for stage_key, stage_attr, stage_label in comp_stages %}
+            {% if t_results.get(stage_key) %}
+              {% set sr = t_results[stage_key] %}
+              {% if sr.passed is none %}
+                <span class="stage-badge stage-pending">{{ stage_label }}: 미정</span>
+              {% elif sr.passed %}
+                <span class="stage-badge stage-pass">✅ {{ stage_label }} 통과</span>
+              {% else %}
+                <span class="stage-badge stage-fail">❌ {{ stage_label }} 탈락</span>
+              {% endif %}
+            {% endif %}
+          {% endfor %}
+        </div>
+        {% endif %}
 
         {# 팀원 목록 #}
         {% if team.members %}
@@ -361,4 +387,21 @@
   </div>
 </div>
 
+{% endblock %}
+
+{% block scripts %}
+<script>
+const scrapBtn = document.querySelector(".scrap-btn[data-comp-id]");
+if (scrapBtn) {
+  scrapBtn.addEventListener("click", async () => {
+    const compId = scrapBtn.dataset.compId;
+    const res = await fetch(`/competition/${compId}/scrap`, { method: "POST" });
+    if (res.ok) {
+      const data = await res.json();
+      scrapBtn.classList.toggle("scrapped", data.scrapped);
+      scrapBtn.textContent = data.scrapped ? "📌 스크랩 해제" : "🔖 스크랩";
+    }
+  });
+}
+</script>
 {% endblock %}

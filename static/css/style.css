@@ -2602,3 +2602,81 @@ select {
   font-family: monospace;
   color: var(--text-2);
 }
+
+/* ── 마이페이지 ─────────────────────────────────────────────────── */
+.my-page { padding: 2rem 0 4rem; }
+.my-hero {
+  display: flex; align-items: center; gap: 1.25rem;
+  padding: 1.5rem; background: var(--bg-card);
+  border: 1px solid var(--border); border-radius: 12px;
+  margin-bottom: 2rem;
+}
+.my-name { font-size: 1.4rem; font-weight: 700; margin: 0 0 .4rem; }
+.my-hero-actions { display: flex; gap: 8px; }
+.my-section { margin-bottom: 2.5rem; }
+.my-section--alert .leader-event-card { border-left: 4px solid var(--color-urgent, #ef4444); }
+.my-section-title {
+  font-size: 1.05rem; font-weight: 700; margin: 0 0 1rem;
+  padding-bottom: .5rem; border-bottom: 2px solid var(--border);
+}
+
+/* 팀장 이벤트 카드 */
+.leader-event-card {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: 10px; padding: 1rem 1.25rem; margin-bottom: .75rem;
+}
+.leader-event-header {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  gap: .75rem; margin-bottom: .75rem; flex-wrap: wrap;
+}
+.leader-event-comp { font-weight: 600; font-size: .95rem; color: var(--text-1); }
+.leader-event-team { font-size: .82rem; color: var(--text-2); margin-left: .5rem; }
+.existing-result { font-size: .85rem; margin-bottom: .5rem; }
+.result-form { margin-top: .75rem; }
+.result-form-grid { display: grid; grid-template-columns: 1fr 2fr; gap: .5rem; margin-bottom: .5rem; }
+.member-link-section { margin-top: .75rem; }
+.member-link-hint { font-size: .8rem; color: var(--text-2); margin: 0 0 .5rem; }
+.member-link-grid { display: flex; flex-direction: column; gap: .4rem; }
+.member-link-row { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.member-link-nick { font-size: .85rem; min-width: 100px; }
+.linked-badge { font-size: .7rem; background: #d1fae5; color: #065f46; border-radius: 4px; padding: 1px 5px; }
+.compact-input { padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px; font-size: .82rem; width: 100px; }
+
+/* 참여 중인 프로젝트 카드 */
+.my-project-list { display: flex; flex-direction: column; gap: .5rem; }
+.my-project-card {
+  display: block; padding: .75rem 1rem;
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px;
+  text-decoration: none; color: inherit;
+}
+.my-project-card:hover { border-color: var(--primary); }
+.my-project-top { display: flex; justify-content: space-between; align-items: center; gap: .5rem; margin-bottom: .3rem; }
+.my-project-title { font-weight: 600; font-size: .93rem; }
+.my-project-meta { font-size: .8rem; color: var(--text-2); display: flex; gap: .75rem; }
+
+/* 스크랩 목록 */
+.my-scrap-list { display: flex; flex-direction: column; gap: .4rem; }
+.my-scrap-card {
+  padding: .65rem 1rem; background: var(--bg-card);
+  border: 1px solid var(--border); border-radius: 8px;
+}
+.my-scrap-title { font-weight: 600; font-size: .92rem; color: var(--text-1); text-decoration: none; }
+.my-scrap-title:hover { text-decoration: underline; }
+.my-scrap-org { font-size: .8rem; margin-left: .5rem; }
+
+/* 스크랩 버튼 */
+.scrap-btn {
+  background: none; border: 1px solid var(--border); border-radius: 6px;
+  padding: 4px 10px; cursor: pointer; font-size: .85rem;
+  transition: background .15s;
+}
+.scrap-btn:hover { background: var(--bg-2); }
+.scrap-btn.scrapped { background: #fef3c7; border-color: #fbbf24; }
+
+/* 단계 결과 뱃지 */
+.stage-badge {
+  font-size: .75rem; padding: 2px 8px; border-radius: 999px; font-weight: 500;
+}
+.stage-pass { background: #d1fae5; color: #065f46; }
+.stage-fail { background: #fee2e2; color: #991b1b; }
+.stage-pending { background: #f3f4f6; color: #6b7280; }

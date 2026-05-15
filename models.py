@@ -22,6 +22,9 @@ class Competition(Base):
     start_date = Column(Date, nullable=True)
     deadline = Column(Date, nullable=False)
     announcement_date = Column(Date, nullable=True)
+    review_1_date = Column(Date, nullable=True)      # 1차 심사일
+    review_2_date = Column(Date, nullable=True)      # 2차 심사일
+    award_date    = Column(Date, nullable=True)      # 시상일
     prize = Column(String(500), default="")
     link = Column(String(1000), default="")
     description = Column(Text, default="")
@@ -190,3 +193,29 @@ class ChatMessage(Base):
     author_id = Column(Integer, nullable=False)
     content = Column(Text, nullable=False)
     created_at = Column(DateTime, default=datetime.now)
+
+
+class TeamResult(Base):
+    """팀별 단계 결과 (1차심사/2차심사/발표/시상)"""
+    __tablename__ = "team_results"
+    __table_args__ = (UniqueConstraint("team_id", "stage", name="uq_team_stage"),)
+
+    id             = Column(Integer, primary_key=True, index=True)
+    team_id        = Column(Integer, nullable=False, index=True)
+    competition_id = Column(Integer, nullable=False, index=True)
+    stage          = Column(String(30), nullable=False)   # review_1/review_2/announcement/award
+    passed         = Column(Boolean, nullable=True)       # True=통과, False=탈락, None=미정
+    note           = Column(Text, default="")
+    recorded_at    = Column(DateTime, default=datetime.now)
+    recorded_by_id = Column(Integer, nullable=True)       # 기록한 팀장 member_id
+
+
+class CompetitionScrap(Base):
+    """회원별 공모전 스크랩"""
+    __tablename__ = "competition_scraps"
+    __table_args__ = (UniqueConstraint("competition_id", "member_id", name="uq_comp_scrap"),)
+
+    id             = Column(Integer, primary_key=True, index=True)
+    competition_id = Column(Integer, nullable=False, index=True)
+    member_id      = Column(Integer, nullable=False, index=True)
+    scrapped_at    = Column(DateTime, default=datetime.now)

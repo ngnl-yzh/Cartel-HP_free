@@ -127,6 +127,20 @@
               {% endif %}
             </div>
 
+            {% if stage_results_map is defined and tm.team_id and stage_results_map.get(tm.team_id) %}
+            <div class="stage-results" style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px">
+              {% for sr in stage_results_map[tm.team_id] %}
+                {% if sr.passed is none %}
+                  <span class="stage-badge stage-pending">{{ sr.stage_label }}</span>
+                {% elif sr.passed %}
+                  <span class="stage-badge stage-pass">✅ {{ sr.stage_label }}</span>
+                {% else %}
+                  <span class="stage-badge stage-fail">❌ {{ sr.stage_label }}</span>
+                {% endif %}
+              {% endfor %}
+            </div>
+            {% endif %}
+
             {% if tm.award_note %}
             <p class="history-award-note">{{ tm.award_note }}</p>
             {% endif %}

@@ -34,9 +34,9 @@ from models import (
     BOARDS,
     ChatMessage, ChatRoom, ChatRoomMember,
     Comment, CommentLike,
-    Competition, InviteCode, InviteCodeUseLog, Member,
+    Competition, CompetitionScrap, InviteCode, InviteCodeUseLog, Member,
     Post, PostLike,
-    Team, TeamMember,
+    Team, TeamMember, TeamResult,
 )
 
 app = FastAPI(title="공모전 보드")
@@ -204,10 +204,39 @@ def _urgency(deadline: date) -> str:
     return "open"
 
 
+# 공모전 단계 정의
+COMP_STAGES = [
+    ("review_1",     "review_1_date",     "1차 심사"),
+    ("review_2",     "review_2_date",     "2차 심사"),
+    ("announcement", "announcement_date", "결과 발표"),
+    ("award",        "award_date",        "시상식"),
+]
+
+
+def _next_upcoming_event(comp) -> Optional[tuple]:
+    """7일 이내 또는 당일인 다음 이벤트. 없으면 None.
+    반환: (stage_key, label, event_date, days_left)"""
+    today = date.today()
+    for stage_key, attr, label in COMP_STAGES:
+        d = getattr(comp, attr, None)
+        if d and 0 <= (d - today).days <= 7:
+            return (stage_key, label, d, (d - today).days)
+    return None
+
+
 def _annotate(competitions: list) -> list:
     for c in competitions:
-        c.status = _urgency(c.deadline)
+        c.upcoming_event = _next_upcoming_event(c)
         c.days_left = _days_left(c.deadline)
+        d = c.days_left
+        if d < 0:
+            c.status = "upcoming" if c.upcoming_event else "closed"
+        elif d <= 7:
+            c.status = "urgent"
+        elif d <= 30:
+            c.status = "soon"
+        else:
+            c.status = "open"
     return competitions
 
 
@@ -431,6 +460,16 @@ async def index(
         query = query.order_by(active_priority.asc(), Competition.deadline.asc())
 
     competitions = _annotate(query.all())
+    # upcoming(이벤트 임박) 공모전을 closed 앞에, active 뒤에 배치
+    if sort == "deadline":
+        def _sort_key(c):
+            if c.status in ("urgent", "soon", "open"):
+                return (0, c.days_left)
+            if c.status == "upcoming":
+                ev = c.upcoming_event
+                return (1, ev[3] if ev else 99)
+            return (2, -c.days_left)
+        competitions.sort(key=_sort_key)
 
     all_ids = [c.id for c in competitions] + [c.id for c in featured]
     counts = dict(
@@ -463,8 +502,7 @@ async def detail(request: Request, comp_id: int, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(comp)
 
-    comp.status = _urgency(comp.deadline)
-    comp.days_left = _days_left(comp.deadline)
+    _annotate([comp])
 
     teams = (
         db.query(Team)
@@ -489,14 +527,211 @@ async def detail(request: Request, comp_id: int, db: Session = Depends(get_db)):
     today = date.today()
     submission_window = comp.deadline < today <= comp.deadline + timedelta(days=7)
 
+    # 스크랩 여부
+    cm = _current_member(request, db)
+    user_scrapped = False
+    if cm:
+        user_scrapped = bool(
+            db.query(CompetitionScrap)
+            .filter(CompetitionScrap.competition_id == comp_id, CompetitionScrap.member_id == cm.id)
+            .first()
+        )
+
+    # 팀장인 팀 IDs
+    leader_team_ids: set = set()
+    if cm:
+        for tm in all_tm:
+            if tm.is_leader and (tm.member_id == cm.id or tm.nickname == cm.activity_name):
+                leader_team_ids.add(tm.team_id)
+
+    # 각 팀의 단계 결과 맵: {team_id: {stage: TeamResult}}
+    team_result_map: dict = {}
+    if team_ids:
+        results = db.query(TeamResult).filter(TeamResult.team_id.in_(team_ids)).all()
+        for r in results:
+            team_result_map.setdefault(r.team_id, {})[r.stage] = r
+
     return _render(request,
         "detail.html",
         _ctx(request, db,
              comp=comp, files=_from_json(comp.files),
              tags_list=_from_json(comp.tags),
              teams=teams, roles=ROLES,
-             submission_window=submission_window, today=today),
+             submission_window=submission_window, today=today,
+             user_scrapped=user_scrapped,
+             leader_team_ids=leader_team_ids,
+             team_result_map=team_result_map,
+             comp_stages=COMP_STAGES),
     )
+
+
+@app.post("/competition/{comp_id}/scrap")
+async def toggle_scrap(request: Request, comp_id: int, db: Session = Depends(get_db)):
+    cm = _current_member(request, db)
+    if not cm:
+        raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
+    existing = (
+        db.query(CompetitionScrap)
+        .filter(CompetitionScrap.competition_id == comp_id, CompetitionScrap.member_id == cm.id)
+        .first()
+    )
+    if existing:
+        db.delete(existing)
+        scrapped = False
+    else:
+        db.add(CompetitionScrap(competition_id=comp_id, member_id=cm.id))
+        scrapped = True
+    db.commit()
+    return JSONResponse({"scrapped": scrapped})
+
+
+@app.post("/competition/{comp_id}/team/{team_id}/stage-result")
+async def record_stage_result(
+    request: Request,
+    comp_id: int,
+    team_id: int,
+    stage: str = Form(...),
+    passed: Optional[str] = Form(None),   # "true"/"false"/None
+    note: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    """팀장만 호출 가능. 단계 결과 기입 + 팀원 Member 계정 연결."""
+    cm = _current_member(request, db)
+    if not cm:
+        raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
+
+    # 팀장 확인
+    leader_tm = (
+        db.query(TeamMember)
+        .filter(
+            TeamMember.team_id == team_id,
+            TeamMember.is_leader.is_(True),
+        )
+        .first()
+    )
+    if not leader_tm:
+        raise HTTPException(status_code=403, detail="팀장만 결과를 기입할 수 있습니다.")
+    if leader_tm.member_id != cm.id and leader_tm.nickname != cm.activity_name:
+        raise HTTPException(status_code=403, detail="팀장만 결과를 기입할 수 있습니다.")
+
+    if stage not in {s[0] for s in COMP_STAGES}:
+        raise HTTPException(status_code=400, detail="올바른 단계가 아닙니다.")
+
+    # TeamResult upsert
+    result = (
+        db.query(TeamResult)
+        .filter(TeamResult.team_id == team_id, TeamResult.stage == stage)
+        .first()
+    )
+    passed_bool = True if passed == "true" else (False if passed == "false" else None)
+    if result:
+        result.passed = passed_bool
+        result.note = note.strip()
+        result.recorded_at = datetime.now()
+        result.recorded_by_id = cm.id
+    else:
+        db.add(TeamResult(
+            team_id=team_id, competition_id=comp_id,
+            stage=stage, passed=passed_bool,
+            note=note.strip(), recorded_by_id=cm.id,
+        ))
+
+    # 팀원 Member 계정 연결 (form에서 tm_{id}_real_name, tm_{id}_student_id 전달 시)
+    form_data = await request.form()
+    team_members = db.query(TeamMember).filter(TeamMember.team_id == team_id).all()
+    for tm in team_members:
+        rn_key = f"tm_{tm.id}_real_name"
+        sid_key = f"tm_{tm.id}_student_id"
+        real_name = (form_data.get(rn_key) or "").strip()
+        student_id = (form_data.get(sid_key) or "").strip()
+        if real_name and student_id and not tm.member_id:
+            matched = (
+                db.query(Member)
+                .filter(Member.real_name == real_name, Member.student_id == student_id)
+                .first()
+            )
+            if matched:
+                tm.member_id = matched.id
+
+    db.commit()
+    return RedirectResponse(url=f"/my#team-{team_id}", status_code=303)
+
+
+@app.get("/my", response_class=HTMLResponse)
+async def mypage(request: Request, db: Session = Depends(get_db)):
+    cm = _current_member(request, db)
+    if not cm:
+        return RedirectResponse(url="/member/login?next=/my", status_code=303)
+
+    today = date.today()
+
+    # 스크랩 공모전
+    scrap_ids = [
+        s.competition_id for s in
+        db.query(CompetitionScrap).filter(CompetitionScrap.member_id == cm.id).all()
+    ]
+    scrapped_comps = (
+        _annotate(db.query(Competition).filter(Competition.id.in_(scrap_ids)).all())
+        if scrap_ids else []
+    )
+
+    # 내가 참여 중인 팀 (nickname 또는 member_id 기반)
+    my_tms = (
+        db.query(TeamMember)
+        .filter(
+            or_(TeamMember.member_id == cm.id, TeamMember.nickname == cm.activity_name)
+        )
+        .all()
+    )
+    # 진행 중 프로젝트 (마감 안 지난 공모전)
+    active_projects = []
+    seen_comp_ids: set = set()
+    for tm in my_tms:
+        if tm.competition_id in seen_comp_ids:
+            continue
+        comp = db.query(Competition).filter(Competition.id == tm.competition_id).first()
+        if comp and comp.deadline >= today:
+            _annotate([comp])
+            team = db.query(Team).filter(Team.id == tm.team_id).first()
+            active_projects.append({"comp": comp, "team": team, "tm": tm})
+            seen_comp_ids.add(tm.competition_id)
+
+    # 팀장 이벤트 알림 (7일 내 이벤트가 있는 공모전)
+    leader_events = []
+    for tm in my_tms:
+        if not tm.is_leader:
+            continue
+        comp = db.query(Competition).filter(Competition.id == tm.competition_id).first()
+        if not comp:
+            continue
+        event = _next_upcoming_event(comp)
+        if event:
+            team = db.query(Team).filter(Team.id == tm.team_id).first()
+            # 기존 결과 조회
+            existing_result = (
+                db.query(TeamResult)
+                .filter(TeamResult.team_id == tm.team_id, TeamResult.stage == event[0])
+                .first()
+            )
+            # 팀원 목록
+            members_of_team = (
+                db.query(TeamMember).filter(TeamMember.team_id == tm.team_id).all()
+            )
+            leader_events.append({
+                "comp": comp,
+                "team": team,
+                "tm": tm,
+                "event": event,            # (stage_key, label, date, days_left)
+                "existing_result": existing_result,
+                "team_members": members_of_team,
+            })
+
+    return _render(request, "my.html", _ctx(request, db,
+        scrapped_comps=scrapped_comps,
+        active_projects=active_projects,
+        leader_events=leader_events,
+        comp_stages=COMP_STAGES,
+    ))
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -570,6 +805,9 @@ async def admin_add(
     start_date: Optional[str] = Form(None),
     deadline: str = Form(...),
     announcement_date: Optional[str] = Form(None),
+    review_1_date: Optional[str] = Form(None),
+    review_2_date: Optional[str] = Form(None),
+    award_date: Optional[str] = Form(None),
     prize: str = Form(""),
     link: str = Form(""),
     description: str = Form(""),
@@ -590,6 +828,9 @@ async def admin_add(
         start_date=date.fromisoformat(start_date) if start_date else None,
         deadline=date.fromisoformat(deadline),
         announcement_date=date.fromisoformat(announcement_date) if announcement_date else None,
+        review_1_date=date.fromisoformat(review_1_date) if review_1_date else None,
+        review_2_date=date.fromisoformat(review_2_date) if review_2_date else None,
+        award_date=date.fromisoformat(award_date) if award_date else None,
         prize=prize, link=link, description=description,
         image=image, max_members=_optional_int(max_members, "최대 팀 인원"), is_featured=is_featured,
         files=json.dumps(await _save_files(files), ensure_ascii=False),
@@ -621,6 +862,9 @@ async def admin_edit(
     tags: List[str] = Form(default=[]),
     start_date: Optional[str] = Form(None), deadline: str = Form(...),
     announcement_date: Optional[str] = Form(None),
+    review_1_date: Optional[str] = Form(None),
+    review_2_date: Optional[str] = Form(None),
+    award_date: Optional[str] = Form(None),
     prize: str = Form(""), link: str = Form(""), description: str = Form(""),
     is_featured: bool = Form(False), max_members: Optional[str] = Form(None),
     comp_image_path: Optional[str] = Form(None),
@@ -642,6 +886,9 @@ async def admin_edit(
     comp.start_date = date.fromisoformat(start_date) if start_date else None
     comp.deadline = date.fromisoformat(deadline)
     comp.announcement_date = date.fromisoformat(announcement_date) if announcement_date else None
+    comp.review_1_date = date.fromisoformat(review_1_date) if review_1_date else None
+    comp.review_2_date = date.fromisoformat(review_2_date) if review_2_date else None
+    comp.award_date = date.fromisoformat(award_date) if award_date else None
     comp.prize = prize; comp.link = link; comp.description = description
     comp.is_featured = is_featured; comp.max_members = _optional_int(max_members, "최대 팀 인원")
     comp.image = new_image or _safe_path or comp.image
@@ -1034,11 +1281,24 @@ async def profile_view(request: Request, activity_name: str, db: Session = Depen
     submitted = sum(1 for t in team_rows if t.is_participant)
     awarded   = sum(1 for t in team_rows if t.award_rank)
 
+    # 단계 결과 맵 (team_id → list of results with label)
+    team_ids_for_profile = [t.team_id for t in team_rows if t.team_id]
+    stage_results_raw = (
+        db.query(TeamResult).filter(TeamResult.team_id.in_(team_ids_for_profile)).all()
+        if team_ids_for_profile else []
+    )
+    stage_label_map = {s[0]: s[2] for s in COMP_STAGES}
+    stage_results_map: dict = {}
+    for sr in stage_results_raw:
+        sr.stage_label = stage_label_map.get(sr.stage, sr.stage)
+        stage_results_map.setdefault(sr.team_id, []).append(sr)
+
     return _render(request,
         "profile.html",
         _ctx(request, db, target=target, is_own=bool(cm and cm.id == target.id),
              team_rows=team_rows, comps_map=comps_map,
-             stats={"total": total, "submitted": submitted, "awarded": awarded}),
+             stats={"total": total, "submitted": submitted, "awarded": awarded},
+             stage_results_map=stage_results_map),
     )
 
 

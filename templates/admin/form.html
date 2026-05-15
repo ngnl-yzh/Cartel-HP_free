@@ -79,8 +79,22 @@
               <input type="date" name="deadline" id="deadline" value="{{ comp.deadline.isoformat() if comp else '' }}" required>
             </label>
             <label class="field">
-              <span>발표일</span>
+              <span>결과 발표일</span>
               <input type="date" name="announcement_date" id="announcement_date" value="{{ comp.announcement_date.isoformat() if comp and comp.announcement_date else '' }}">
+            </label>
+          </div>
+          <div class="form-grid three-col" style="margin-top:.5rem">
+            <label class="field">
+              <span>1차 심사일</span>
+              <input type="date" name="review_1_date" id="review_1_date" value="{{ comp.review_1_date.isoformat() if comp and comp.review_1_date else '' }}">
+            </label>
+            <label class="field">
+              <span>2차 심사일</span>
+              <input type="date" name="review_2_date" id="review_2_date" value="{{ comp.review_2_date.isoformat() if comp and comp.review_2_date else '' }}">
+            </label>
+            <label class="field">
+              <span>시상일</span>
+              <input type="date" name="award_date" id="award_date" value="{{ comp.award_date.isoformat() if comp and comp.award_date else '' }}">
             </label>
           </div>
 

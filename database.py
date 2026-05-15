@@ -39,6 +39,9 @@ def init_db():
             _add_col(conn, inspector, "competitions", "max_members",  "max_members INTEGER")
             _add_col(conn, inspector, "competitions", "submitted",    "submitted BOOLEAN DEFAULT FALSE")
             _add_col(conn, inspector, "competitions", "submitted_at", "submitted_at TIMESTAMP")
+            _add_col(conn, inspector, "competitions", "review_1_date", "review_1_date DATE")
+            _add_col(conn, inspector, "competitions", "review_2_date", "review_2_date DATE")
+            _add_col(conn, inspector, "competitions", "award_date",    "award_date DATE")
 
         if "members" in tables:
             _add_col(conn, inspector, "members", "comment_muted_until", "comment_muted_until TIMESTAMP")

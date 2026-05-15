@@ -43,11 +43,22 @@ from models import (
 
 app = FastAPI(title="공모전 보드")
 
-# 빈 문자열 방어 처리: UPLOAD_DIR 환경변수가 없거나 빈 값이면 기본값 사용
-_upload_raw = (os.getenv("UPLOAD_DIR") or "").strip()
-UPLOAD_DIR = Path(_upload_raw) if _upload_raw else BASE_DIR / "uploads"
-if not UPLOAD_DIR.is_absolute():
-    UPLOAD_DIR = BASE_DIR / UPLOAD_DIR
+# UPLOAD_DIR 결정 우선순위:
+# 1) UPLOAD_DIR 환경변수 (명시 설정)
+# 2) RAILWAY_VOLUME_MOUNT_PATH (Railway Volume 자동 감지) + /uploads
+# 3) 기본값: BASE_DIR/uploads (로컬 개발)
+_upload_raw    = (os.getenv("UPLOAD_DIR") or "").strip()
+_volume_mount  = (os.getenv("RAILWAY_VOLUME_MOUNT_PATH") or "").strip()
+
+if _upload_raw:
+    UPLOAD_DIR = Path(_upload_raw)
+    if not UPLOAD_DIR.is_absolute():
+        UPLOAD_DIR = BASE_DIR / UPLOAD_DIR
+elif _volume_mount:
+    UPLOAD_DIR = Path(_volume_mount) / "uploads"
+else:
+    UPLOAD_DIR = BASE_DIR / "uploads"
+
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")

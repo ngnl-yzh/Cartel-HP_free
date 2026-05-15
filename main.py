@@ -868,6 +868,25 @@ async def admin_logout():
     return resp
 
 
+@app.get("/admin/debug/storage")
+async def admin_debug_storage(request: Request, db: Session = Depends(get_db)):
+    """Volume 마운트 및 파일 저장 상태 진단 (관리자 전용)"""
+    if not _is_privileged(request, db):
+        raise HTTPException(status_code=403)
+    try:
+        files = list(UPLOAD_DIR.iterdir()) if UPLOAD_DIR.exists() else []
+        file_list = sorted([f.name for f in files if f.is_file()])
+    except Exception as e:
+        file_list = [f"ERROR: {e}"]
+    return JSONResponse({
+        "upload_dir": str(UPLOAD_DIR),
+        "exists": UPLOAD_DIR.exists(),
+        "is_absolute": UPLOAD_DIR.is_absolute(),
+        "file_count": len(file_list),
+        "files": file_list[:30],  # 최대 30개만 표시
+    })
+
+
 @app.get("/admin", response_class=HTMLResponse)
 async def admin_dashboard(request: Request, db: Session = Depends(get_db)):
     if r := _privileged_redirect(request, db):

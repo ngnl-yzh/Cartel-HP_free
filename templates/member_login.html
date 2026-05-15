@@ -12,6 +12,7 @@
     {% endif %}
 
     <form method="post" action="/member/login" class="auth-form">
+      <input type="hidden" name="next" value="{{ next or '' }}">
       <label class="field">
         <span>활동명</span>
         <input type="text" name="activity_name" placeholder="활동명 입력" required autofocus>

@@ -2761,3 +2761,17 @@ select {
   font-size:.72rem; background:#d1fae5; color:#065f46;
   border-radius:4px; padding:2px 6px; font-weight:600;
 }
+
+/* ── 알림 목록 ──────────────────────────────────────────────────── */
+.notif-list { display:flex; flex-direction:column; gap:.5rem; }
+.notif-item {
+  display:flex; align-items:center; justify-content:space-between; gap:.75rem;
+  padding:.6rem .9rem; background:var(--bg-2); border-radius:8px;
+  border:1px solid var(--border);
+}
+.notif-item.notif-unread {
+  background:#fefce8; border-color:#fde68a;
+}
+.notif-content { display:flex; align-items:center; gap:.4rem; flex-wrap:wrap; flex:1; }
+.notif-actor { font-weight:600; color:var(--primary); }
+.notif-time { font-size:.78rem; margin-left:auto; white-space:nowrap; }

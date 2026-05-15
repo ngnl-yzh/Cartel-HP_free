@@ -25,6 +25,39 @@
       </div>
     </div>
 
+    {# ── 알림 목록 #}
+    {% if notifications %}
+    <section class="my-section" id="notifications">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem">
+        <h2 class="my-section-title" style="margin:0">🔔 알림</h2>
+        {% set unread_notifs = notifications | selectattr('is_read', 'equalto', false) | list %}
+        {% if unread_notifs %}
+        <form method="post" action="/notifications/read-all">
+          <button type="submit" class="btn btn-ghost btn-sm">모두 읽음 처리</button>
+        </form>
+        {% endif %}
+      </div>
+      <div class="notif-list">
+        {% for n in notifications %}
+        <div class="notif-item {% if not n.is_read %}notif-unread{% endif %}">
+          <div class="notif-content">
+            {% if n.actor %}
+              <a href="/profile/{{ n.actor.activity_name }}" class="notif-actor">{{ n.actor.activity_name }}</a>
+            {% endif %}
+            <span>{{ n.message }}</span>
+            <span class="muted notif-time">{{ n.created_at.strftime('%m/%d %H:%M') }}</span>
+          </div>
+          {% if not n.is_read %}
+          <form method="post" action="/notifications/{{ n.id }}/read">
+            <button type="submit" class="btn btn-ghost btn-sm">읽음</button>
+          </form>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+    </section>
+    {% endif %}
+
     {# ── 팀장 이벤트 알림 #}
     {% if leader_events %}
     <section class="my-section my-section--alert">

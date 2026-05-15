@@ -702,54 +702,95 @@ async def mypage(request: Request, db: Session = Depends(get_db)):
         )
         .all()
     )
+
+    # 관련 공모전/팀을 한 번에 일괄 조회
+    my_comp_ids = list({tm.competition_id for tm in my_tms if tm.competition_id})
+    my_team_ids = list({tm.team_id for tm in my_tms if tm.team_id})
+    comps_map_my: dict = {}
+    teams_map_my: dict = {}
+    if my_comp_ids:
+        for c in _annotate(db.query(Competition).filter(Competition.id.in_(my_comp_ids)).all()):
+            comps_map_my[c.id] = c
+    if my_team_ids:
+        for t in db.query(Team).filter(Team.id.in_(my_team_ids)).all():
+            teams_map_my[t.id] = t
+
     # 진행 중 프로젝트 (마감 안 지난 공모전)
     active_projects = []
     seen_comp_ids: set = set()
     for tm in my_tms:
         if tm.competition_id in seen_comp_ids:
             continue
-        comp = db.query(Competition).filter(Competition.id == tm.competition_id).first()
+        comp = comps_map_my.get(tm.competition_id)
         if comp and comp.deadline >= today:
-            _annotate([comp])
-            team = db.query(Team).filter(Team.id == tm.team_id).first()
+            team = teams_map_my.get(tm.team_id)
             active_projects.append({"comp": comp, "team": team, "tm": tm})
             seen_comp_ids.add(tm.competition_id)
 
-    # 팀장 이벤트 알림 (7일 내 이벤트가 있는 공모전)
-    leader_events = []
+    # 팀장 이벤트 알림 (7일 내 이벤트가 있는 공모전) — 팀원 목록도 일괄 조회
+    leader_team_ids_my = [tm.team_id for tm in my_tms if tm.is_leader and tm.team_id]
+    team_members_map_my: dict = {}
+    if leader_team_ids_my:
+        all_tms_for_leader = db.query(TeamMember).filter(TeamMember.team_id.in_(leader_team_ids_my)).all()
+        for t in all_tms_for_leader:
+            team_members_map_my.setdefault(t.team_id, []).append(t)
+
+    # 팀장 이벤트별 기존 결과 일괄 조회
+    stage_keys_needed = []
+    comp_event_map: dict = {}
     for tm in my_tms:
         if not tm.is_leader:
             continue
-        comp = db.query(Competition).filter(Competition.id == tm.competition_id).first()
+        comp = comps_map_my.get(tm.competition_id)
         if not comp:
             continue
         event = _next_upcoming_event(comp)
         if event:
-            team = db.query(Team).filter(Team.id == tm.team_id).first()
-            # 기존 결과 조회
-            existing_result = (
-                db.query(TeamResult)
-                .filter(TeamResult.team_id == tm.team_id, TeamResult.stage == event[0])
-                .first()
-            )
-            # 팀원 목록
-            members_of_team = (
-                db.query(TeamMember).filter(TeamMember.team_id == tm.team_id).all()
-            )
-            leader_events.append({
-                "comp": comp,
-                "team": team,
-                "tm": tm,
-                "event": event,            # (stage_key, label, date, days_left)
-                "existing_result": existing_result,
-                "team_members": members_of_team,
-            })
+            comp_event_map[tm.team_id] = (comp, event)
+            stage_keys_needed.append((tm.team_id, event[0]))
+
+    existing_results_map: dict = {}
+    if stage_keys_needed:
+        team_ids_q = [s[0] for s in stage_keys_needed]
+        for tr in db.query(TeamResult).filter(TeamResult.team_id.in_(team_ids_q)).all():
+            existing_results_map[(tr.team_id, tr.stage)] = tr
+
+    leader_events = []
+    for tm in my_tms:
+        if not tm.is_leader:
+            continue
+        if tm.team_id not in comp_event_map:
+            continue
+        comp, event = comp_event_map[tm.team_id]
+        team = teams_map_my.get(tm.team_id)
+        leader_events.append({
+            "comp": comp,
+            "team": team,
+            "tm": tm,
+            "event": event,
+            "existing_result": existing_results_map.get((tm.team_id, event[0])),
+            "team_members": team_members_map_my.get(tm.team_id, []),
+        })
+
+    # 최근 알림 (최신 20개)
+    notifications = (
+        db.query(Notification)
+        .filter(Notification.member_id == cm.id)
+        .order_by(Notification.created_at.desc())
+        .limit(20)
+        .all()
+    )
+    notif_actor_ids = list({n.actor_id for n in notifications if n.actor_id})
+    notif_actors = _member_map(db, notif_actor_ids)
+    for n in notifications:
+        n.actor = notif_actors.get(n.actor_id)
 
     return _render(request, "my.html", _ctx(request, db,
         scrapped_comps=scrapped_comps,
         active_projects=active_projects,
         leader_events=leader_events,
         comp_stages=COMP_STAGES,
+        notifications=notifications,
     ))
 
 
@@ -954,9 +995,9 @@ async def delete_file(request: Request, comp_id: int, filename: str = Form(...),
 # ── GPT 파싱 API ──────────────────────────────────────────────────────────────
 
 @app.post("/admin/api/parse")
-async def api_parse(request: Request, text: str = Form(...)):
-    if not _is_admin(request):
-        raise HTTPException(status_code=401)
+async def api_parse(request: Request, text: str = Form(...), db: Session = Depends(get_db)):
+    if not _is_privileged(request, db):
+        raise HTTPException(status_code=403)
     try:
         return JSONResponse(await parse_text(text))
     except Exception as exc:
@@ -964,9 +1005,9 @@ async def api_parse(request: Request, text: str = Form(...)):
 
 
 @app.post("/admin/api/parse-image")
-async def api_parse_image(request: Request, image: UploadFile = File(...)):
-    if not _is_admin(request):
-        raise HTTPException(status_code=401)
+async def api_parse_image(request: Request, image: UploadFile = File(...), db: Session = Depends(get_db)):
+    if not _is_privileged(request, db):
+        raise HTTPException(status_code=403)
     try:
         data = await image.read()
         ext = Path(image.filename).suffix.lower() if image.filename else ".jpg"
@@ -980,9 +1021,9 @@ async def api_parse_image(request: Request, image: UploadFile = File(...)):
 
 
 @app.post("/admin/api/parse-document")
-async def api_parse_document(request: Request, document: UploadFile = File(...)):
-    if not _is_admin(request):
-        raise HTTPException(status_code=401)
+async def api_parse_document(request: Request, document: UploadFile = File(...), db: Session = Depends(get_db)):
+    if not _is_privileged(request, db):
+        raise HTTPException(status_code=403)
     try:
         data = await document.read()
         result = await parse_document_file(data, document.filename or "file.pdf")
@@ -1234,30 +1275,38 @@ async def register(
 
 
 @app.get("/member/login", response_class=HTMLResponse)
-async def member_login_page(request: Request, db: Session = Depends(get_db)):
+async def member_login_page(request: Request, next: str = "", db: Session = Depends(get_db)):
     if _current_member(request, db):
         return RedirectResponse(url="/", status_code=303)
-    return _render(request, "member_login.html", _ctx(request, db, error=None))
+    return _render(request, "member_login.html", _ctx(request, db, error=None, next=next))
 
 
 @app.post("/member/login")
-async def member_login(request: Request, activity_name: str = Form(...), password: str = Form(...), db: Session = Depends(get_db)):
+async def member_login(
+    request: Request,
+    activity_name: str = Form(...),
+    password: str = Form(...),
+    next: str = Form(""),
+    db: Session = Depends(get_db),
+):
     client_ip = request.client.host if request.client else "unknown"
 
     if _is_locked(_member_fail_count, client_ip):
-        return _render(request, "member_login.html", _ctx(request, db, error="너무 많은 로그인 시도입니다. 잠시 후 다시 시도하세요."), status_code=429)
+        return _render(request, "member_login.html", _ctx(request, db, error="너무 많은 로그인 시도입니다. 잠시 후 다시 시도하세요.", next=next), status_code=429)
 
     m = db.query(Member).filter(Member.activity_name == activity_name.strip()).first()
     if not m or not verify_password(password, m.password_hash):
         _record_fail(_member_fail_count, client_ip)
         return _render(request,
             "member_login.html",
-            _ctx(request, db, error="활동명 또는 비밀번호가 올바르지 않습니다."),
+            _ctx(request, db, error="활동명 또는 비밀번호가 올바르지 않습니다.", next=next),
             status_code=401,
         )
 
     _member_fail_count.pop(client_ip, None)
-    resp = RedirectResponse(url="/", status_code=303)
+    # next URL 검증: 같은 호스트의 상대 경로만 허용
+    redirect_url = next if (next and next.startswith("/") and not next.startswith("//")) else "/"
+    resp = RedirectResponse(url=redirect_url, status_code=303)
     resp.set_cookie("member_token", create_member_token(m.id), httponly=True, max_age=604800, samesite="lax", secure=IS_PRODUCTION)
     return resp
 
@@ -1557,21 +1606,42 @@ async def dm_list(request: Request, db: Session = Depends(get_db)):
         DirectMessage.receiver_id == cm.id).distinct().all()]
     all_keys = list(set(sent_keys + recv_keys))
 
+    # thread_key별 마지막 메시지 + 미읽음 수를 한 번에 조회
+    last_msgs: dict = {}
+    unread_counts: dict = {}
+    if all_keys:
+        # 마지막 메시지: thread_key별 max(id)로 서브쿼리 없이 Python에서 처리
+        all_msgs = (
+            db.query(DirectMessage)
+            .filter(DirectMessage.thread_key.in_(all_keys))
+            .order_by(DirectMessage.created_at.desc())
+            .all()
+        )
+        for msg in all_msgs:
+            if msg.thread_key not in last_msgs:
+                last_msgs[msg.thread_key] = msg
+            if msg.receiver_id == cm.id and not msg.is_read:
+                unread_counts[msg.thread_key] = unread_counts.get(msg.thread_key, 0) + 1
+
+    # 파트너 ID 목록 수집 후 일괄 조회
+    partner_id_map: dict = {}
+    for key, msg in last_msgs.items():
+        partner_id_map[key] = msg.receiver_id if msg.sender_id == cm.id else msg.sender_id
+    all_partner_ids = list(set(partner_id_map.values()))
+    partners = _member_map(db, all_partner_ids)
+
     threads = []
     for key in all_keys:
-        last_msg = db.query(DirectMessage).filter(
-            DirectMessage.thread_key == key
-        ).order_by(DirectMessage.created_at.desc()).first()
+        last_msg = last_msgs.get(key)
         if not last_msg:
             continue
-        partner_id = last_msg.receiver_id if last_msg.sender_id == cm.id else last_msg.sender_id
-        partner = db.query(Member).filter(Member.id == partner_id).first()
-        unread = db.query(DirectMessage).filter(
-            DirectMessage.thread_key == key,
-            DirectMessage.receiver_id == cm.id,
-            DirectMessage.is_read.is_(False),
-        ).count()
-        threads.append({"key": key, "partner": partner, "last_msg": last_msg, "unread": unread})
+        pid = partner_id_map.get(key)
+        threads.append({
+            "key": key,
+            "partner": partners.get(pid),
+            "last_msg": last_msg,
+            "unread": unread_counts.get(key, 0),
+        })
 
     threads.sort(key=lambda t: t["last_msg"].created_at, reverse=True)
     return _render(request, "dm/list.html", _ctx(request, db, threads=threads))
@@ -1646,7 +1716,7 @@ async def mark_notification_read(request: Request, notif_id: int, db: Session = 
     if notif:
         notif.is_read = True
         db.commit()
-    return RedirectResponse(url="/my/follows", status_code=303)
+    return RedirectResponse(url=request.headers.get("referer", "/my/follows"), status_code=303)
 
 
 @app.post("/notifications/read-all")
@@ -1765,9 +1835,9 @@ async def create_team(
                     f"{creator.activity_name}님이 '{comp.title}' 팀 '{team_name}'을 모집합니다.",
                 )
         db.commit()
-    except Exception as exc:
+    except Exception:
         db.rollback()
-        raise HTTPException(status_code=500, detail=f"팀 생성 오류: {exc}")
+        raise HTTPException(status_code=500, detail="팀 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.")
     return RedirectResponse(url=f"/competition/{comp_id}#team", status_code=303)
 
 
@@ -2122,6 +2192,9 @@ async def board_like_post(request: Request, board: str, post_id: int, db: Sessio
     cm = _current_member(request, db)
     if not cm:
         raise HTTPException(status_code=401)
+    post = db.query(Post).filter(Post.id == post_id, Post.board == board).first()
+    if not post:
+        raise HTTPException(status_code=404)
     existing = db.query(PostLike).filter(PostLike.post_id == post_id, PostLike.member_id == cm.id).first()
     if existing:
         db.delete(existing)
@@ -2137,6 +2210,11 @@ async def board_add_comment(
     content: str = Form(...), parent_id: Optional[int] = Form(None),
     db: Session = Depends(get_db),
 ):
+    if board not in BOARDS:
+        raise HTTPException(status_code=404)
+    post = db.query(Post).filter(Post.id == post_id, Post.board == board).first()
+    if not post:
+        raise HTTPException(status_code=404)
     cm = _current_member(request, db)
     if not cm:
         raise HTTPException(status_code=401)
@@ -2176,6 +2254,10 @@ async def board_like_comment(request: Request, board: str, comment_id: int, db: 
         raise HTTPException(status_code=401)
     comment = db.query(Comment).filter(Comment.id == comment_id).first()
     if not comment:
+        raise HTTPException(status_code=404)
+    # 댓글이 해당 게시판의 게시글에 속하는지 확인
+    post = db.query(Post).filter(Post.id == comment.post_id, Post.board == board).first()
+    if not post:
         raise HTTPException(status_code=404)
     existing = db.query(CommentLike).filter(CommentLike.comment_id == comment_id, CommentLike.member_id == cm.id).first()
     if existing:

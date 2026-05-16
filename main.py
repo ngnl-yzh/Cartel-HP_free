@@ -39,7 +39,7 @@ from models import (
     Competition, CompetitionScrap, InviteCode, InviteCodeUseLog, Member,
     DirectMessage, ExternalAchievement, Follow, Notification,
     Post, PostLike,
-    Team, TeamMember, TeamResult,
+    Team, TeamCompetitionEntry, TeamMember, TeamResult,
 )
 
 app = FastAPI(title="공모전 보드")
@@ -701,6 +701,16 @@ async def detail(request: Request, comp_id: int, db: Session = Depends(get_db)):
         for r in results:
             team_result_map.setdefault(r.team_id, {})[r.stage] = r
 
+    # 팀별 자기 기재 실적: {team_id: TeamCompetitionEntry}
+    team_entries: dict = {}
+    if team_ids:
+        entries = db.query(TeamCompetitionEntry).filter(
+            TeamCompetitionEntry.competition_id == comp_id,
+            TeamCompetitionEntry.team_id.in_(team_ids),
+        ).all()
+        for e in entries:
+            team_entries[e.team_id] = e
+
     return _render(request,
         "detail.html",
         _ctx(request, db,
@@ -712,6 +722,7 @@ async def detail(request: Request, comp_id: int, db: Session = Depends(get_db)):
              user_scrapped=user_scrapped,
              leader_team_ids=leader_team_ids,
              team_result_map=team_result_map,
+             team_entries=team_entries,
              comp_stages=COMP_STAGES,
              is_participating=is_participating,
              my_entry_team_id=my_entry_team_id),
@@ -814,6 +825,200 @@ async def record_stage_result(
 
     db.commit()
     return RedirectResponse(url=f"/my#team-{team_id}", status_code=303)
+
+
+# ── 팀 공모전 실적 입력 ──────────────────────────────────────────────────────────
+
+def _get_entry_team_leader(request: Request, db: Session, comp_id: int, team_id: int):
+    """팀장 권한 확인 후 (cm, team, entry) 반환. 권한 없으면 HTTPException."""
+    cm = _current_member(request, db)
+    if not cm:
+        raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
+    team = db.query(Team).filter(Team.id == team_id, Team.competition_id == comp_id).first()
+    if not team:
+        raise HTTPException(status_code=404, detail="팀을 찾을 수 없습니다.")
+    leader_tm = db.query(TeamMember).filter(
+        TeamMember.team_id == team_id, TeamMember.is_leader.is_(True)
+    ).first()
+    is_admin_ = bool(request.cookies.get("admin_token") and verify_token(request.cookies["admin_token"]))
+    if not is_admin_:
+        if not leader_tm or (leader_tm.member_id != cm.id and leader_tm.nickname != cm.activity_name):
+            raise HTTPException(status_code=403, detail="팀장만 실적을 입력할 수 있습니다.")
+    entry = db.query(TeamCompetitionEntry).filter(
+        TeamCompetitionEntry.team_id == team_id,
+        TeamCompetitionEntry.competition_id == comp_id,
+    ).first()
+    return cm, team, entry
+
+
+@app.get("/competition/{comp_id}/team/{team_id}/achievement", response_class=HTMLResponse)
+async def achievement_form(request: Request, comp_id: int, team_id: int, db: Session = Depends(get_db)):
+    cm, team, entry = _get_entry_team_leader(request, db, comp_id, team_id)
+    comp = db.query(Competition).filter(Competition.id == comp_id).first()
+    if not comp:
+        raise HTTPException(status_code=404, detail="공모전을 찾을 수 없습니다.")
+
+    review_dates_list = []
+    try:
+        review_dates_list = json.loads(comp.review_dates or "[]")
+    except Exception:
+        pass
+
+    stage_results = []
+    if entry:
+        try:
+            stage_results = json.loads(entry.stage_results or "[]")
+        except Exception:
+            pass
+
+    # 기존 단계 결과와 review_dates 병합 (label 기준)
+    sr_map = {sr["label"]: sr for sr in stage_results}
+    merged_stages = []
+    for rd in review_dates_list:
+        label = rd.get("label", "")
+        existing = sr_map.get(label, {})
+        merged_stages.append({
+            "label": label,
+            "date": rd.get("date", ""),
+            "passed": existing.get("passed"),   # True/False/None
+            "note": existing.get("note", ""),
+        })
+    # review_dates에 없는 기존 단계도 포함
+    for sr in stage_results:
+        if not any(ms["label"] == sr["label"] for ms in merged_stages):
+            merged_stages.append(sr)
+
+    pending_image = bool(entry and entry.proof_image and not entry.proof_approved)
+    approved_image = bool(entry and entry.proof_image and entry.proof_approved)
+
+    return _render(request, "competition_achievement.html", _ctx(request, db,
+        comp=comp,
+        team=team,
+        entry=entry,
+        merged_stages=merged_stages,
+        pending_image=pending_image,
+        approved_image=approved_image,
+    ))
+
+
+@app.post("/competition/{comp_id}/team/{team_id}/achievement", response_class=HTMLResponse)
+async def achievement_save(
+    request: Request,
+    comp_id: int,
+    team_id: int,
+    is_awarded: Optional[str] = Form(None),
+    award_name: str = Form(""),
+    prize_amount: str = Form(""),
+    is_public: Optional[str] = Form(None),
+    note: str = Form(""),
+    proof_image: Optional[UploadFile] = File(None),
+    db: Session = Depends(get_db),
+):
+    cm, team, entry = _get_entry_team_leader(request, db, comp_id, team_id)
+
+    # 단계별 결과 파싱 (form: stage_label_0, stage_passed_0, stage_note_0 …)
+    form_data = await request.form()
+    stage_results = []
+    i = 0
+    while f"stage_label_{i}" in form_data:
+        label = str(form_data.get(f"stage_label_{i}", "")).strip()
+        passed_raw = form_data.get(f"stage_passed_{i}")
+        note_i = str(form_data.get(f"stage_note_{i}", "")).strip()
+        passed_val = True if passed_raw == "true" else (False if passed_raw == "false" else None)
+        if label:
+            stage_results.append({"label": label, "passed": passed_val, "note": note_i})
+        i += 1
+
+    # 증빙 이미지 처리
+    new_proof_path: Optional[str] = None
+    if proof_image and proof_image.filename:
+        ext = Path(proof_image.filename).suffix.lower()
+        if ext not in {".jpg", ".jpeg", ".png", ".webp", ".gif"}:
+            raise HTTPException(status_code=400, detail="이미지 파일만 업로드 가능합니다.")
+        img_data = await proof_image.read()
+        if len(img_data) > 10 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail="파일 크기는 10MB 이하로 제한됩니다.")
+        fname = f"{uuid.uuid4().hex}{ext}"
+        (UPLOAD_DIR / fname).write_bytes(img_data)
+        new_proof_path = fname
+
+    now_dt = datetime.now()
+
+    if entry is None:
+        entry = TeamCompetitionEntry(
+            team_id=team_id,
+            competition_id=comp_id,
+            recorded_by_id=cm.id,
+        )
+        db.add(entry)
+
+    entry.stage_results = json.dumps(stage_results, ensure_ascii=False)
+    entry.is_awarded    = is_awarded == "true"
+    entry.award_name    = award_name.strip()
+    entry.prize_amount  = prize_amount.strip()
+    entry.is_public     = is_public == "true"
+    entry.note          = note.strip()
+    entry.updated_at    = now_dt
+
+    if new_proof_path:
+        # 새 이미지 업로드 → 승인 초기화
+        entry.proof_image          = new_proof_path
+        entry.proof_approved       = False
+        entry.proof_approved_at    = None
+        entry.proof_approved_by    = None
+        entry.proof_rejected_reason = ""
+
+    db.commit()
+    return RedirectResponse(
+        url=f"/competition/{comp_id}/team/{team_id}/achievement?saved=1",
+        status_code=303,
+    )
+
+
+# ── 관리자 증빙 이미지 승인/반려 ─────────────────────────────────────────────────
+
+@app.post("/admin/achievement/{entry_id}/approve-proof")
+async def admin_approve_proof(
+    request: Request,
+    entry_id: int,
+    db: Session = Depends(get_db),
+):
+    if not _is_admin(request):
+        raise HTTPException(status_code=403, detail="관리자 권한이 필요합니다.")
+    entry = db.query(TeamCompetitionEntry).filter(TeamCompetitionEntry.id == entry_id).first()
+    if not entry:
+        raise HTTPException(status_code=404, detail="실적 기록을 찾을 수 없습니다.")
+    entry.proof_approved      = True
+    entry.proof_approved_at   = datetime.now()
+    entry.proof_approved_by   = None   # admin이므로 member_id 없음
+    entry.proof_rejected_reason = ""
+    db.commit()
+    return RedirectResponse(
+        url=f"/competition/{entry.competition_id}?entry_approved=1",
+        status_code=303,
+    )
+
+
+@app.post("/admin/achievement/{entry_id}/reject-proof")
+async def admin_reject_proof(
+    request: Request,
+    entry_id: int,
+    reason: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    if not _is_admin(request):
+        raise HTTPException(status_code=403, detail="관리자 권한이 필요합니다.")
+    entry = db.query(TeamCompetitionEntry).filter(TeamCompetitionEntry.id == entry_id).first()
+    if not entry:
+        raise HTTPException(status_code=404, detail="실적 기록을 찾을 수 없습니다.")
+    entry.proof_approved        = False
+    entry.proof_approved_at     = None
+    entry.proof_rejected_reason = reason.strip()
+    db.commit()
+    return RedirectResponse(
+        url=f"/competition/{entry.competition_id}?entry_rejected=1",
+        status_code=303,
+    )
 
 
 @app.get("/my", response_class=HTMLResponse)

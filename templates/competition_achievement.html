@@ -1,0 +1,272 @@
+{% extends "base.html" %}
+{% block title %}실적 입력 · {{ comp.title }}{% endblock %}
+
+{% block content %}
+<main style="padding: 32px 0 64px">
+  <div class="container" style="max-width: 680px">
+
+    {# ── 헤더 ────────────────────────────────────────────────────────────── #}
+    <div class="page-heading" style="margin-bottom: 28px">
+      <div>
+        <p class="eyebrow" style="margin-bottom:4px">
+          <a href="/competition/{{ comp.id }}" class="muted">{{ comp.title }}</a> &rsaquo; {{ team.name }}
+        </p>
+        <h1 style="font-size:1.5rem;font-weight:800">공모전 실적 입력</h1>
+        <p class="muted" style="font-size:.88rem;margin-top:6px">
+          팀장만 입력할 수 있습니다. 입력 내용은 팀원 전원의 실적으로 등록됩니다.
+        </p>
+      </div>
+      <a href="/competition/{{ comp.id }}" class="btn btn-outline" style="white-space:nowrap">← 공모전 페이지</a>
+    </div>
+
+    {# ── 저장 토스트 ─────────────────────────────────────────────────────── #}
+    <div id="savedToast" style="
+      display:none;position:fixed;bottom:28px;left:50%;transform:translateX(-50%);
+      background:#18181b;color:#fff;padding:12px 24px;border-radius:10px;
+      font-size:.92rem;font-weight:500;z-index:9999;box-shadow:0 4px 20px rgba(0,0,0,.25);">
+      ✅ 실적이 저장되었습니다.
+    </div>
+
+    <form method="post"
+          action="/competition/{{ comp.id }}/team/{{ team.id }}/achievement"
+          enctype="multipart/form-data">
+
+      {# ── 단계별 심사 결과 ──────────────────────────────────────────────── #}
+      {% if merged_stages %}
+      <section class="card" style="padding:24px 28px;margin-bottom:20px">
+        <h2 style="font-size:1rem;font-weight:700;margin-bottom:16px">📋 단계별 심사 결과</h2>
+
+        {% for stage in merged_stages %}
+        <div class="stage-entry-row" style="border:1.5px solid var(--line);border-radius:10px;padding:16px 18px;margin-bottom:12px">
+          <input type="hidden" name="stage_label_{{ loop.index0 }}" value="{{ stage.label }}">
+
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+            <span style="font-weight:700;font-size:.95rem;min-width:120px">{{ stage.label }}</span>
+            {% if stage.date %}
+              <span class="muted" style="font-size:.82rem">{{ stage.date }}</span>
+            {% endif %}
+          </div>
+
+          {# 통과/탈락/미기재 라디오 #}
+          <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+            <label class="pass-radio {% if stage.passed == True %}active-pass{% elif stage.passed == False %}{% else %}active-none{% endif %}"
+                   data-idx="{{ loop.index0 }}" data-val="none">
+              <input type="radio" name="stage_passed_{{ loop.index0 }}" value=""
+                     {% if stage.passed is none %}checked{% endif %} style="display:none">
+              미기재
+            </label>
+            <label class="pass-radio {% if stage.passed == True %}active-pass{% endif %}"
+                   data-idx="{{ loop.index0 }}" data-val="true">
+              <input type="radio" name="stage_passed_{{ loop.index0 }}" value="true"
+                     {% if stage.passed == True %}checked{% endif %} style="display:none">
+              ✅ 통과
+            </label>
+            <label class="pass-radio {% if stage.passed == False %}active-fail{% endif %}"
+                   data-idx="{{ loop.index0 }}" data-val="false">
+              <input type="radio" name="stage_passed_{{ loop.index0 }}" value="false"
+                     {% if stage.passed == False %}checked{% endif %} style="display:none">
+              ❌ 탈락
+            </label>
+          </div>
+
+          <input type="text"
+                 name="stage_note_{{ loop.index0 }}"
+                 value="{{ stage.note or '' }}"
+                 placeholder="메모 (선택)"
+                 class="form-control" style="font-size:.88rem">
+        </div>
+        {% endfor %}
+      </section>
+      {% endif %}
+
+      {# ── 수상 정보 ────────────────────────────────────────────────────── #}
+      <section class="card" style="padding:24px 28px;margin-bottom:20px">
+        <h2 style="font-size:1rem;font-weight:700;margin-bottom:16px">🏆 수상 정보</h2>
+
+        <div style="display:flex;gap:10px;margin-bottom:16px">
+          <label class="pass-radio {% if entry and entry.is_awarded %}active-pass{% endif %}" id="awardedYes">
+            <input type="radio" name="is_awarded" value="true"
+                   {% if entry and entry.is_awarded %}checked{% endif %} style="display:none">
+            수상했습니다
+          </label>
+          <label class="pass-radio {% if not entry or not entry.is_awarded %}active-none{% endif %}" id="awardedNo">
+            <input type="radio" name="is_awarded" value="false"
+                   {% if not entry or not entry.is_awarded %}checked{% endif %} style="display:none">
+            수상하지 않았습니다
+          </label>
+        </div>
+
+        <div id="awardFields" style="display:{% if entry and entry.is_awarded %}block{% else %}none{% endif %}">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+            <div>
+              <label class="form-label">상명 <span style="color:var(--danger)">*</span></label>
+              <input type="text" name="award_name" class="form-control"
+                     value="{{ entry.award_name if entry else '' }}"
+                     placeholder="예: 최우수상, 대상, 장려상">
+            </div>
+            <div>
+              <label class="form-label">상금·상품 <span class="muted">(선택)</span></label>
+              <input type="text" name="prize_amount" class="form-control"
+                     value="{{ entry.prize_amount if entry else '' }}"
+                     placeholder="예: 300만원, 상품권 50만원">
+            </div>
+          </div>
+        </div>
+        {# 수상 아닌 경우에는 숨겨진 값 전달 #}
+        <div id="awardHiddenWrapper" style="display:{% if entry and entry.is_awarded %}none{% else %}block{% endif %}">
+          <input type="hidden" name="award_name" value="">
+          <input type="hidden" name="prize_amount" value="">
+        </div>
+      </section>
+
+      {# ── 증빙 사진 ────────────────────────────────────────────────────── #}
+      <section class="card" style="padding:24px 28px;margin-bottom:20px">
+        <h2 style="font-size:1rem;font-weight:700;margin-bottom:4px">📷 증빙 사진 <span class="muted" style="font-size:.85rem;font-weight:400">(수상 사진 등, 선택)</span></h2>
+        <p class="muted" style="font-size:.82rem;margin-bottom:16px">업로드 후 관리자 승인 시 공개됩니다. JPG·PNG·WEBP (최대 10MB)</p>
+
+        {% if approved_image %}
+          <div style="margin-bottom:14px;padding:10px 14px;background:color-mix(in srgb,var(--success) 10%,transparent);border-radius:8px;border:1.5px solid var(--success);font-size:.88rem">
+            ✅ <strong>승인된 증빙 사진</strong>이 등록되어 있습니다.
+            <a href="/uploads/{{ entry.proof_image }}" target="_blank" class="muted" style="margin-left:8px;text-decoration:underline">미리보기</a>
+          </div>
+        {% elif pending_image %}
+          <div style="margin-bottom:14px;padding:10px 14px;background:#fef9c3;border-radius:8px;border:1.5px solid #ca8a04;font-size:.88rem;color:#92400e">
+            ⏳ 증빙 사진이 업로드되었습니다. <strong>관리자 승인 대기 중</strong>입니다.
+            {% if entry and entry.proof_rejected_reason %}
+              <br><span style="color:var(--danger);margin-top:4px;display:block">반려 사유: {{ entry.proof_rejected_reason }}</span>
+            {% endif %}
+          </div>
+        {% endif %}
+
+        <input type="file" name="proof_image" accept="image/*" class="form-control" style="font-size:.88rem">
+        <p class="muted" style="font-size:.8rem;margin-top:6px">새 파일을 업로드하면 기존 사진이 교체됩니다.</p>
+      </section>
+
+      {# ── 메모 & 공개 설정 ─────────────────────────────────────────────── #}
+      <section class="card" style="padding:24px 28px;margin-bottom:24px">
+        <h2 style="font-size:1rem;font-weight:700;margin-bottom:16px">⚙️ 기타 설정</h2>
+
+        <div style="margin-bottom:16px">
+          <label class="form-label">메모 <span class="muted">(선택)</span></label>
+          <textarea name="note" class="form-control" rows="3"
+                    placeholder="팀 내부 메모, 특이사항 등">{{ entry.note if entry else '' }}</textarea>
+        </div>
+
+        <div style="padding:14px 18px;border:1.5px solid var(--line);border-radius:10px">
+          <label style="display:flex;align-items:center;gap:12px;cursor:pointer;user-select:none">
+            <input type="checkbox" name="is_public" value="true"
+                   {% if entry and entry.is_public %}checked{% endif %}
+                   style="width:18px;height:18px;accent-color:var(--primary)">
+            <div>
+              <div style="font-weight:600;font-size:.92rem">공모전 페이지에 결과 공개</div>
+              <div class="muted" style="font-size:.82rem">체크하면 공모전 상세 페이지에서 모든 방문자가 이 팀의 결과를 볼 수 있습니다.</div>
+            </div>
+          </label>
+        </div>
+      </section>
+
+      <div style="display:flex;gap:10px">
+        <button type="submit" class="btn btn-primary" style="min-width:120px">💾 저장</button>
+        <a href="/competition/{{ comp.id }}" class="btn btn-outline">취소</a>
+      </div>
+
+    </form>
+  </div>
+</main>
+
+<style>
+.pass-radio {
+  display: inline-flex;
+  align-items: center;
+  padding: 7px 16px;
+  border: 1.5px solid var(--line);
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: .88rem;
+  font-weight: 600;
+  transition: border-color .12s, background .12s, color .12s;
+  user-select: none;
+}
+.pass-radio:hover { border-color: var(--primary); }
+.pass-radio.active-pass {
+  border-color: var(--success);
+  background: color-mix(in srgb, var(--success) 10%, transparent);
+  color: var(--success);
+}
+.pass-radio.active-fail {
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+  color: var(--danger);
+}
+.pass-radio.active-none {
+  border-color: var(--muted);
+  background: var(--surface-soft);
+  color: var(--muted);
+}
+</style>
+
+<script>
+(function () {
+  // 저장 완료 토스트
+  if (new URLSearchParams(location.search).get('saved') === '1') {
+    const t = document.getElementById('savedToast');
+    t.style.display = 'block';
+    t.style.animation = 'toastIn .25s ease';
+    setTimeout(() => { t.style.display = 'none'; }, 3000);
+    history.replaceState(null, '', location.pathname);
+  }
+
+  // 라디오 버튼 비주얼 토글 (단계별)
+  document.querySelectorAll('.pass-radio').forEach(function (lbl) {
+    lbl.addEventListener('click', function () {
+      const input = lbl.querySelector('input[type="radio"]');
+      if (!input) return;
+      const name = input.name;
+      // 같은 name 그룹 초기화
+      document.querySelectorAll(`input[name="${name}"]`).forEach(function (r) {
+        const p = r.closest('.pass-radio');
+        if (p) p.classList.remove('active-pass', 'active-fail', 'active-none');
+      });
+      input.checked = true;
+      const val = input.value;
+      if (val === 'true')  lbl.classList.add('active-pass');
+      else if (val === 'false') lbl.classList.add('active-fail');
+      else lbl.classList.add('active-none');
+    });
+  });
+
+  // 수상 여부 토글
+  const awardedYes = document.getElementById('awardedYes');
+  const awardedNo  = document.getElementById('awardedNo');
+  const awardFields = document.getElementById('awardFields');
+  const awardHidden = document.getElementById('awardHiddenWrapper');
+
+  function refreshAward() {
+    const yes = awardedYes && awardedYes.querySelector('input').checked;
+    if (awardFields) awardFields.style.display = yes ? 'block' : 'none';
+    if (awardHidden) awardHidden.style.display  = yes ? 'none'  : 'block';
+  }
+
+  if (awardedYes) awardedYes.addEventListener('click', refreshAward);
+  if (awardedNo)  awardedNo.addEventListener('click', refreshAward);
+
+  // is_public checkbox → form value 처리 (체크 안 하면 "false" 전송)
+  const form = document.querySelector('form');
+  if (form) {
+    form.addEventListener('submit', function () {
+      const cb = form.querySelector('input[name="is_public"]');
+      if (cb && !cb.checked) {
+        const h = document.createElement('input');
+        h.type = 'hidden'; h.name = 'is_public'; h.value = 'false';
+        form.appendChild(h);
+        cb.disabled = true;
+      }
+    });
+  }
+})();
+</script>
+
+<style>
+@keyframes toastIn { from { opacity:0; transform:translateX(-50%) translateY(12px); } to { opacity:1; transform:translateX(-50%) translateY(0); } }
+</style>
+{% endblock %}

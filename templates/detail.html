@@ -304,6 +304,69 @@
         </div>
         {% endif %}
 
+        {# ── 자기 기재 실적 (팀장 또는 관리자) ──────────────────────── #}
+        {% set entry = team_entries.get(team.id) %}
+        {% if entry and (entry.is_public or is_admin or team.id == my_entry_team_id) %}
+        <div class="achievement-summary" style="margin-top:14px;padding:12px 16px;border:1.5px solid var(--line);border-radius:10px;font-size:.88rem">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
+            <span style="font-weight:700;font-size:.9rem">📊 실적 기록</span>
+            {% if team.id in leader_team_ids or is_admin %}
+              <a href="/competition/{{ comp.id }}/team/{{ team.id }}/achievement" class="btn btn-ghost btn-xs">✏️ 수정</a>
+            {% endif %}
+          </div>
+          {# 단계별 결과 #}
+          {% set sr_list = entry.stage_results | fromjson %}
+          {% if sr_list %}
+          <div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:8px">
+            {% for sr in sr_list %}
+              {% if sr.get('passed') == true %}
+                <span class="stage-badge stage-pass" style="font-size:.78rem">✅ {{ sr.label }} 통과</span>
+              {% elif sr.get('passed') == false and sr.get('passed') is not none %}
+                <span class="stage-badge stage-fail" style="font-size:.78rem">❌ {{ sr.label }} 탈락</span>
+              {% endif %}
+            {% endfor %}
+          </div>
+          {% endif %}
+          {# 수상 #}
+          {% if entry.is_awarded %}
+          <div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <span style="font-weight:700;color:var(--warning)">🏆 {{ entry.award_name or '수상' }}</span>
+            {% if entry.prize_amount %}
+              <span class="muted">{{ entry.prize_amount }}</span>
+            {% endif %}
+            {% if entry.proof_image %}
+              {% if entry.proof_approved %}
+                <a href="/uploads/{{ entry.proof_image }}" target="_blank"
+                   style="font-size:.78rem;text-decoration:underline;color:var(--success)">📷 증빙 확인</a>
+              {% elif is_admin %}
+                <span style="font-size:.78rem;color:#92400e">⏳ 증빙 승인 대기</span>
+              {% endif %}
+            {% endif %}
+          </div>
+          {% endif %}
+          {# 관리자: 증빙 승인 버튼 #}
+          {% if is_admin and entry.proof_image and not entry.proof_approved %}
+          <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+            <form method="post" action="/admin/achievement/{{ entry.id }}/approve-proof" style="display:inline">
+              <button type="submit" class="btn btn-sm" style="background:var(--success);color:#fff;border:none">✅ 증빙 승인</button>
+            </form>
+            <form method="post" action="/admin/achievement/{{ entry.id }}/reject-proof" style="display:inline">
+              <input type="text" name="reason" placeholder="반려 사유" style="font-size:.8rem;padding:4px 8px;border:1px solid var(--line);border-radius:6px;width:140px">
+              <button type="submit" class="btn btn-sm btn-danger">반려</button>
+            </form>
+          </div>
+          {% endif %}
+          {% if not entry.is_public and (team.id in leader_team_ids or is_admin) %}
+          <p class="muted" style="font-size:.78rem;margin-top:6px">🔒 비공개 — 팀원·관리자에게만 표시됩니다.</p>
+          {% endif %}
+        </div>
+        {% elif team.id in leader_team_ids or is_admin %}
+        <div style="margin-top:12px">
+          <a href="/competition/{{ comp.id }}/team/{{ team.id }}/achievement"
+             class="btn btn-outline btn-sm" style="font-size:.82rem">📝 실적 입력</a>
+        </div>
+        {% endif %}
+
         {# 팀 참여 신청 폼 #}
         {% if (not comp.max_members or team.members | length < comp.max_members) and comp.status != 'closed' %}
         <details class="join-details" style="margin-top:12px">

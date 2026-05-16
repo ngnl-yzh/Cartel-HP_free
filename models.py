@@ -275,6 +275,41 @@ class AppSetting(Base):
     updated_at = Column(DateTime, default=datetime.now)
 
 
+class TeamCompetitionEntry(Base):
+    """팀 자기 기재 공모전 실적 (결과 + 증빙)"""
+    __tablename__ = "team_competition_entries"
+    __table_args__ = (UniqueConstraint("team_id", "competition_id", name="uq_team_comp_entry"),)
+
+    id             = Column(Integer, primary_key=True, index=True)
+    team_id        = Column(Integer, nullable=False, index=True)
+    competition_id = Column(Integer, nullable=False, index=True)
+
+    # 단계별 결과 JSON: [{"label":"1차 서류","passed":true,"note":""}, ...]
+    stage_results  = Column(Text, default="[]")
+
+    # 최종 수상
+    is_awarded     = Column(Boolean, default=False)
+    award_name     = Column(String(100), default="")    # 최우수상, 우수상 등
+    prize_amount   = Column(String(100), default="")    # 선택 입력
+
+    # 증빙 사진 (관리자 승인 후 공개)
+    proof_image          = Column(String(500), nullable=True)
+    proof_approved       = Column(Boolean, default=False)
+    proof_approved_at    = Column(DateTime, nullable=True)
+    proof_approved_by    = Column(Integer, nullable=True)
+    proof_rejected_reason = Column(String(300), default="")
+
+    # 공개 여부 (팀장이 토글)
+    is_public      = Column(Boolean, default=False)
+
+    # 메모
+    note           = Column(Text, default="")
+
+    recorded_by_id = Column(Integer, nullable=True)     # 기록한 팀장 member_id
+    created_at     = Column(DateTime, default=datetime.now)
+    updated_at     = Column(DateTime, default=datetime.now)
+
+
 class ExternalAchievement(Base):
     """자기 기재 외부 이력 (증빙 없음)"""
     __tablename__ = "external_achievements"

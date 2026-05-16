@@ -31,7 +31,12 @@
       {% for label, cnt in cache.counts.items() %}
       <span class="crawl-site-badge">{{ label }} <strong>{{ cnt }}</strong></span>
       {% endfor %}
-      <span class="crawl-site-badge total">전체 <strong>{{ cache['items'] | length }}</strong></span>
+      <span class="crawl-site-badge total">전체 <strong>{{ cache['items'] | length }}</strong>건</span>
+      {% if cache.skipped %}
+      <span class="crawl-site-badge" style="background:#fef9c3;color:#92400e;border-color:#fcd34d">
+        🔁 중복 제외 <strong>{{ cache.skipped }}</strong>건
+      </span>
+      {% endif %}
     </div>
     {% endif %}
 

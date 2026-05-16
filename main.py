@@ -3404,10 +3404,40 @@ _crawl_cache: dict = {"items": [], "errors": [], "counts": {}, "crawled_at": Non
 async def admin_crawl_page(request: Request, db: Session = Depends(get_db)):
     if r := _admin_redirect(request):
         return r
+    # 캐시에 아직 남아있는 항목 중 새로 추가된 것 재필터 (항목 추가 후 페이지 재방문 시)
+    cache = dict(_crawl_cache)
+    if cache.get("items"):
+        refreshed, extra_skipped = _dedup_crawl_items(cache["items"], db)
+        if extra_skipped:
+            cache = dict(cache)
+            cache["items"]   = refreshed
+            cache["skipped"] = cache.get("skipped", 0) + extra_skipped
     return _render(request,
         "admin/crawl.html",
-        _ctx(request, db, cache=_crawl_cache, all_tags=_get_tags(db)),
+        _ctx(request, db, cache=cache, all_tags=_get_tags(db)),
     )
+
+
+def _dedup_crawl_items(items: list, db: Session) -> tuple[list, int]:
+    """크롤링 결과에서 이미 DB에 등록된 항목 제거.
+    link URL이 동일하거나, 제목이 완전히 일치하는 경우 중복으로 간주.
+    반환: (중복 제거된 items, 제거된 개수)
+    """
+    # DB의 기존 공모전 link·title 수집
+    existing = db.query(Competition.link, Competition.title).all()
+    existing_links = {row.link.strip() for row in existing if row.link and row.link.strip()}
+    existing_titles = {row.title.strip() for row in existing if row.title and row.title.strip()}
+
+    filtered, skipped = [], 0
+    for item in items:
+        link  = (item.get("link")  or "").strip()
+        title = (item.get("title") or "").strip()
+        # URL 중복 또는 제목 완전 일치 → 제외
+        if (link and link in existing_links) or (title and title in existing_titles):
+            skipped += 1
+        else:
+            filtered.append(item)
+    return filtered, skipped
 
 
 @app.post("/admin/crawl/run")
@@ -3420,6 +3450,13 @@ async def admin_crawl_run(request: Request, db: Session = Depends(get_db)):
         result = await _do_crawl_all()
     except Exception as exc:
         result = {"items": [], "errors": [f"크롤링 전체 실패: {type(exc).__name__}: {exc}"], "counts": {}}
+
+    # 이미 등록된 항목 중복 제거
+    raw_items = result.get("items", [])
+    filtered_items, skipped = _dedup_crawl_items(raw_items, db)
+    result["items"]   = filtered_items
+    result["skipped"] = skipped           # 제거된 개수 (템플릿에서 표시용)
+    result["total_before_dedup"] = len(raw_items)
     result["crawled_at"] = datetime.now().strftime("%Y년 %m월 %d일 %H:%M")
     _crawl_cache = result
     return RedirectResponse(url="/admin/crawl", status_code=303)

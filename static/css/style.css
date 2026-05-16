@@ -468,6 +468,12 @@ select {
   font-weight: 700;
 }
 
+.review-locked {
+  padding: 14px 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
 .text-urgent {
   color: #b91c1c;
   font-weight: 800;

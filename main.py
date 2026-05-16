@@ -684,6 +684,16 @@ async def detail(request: Request, comp_id: int, db: Session = Depends(get_db)):
             if tm.is_leader and (tm.member_id == cm.id or tm.nickname == cm.activity_name):
                 leader_team_ids.add(tm.team_id)
 
+    # 현재 로그인 멤버가 이 공모전 팀에 속해 있으면 "참가 중"
+    is_participating = False
+    my_entry_team_id: Optional[int] = None
+    if cm:
+        for tm in all_tm:
+            if tm.member_id == cm.id or tm.nickname == cm.activity_name:
+                is_participating = True
+                my_entry_team_id = tm.team_id
+                break
+
     # 각 팀의 단계 결과 맵: {team_id: {stage: TeamResult}}
     team_result_map: dict = {}
     if team_ids:
@@ -702,7 +712,9 @@ async def detail(request: Request, comp_id: int, db: Session = Depends(get_db)):
              user_scrapped=user_scrapped,
              leader_team_ids=leader_team_ids,
              team_result_map=team_result_map,
-             comp_stages=COMP_STAGES),
+             comp_stages=COMP_STAGES,
+             is_participating=is_participating,
+             my_entry_team_id=my_entry_team_id),
     )
 
 

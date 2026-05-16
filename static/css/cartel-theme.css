@@ -62,18 +62,21 @@ body {
   padding: 4px 0;
 }
 
-/* 실제 이미지 로고 — 검정 배경 버전을 screen blend로 네이비에 자연스럽게 */
+/* 실제 이미지 로고 — 흑백 버전을 invert(1)+screen으로 흰 별자리로 표시 */
 .c-logo-img {
-  height: 42px;
+  height: 40px;
   width: auto;
   object-fit: contain;
-  /* screen: 검정 배경이 사라지고 파란 별자리만 남음 */
+  /* invert: 검정→흰색(별자리 흰색으로), 흰배경→검정(어두운 nav에 녹아듦) */
+  filter: invert(1)
+          drop-shadow(0 0 8px rgba(180,210,255,0.45));
   mix-blend-mode: screen;
-  filter: brightness(1.1) drop-shadow(0 0 8px rgba(59,130,246,0.5));
   transition: filter 0.28s, transform 0.22s;
 }
 .c-logo:hover .c-logo-img {
-  filter: brightness(1.35) drop-shadow(0 0 20px rgba(59,130,246,0.9));
+  filter: invert(1)
+          drop-shadow(0 0 20px rgba(59,130,246,0.9))
+          brightness(1.2);
   transform: scale(1.06);
 }
 
@@ -100,12 +103,12 @@ body {
 
 /* 푸터 로고 */
 .c-footer-logo-img {
-  height: 48px;
+  height: 44px;
   width: auto;
   object-fit: contain;
+  filter: invert(1) drop-shadow(0 0 6px rgba(180,210,255,0.3));
   mix-blend-mode: screen;
-  filter: brightness(1.0) drop-shadow(0 0 6px rgba(59,130,246,0.3));
-  opacity: 0.85;
+  opacity: 0.75;
 }
 
 /* ── 데스크탑 링크 ───────────────────────────────────────────── */

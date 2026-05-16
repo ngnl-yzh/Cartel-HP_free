@@ -71,7 +71,7 @@
           {# 증빙 사진 #}
           {% if entry.proof_image and entry.proof_approved %}
             <img src="/uploads/{{ entry.proof_image }}" class="award-proof-img" alt="수상 증빙">
-          {% elif is_admin and entry.proof_image and not entry.proof_approved %}
+          {% elif is_privileged and entry.proof_image and not entry.proof_approved %}
             <div style="margin-top:10px;padding:8px 12px;background:#fef9c3;border-radius:8px;font-size:.8rem;color:#92400e">
               ⏳ 증빙 사진 승인 대기 중
             </div>
@@ -87,7 +87,7 @@
           {% endif %}
 
           {# 비공개 표시 (관리자용) #}
-          {% if is_admin and not entry.is_public %}
+          {% if is_privileged and not entry.is_public %}
             <p style="font-size:.75rem;color:var(--muted);margin-top:8px">🔒 비공개</p>
           {% endif %}
         </div>

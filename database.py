@@ -50,9 +50,10 @@ def init_db():
 
         if "members" in tables:
             _add_col(conn, inspector, "members", "comment_muted_until", "comment_muted_until TIMESTAMP")
-            _add_col(conn, inspector, "members", "intro_text", "intro_text TEXT DEFAULT ''")
-            _add_col(conn, inspector, "members", "skills",     "skills TEXT DEFAULT '[]'")
-            _add_col(conn, inspector, "members", "links",      "links TEXT DEFAULT '[]'")
+            _add_col(conn, inspector, "members", "intro_text",  "intro_text TEXT DEFAULT ''")
+            _add_col(conn, inspector, "members", "skills",      "skills TEXT DEFAULT '[]'")
+            _add_col(conn, inspector, "members", "links",       "links TEXT DEFAULT '[]'")
+            _add_col(conn, inspector, "members", "generation",  "generation INTEGER")
 
         if "invite_codes" in tables:
             _add_col(conn, inspector, "invite_codes", "code_type", "code_type VARCHAR(20) DEFAULT 'personal'")
@@ -74,6 +75,9 @@ def init_db():
             _add_col(conn, inspector, "team_members", "award_rank",     "award_rank VARCHAR(50)")
             _add_col(conn, inspector, "team_members", "award_prize",    "award_prize VARCHAR(300) DEFAULT ''")
             _add_col(conn, inspector, "team_members", "award_note",     "award_note TEXT DEFAULT ''")
+
+        # team_competition_entries — 신규 테이블이므로 create_all로 생성됨
+        # gallery_posts — 신규 테이블이므로 create_all로 생성됨
 
         if "chat_rooms" in tables and "chat_room_members" in tables:
             rooms = conn.execute(_t(

@@ -116,7 +116,7 @@ function showGen(target, btn) {
 </script>
 
 {# 관리자: 기수 지정 패널 #}
-{% if is_admin %}
+{% if is_privileged %}
 <div style="position:fixed;bottom:24px;right:24px;z-index:50">
   <button onclick="document.getElementById('genAdminPanel').classList.toggle('is-open')"
           class="btn btn-primary" style="border-radius:999px;box-shadow:0 4px 20px rgba(37,99,235,0.4)">

@@ -994,14 +994,13 @@ async def admin_approve_proof(
     entry_id: int,
     db: Session = Depends(get_db),
 ):
-    if not _is_admin(request):
-        raise HTTPException(status_code=403, detail="관리자 권한이 필요합니다.")
+    if not _is_privileged(request, db):
+        raise HTTPException(status_code=403, detail="권한이 없습니다.")
     entry = db.query(TeamCompetitionEntry).filter(TeamCompetitionEntry.id == entry_id).first()
     if not entry:
         raise HTTPException(status_code=404, detail="실적 기록을 찾을 수 없습니다.")
     entry.proof_approved      = True
     entry.proof_approved_at   = datetime.now()
-    entry.proof_approved_by   = None   # admin이므로 member_id 없음
     entry.proof_rejected_reason = ""
     db.commit()
     return RedirectResponse(
@@ -1017,8 +1016,8 @@ async def admin_reject_proof(
     reason: str = Form(""),
     db: Session = Depends(get_db),
 ):
-    if not _is_admin(request):
-        raise HTTPException(status_code=403, detail="관리자 권한이 필요합니다.")
+    if not _is_privileged(request, db):
+        raise HTTPException(status_code=403, detail="권한이 없습니다.")
     entry = db.query(TeamCompetitionEntry).filter(TeamCompetitionEntry.id == entry_id).first()
     if not entry:
         raise HTTPException(status_code=404, detail="실적 기록을 찾을 수 없습니다.")
@@ -1109,11 +1108,11 @@ async def gallery_new(
     images: List[UploadFile] = File(default=[]),
     db: Session = Depends(get_db),
 ):
+    if not _is_privileged(request, db):
+        raise HTTPException(status_code=403, detail="권한이 없습니다.")
     cm = _current_member(request, db)
-    if not cm:
+    if not cm and not _is_admin(request):
         raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
-    if not _is_admin(request) and cm.role not in ("sub_admin",):
-        raise HTTPException(status_code=403, detail="관리자만 갤러리를 작성할 수 있습니다.")
 
     saved_images = []
     for img in images:
@@ -1141,7 +1140,7 @@ async def gallery_new(
         event_type=event_type,
         event_date=parsed_date,
         images=json.dumps(saved_images, ensure_ascii=False),
-        created_by_id=cm.id,
+        created_by_id=cm.id if cm else 0,
         is_public=is_public == "true",
     )
     db.add(post)
@@ -1151,12 +1150,41 @@ async def gallery_new(
 
 @app.post("/gallery/{post_id}/delete")
 async def gallery_delete(request: Request, post_id: int, db: Session = Depends(get_db)):
-    if not _is_admin(request):
-        raise HTTPException(status_code=403, detail="관리자만 삭제할 수 있습니다.")
+    if not _is_privileged(request, db):
+        raise HTTPException(status_code=403, detail="권한이 없습니다.")
     post = db.query(GalleryPost).filter(GalleryPost.id == post_id).first()
     if post:
         db.delete(post)
         db.commit()
+    return RedirectResponse(url="/gallery", status_code=303)
+
+
+@app.post("/gallery/{post_id}/edit")
+async def gallery_edit(
+    request: Request,
+    post_id: int,
+    title: str = Form(...),
+    description: str = Form(""),
+    event_type: str = Form("기타"),
+    event_date: Optional[str] = Form(None),
+    is_public: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+):
+    if not _is_privileged(request, db):
+        raise HTTPException(status_code=403, detail="권한이 없습니다.")
+    post = db.query(GalleryPost).filter(GalleryPost.id == post_id).first()
+    if not post:
+        raise HTTPException(status_code=404)
+    post.title = title.strip()
+    post.description = description.strip()
+    post.event_type = event_type
+    post.is_public = is_public == "true"
+    if event_date:
+        try:
+            post.event_date = date.fromisoformat(event_date)
+        except ValueError:
+            pass
+    db.commit()
     return RedirectResponse(url="/gallery", status_code=303)
 
 
@@ -1641,8 +1669,8 @@ async def admin_set_generation(
     generation: Optional[int] = Form(None),
     db: Session = Depends(get_db),
 ):
-    if r := _admin_redirect(request):
-        return r
+    if not _is_privileged(request, db):
+        raise HTTPException(status_code=403, detail="권한이 없습니다.")
     m = db.query(Member).filter(Member.activity_name == activity_name.strip()).first()
     if m:
         m.generation = generation

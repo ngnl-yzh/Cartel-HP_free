@@ -10,7 +10,7 @@
       <h1 class="c-hero-title">📷 Gallery</h1>
       <p class="c-hero-sub">MT, 개강총회, 종강파티 등 카르텔의 순간들을 담았습니다.</p>
     </div>
-    {% if is_admin or (current_member and current_member.role == 'sub_admin') %}
+    {% if is_privileged %}
     <button class="btn btn-primary" id="newGalleryBtn"
             style="white-space:nowrap;background:rgba(255,255,255,0.15);border:1.5px solid rgba(255,255,255,0.3);color:#fff;backdrop-filter:blur(4px)">
       + 갤러리 추가
@@ -20,7 +20,7 @@
 </div>
 
 {# ── 갤러리 추가 폼 (관리자) ─────────────────────────────────── #}
-{% if is_admin or (current_member and current_member.role == 'sub_admin') %}
+{% if is_privileged %}
 <div id="newGalleryForm" style="display:none;background:#f8faff;border-bottom:1px solid var(--line);padding:28px 0">
   <div class="container" style="max-width:700px">
     <h2 style="font-size:1.05rem;font-weight:700;margin-bottom:20px">새 갤러리 등록</h2>
@@ -107,7 +107,7 @@
           {% if post.description %}
             <p style="font-size:.8rem;color:var(--muted);margin-top:6px;line-height:1.5;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">{{ post.description }}</p>
           {% endif %}
-          {% if is_admin %}
+          {% if is_privileged %}
           <form method="post" action="/gallery/{{ post.id }}/delete"
                 style="margin-top:8px" onsubmit="return confirm('삭제하시겠습니까?')">
             <button type="submit" class="btn btn-ghost btn-xs" style="color:var(--danger)" onclick="event.stopPropagation()">삭제</button>

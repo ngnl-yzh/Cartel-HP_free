@@ -1088,14 +1088,47 @@ async def members_page(request: Request, db: Session = Depends(get_db)):
         Member.generation.asc().nullslast(),
         Member.created_at.asc(),
     ).all()
+
     # 기수별 그룹핑 {기수: [Member, ...]}
     from collections import OrderedDict
     groups: dict = OrderedDict()
     for m in all_members:
         key = m.generation if m.generation else 0
         groups.setdefault(key, []).append(m)
+
+    # 멤버별 수상 실적 (member_id → [TeamCompetitionEntry, ...])
+    member_ids = [m.id for m in all_members]
+    # 해당 멤버들이 속한 TeamMember 레코드
+    tms = db.query(TeamMember).filter(
+        TeamMember.member_id.in_(member_ids)
+    ).all() if member_ids else []
+    # member_id → team_ids
+    member_team_ids: dict = {}
+    for tm in tms:
+        if tm.member_id:
+            member_team_ids.setdefault(tm.member_id, set()).add(tm.team_id)
+    # 수상 팀 엔트리 (공개 + 수상된 것만)
+    all_team_ids = list({tid for tids in member_team_ids.values() for tid in tids})
+    award_entries = db.query(TeamCompetitionEntry).filter(
+        TeamCompetitionEntry.team_id.in_(all_team_ids),
+        TeamCompetitionEntry.is_awarded.is_(True),
+        TeamCompetitionEntry.is_public.is_(True),
+        TeamCompetitionEntry.proof_approved.is_(True),
+    ).order_by(TeamCompetitionEntry.updated_at.desc()).all() if all_team_ids else []
+    # 관련 Competition 정보
+    ac_comp_ids = list({e.competition_id for e in award_entries})
+    ac_comps = {c.id: c for c in db.query(Competition).filter(Competition.id.in_(ac_comp_ids)).all()} if ac_comp_ids else {}
+    # member_id → [entry, ...]
+    member_awards: dict = {}
+    for m in all_members:
+        tids = member_team_ids.get(m.id, set())
+        ents = [e for e in award_entries if e.team_id in tids]
+        member_awards[m.id] = ents[:3]  # 최대 3개
+
     return _render(request, "members.html", _ctx(request, db,
         groups=groups,
+        member_awards=member_awards,
+        ac_comps=ac_comps,
     ))
 
 

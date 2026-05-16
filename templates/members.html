@@ -43,31 +43,54 @@
         {# 멤버 그리드 #}
         <div class="mem-grid">
           {% for m in members %}
-          <a href="/profile/{{ m.activity_name }}" class="mem-card">
-            {# 프로필 사진 #}
-            <div class="mem-photo">
-              {% if m.profile_image %}
-                <img src="/uploads/{{ m.profile_image }}" alt="{{ m.activity_name }}" loading="lazy">
-              {% else %}
-                <span class="mem-initial">{{ m.activity_name[0] | upper }}</span>
-              {% endif %}
-              {% if m.role == 'sub_admin' %}
-                <span class="mem-badge-role">중간관리자</span>
-              {% endif %}
-            </div>
+          <div class="mem-card">
+            {# 프로필 사진 (클릭→프로필) #}
+            <a href="/profile/{{ m.activity_name }}" class="mem-photo-link">
+              <div class="mem-photo">
+                {% if m.profile_image %}
+                  <img src="/uploads/{{ m.profile_image }}" alt="{{ m.activity_name }}" loading="lazy">
+                {% else %}
+                  <span class="mem-initial">{{ m.activity_name[0] | upper }}</span>
+                {% endif %}
+                {% if m.role == 'sub_admin' %}
+                  <span class="mem-badge-role">중간관리자</span>
+                {% endif %}
+              </div>
+            </a>
 
-            {# 이름 + 기수 #}
+            {# 이름 + 기수 + 이메일 #}
             <div class="mem-info">
               <p class="mem-name">{{ m.activity_name }}</p>
               {% if gen != 0 %}
-                <p class="mem-gen">{{ gen }}기</p>
+                <span class="mem-gen">{{ gen }}기</span>
               {% endif %}
-              {# 이메일 #}
               {% if m.email %}
                 <p class="mem-email">{{ m.email }}</p>
               {% endif %}
             </div>
-          </a>
+
+            {# 수상 실적 (최대 3개) #}
+            {% set awards = member_awards.get(m.id, []) %}
+            {% if awards %}
+            <div class="mem-awards">
+              {% for aw in awards %}
+                {% set comp = ac_comps.get(aw.competition_id) %}
+                <div class="mem-award-item">
+                  <span class="mem-award-arrow">→</span>
+                  <span class="mem-award-text">
+                    {% if aw.award_name %}{{ aw.award_name }}{% endif %}
+                    {% if comp %}<span class="mem-award-comp">· {{ comp.title | truncate(20, true, '…') }}</span>{% endif %}
+                  </span>
+                </div>
+              {% endfor %}
+            </div>
+            {% endif %}
+
+            {# 더보기 #}
+            <a href="/profile/{{ m.activity_name }}" class="mem-more">
+              더보기 <span>→</span>
+            </a>
+          </div>
           {% endfor %}
         </div>
 
@@ -176,20 +199,24 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  text-decoration: none;
-  gap: 0;
-  transition: transform .18s;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  overflow: hidden;
+  transition: box-shadow .2s, transform .18s;
 }
-.mem-card:hover { transform: translateY(-4px); }
+.mem-card:hover {
+  box-shadow: 0 6px 28px rgba(59,130,246,0.1);
+  transform: translateY(-4px);
+}
 
+.mem-photo-link { display: block; width: 100%; }
 .mem-photo {
   position: relative;
   width: 100%;
   aspect-ratio: 3/4;
-  border-radius: 10px;
-  overflow: hidden;
   background: #e8edf5;
-  margin-bottom: 10px;
+  overflow: hidden;
 }
 .mem-photo img {
   width: 100%;
@@ -197,9 +224,9 @@
   object-fit: cover;
   object-position: top center;
   display: block;
-  transition: transform .25s;
+  transition: transform .28s;
 }
-.mem-card:hover .mem-photo img { transform: scale(1.04); }
+.mem-card:hover .mem-photo img { transform: scale(1.05); }
 
 .mem-initial {
   position: absolute;
@@ -225,30 +252,83 @@
   white-space: nowrap;
 }
 
-.mem-info { text-align: center; width: 100%; }
+/* 이름·기수·이메일 */
+.mem-info { text-align: center; width: 100%; padding: 12px 12px 8px; }
 .mem-name {
   font-family: var(--font-display);
   font-size: .92rem;
   font-weight: 700;
   color: var(--text);
-  margin: 0 0 2px;
+  margin: 0 0 4px;
 }
 .mem-gen {
-  font-size: .75rem;
+  font-size: .72rem;
   color: var(--cartel-blue);
   font-weight: 600;
-  margin: 0 0 2px;
   background: rgba(59,130,246,0.08);
   padding: 1px 8px;
   border-radius: 999px;
   display: inline-block;
+  margin-bottom: 3px;
 }
 .mem-email {
-  font-size: .72rem;
+  font-size: .68rem;
   color: var(--muted);
   margin: 3px 0 0;
   word-break: break-all;
 }
+
+/* 수상 실적 */
+.mem-awards {
+  width: 100%;
+  padding: 8px 12px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.mem-award-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+}
+.mem-award-arrow {
+  font-size: .7rem;
+  color: var(--cartel-blue);
+  font-weight: 700;
+  margin-top: 1px;
+  flex-shrink: 0;
+}
+.mem-award-text {
+  font-size: .72rem;
+  color: var(--text);
+  font-weight: 600;
+  line-height: 1.35;
+}
+.mem-award-comp {
+  font-weight: 400;
+  color: var(--muted);
+}
+
+/* 더보기 버튼 */
+.mem-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 100%;
+  padding: 10px 12px;
+  font-size: .78rem;
+  font-weight: 600;
+  color: var(--cartel-blue);
+  text-decoration: none;
+  border-top: 1px solid var(--line);
+  background: rgba(59,130,246,0.03);
+  transition: background .15s;
+  margin-top: auto;
+}
+.mem-more:hover { background: rgba(59,130,246,0.08); }
+.mem-more span { font-size: .85rem; }
 
 /* ── 기수 관리 FAB ── */
 .gen-admin-fab {

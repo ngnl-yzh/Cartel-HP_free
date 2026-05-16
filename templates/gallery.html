@@ -2,8 +2,9 @@
 {% block title %}Gallery · CARTEL{% endblock %}
 
 {% block content %}
-{# ── 히어로 ────────────────────────────────────────────────── #}
-<div class="c-hero">
+
+{# ── 히어로 ── #}
+<div class="c-hero" style="padding:36px 0 28px">
   <div class="c-hero-inner" style="display:flex;align-items:flex-end;justify-content:space-between;gap:20px;flex-wrap:wrap">
     <div>
       <p class="c-hero-eyebrow">CARTEL</p>
@@ -11,34 +12,27 @@
       <p class="c-hero-sub">MT, 개강총회, 종강파티 등 카르텔의 순간들을 담았습니다.</p>
     </div>
     {% if is_privileged %}
-    <button class="btn btn-primary" id="newGalleryBtn"
-            style="white-space:nowrap;background:rgba(255,255,255,0.15);border:1.5px solid rgba(255,255,255,0.3);color:#fff;backdrop-filter:blur(4px)">
-      + 갤러리 추가
-    </button>
+    <button class="gl-add-btn" id="newGalleryBtn">+ 갤러리 추가</button>
     {% endif %}
   </div>
 </div>
 
-{# ── 갤러리 추가 폼 (관리자) ─────────────────────────────────── #}
+{# ── 갤러리 추가 폼 (관리자) ── #}
 {% if is_privileged %}
-<div id="newGalleryForm" style="display:none;background:#f8faff;border-bottom:1px solid var(--line);padding:28px 0">
-  <div class="container" style="max-width:700px">
-    <h2 style="font-size:1.05rem;font-weight:700;margin-bottom:20px">새 갤러리 등록</h2>
+<div id="newGalleryForm" class="gl-form-wrap" style="display:none">
+  <div class="container" style="max-width:680px">
+    <h2 style="font-size:1rem;font-weight:700;margin-bottom:18px">새 갤러리 등록</h2>
     <form method="post" action="/gallery/new" enctype="multipart/form-data">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
         <div style="grid-column:1/-1">
-          <label class="form-label">제목 <span style="color:var(--danger)">*</span></label>
+          <label class="form-label">제목 *</label>
           <input type="text" name="title" class="form-control" placeholder="예: 2026 개강총회" required>
         </div>
         <div>
           <label class="form-label">행사 유형</label>
           <select name="event_type" class="form-control">
-            <option>MT</option>
-            <option>개강총회</option>
-            <option>종강파티</option>
-            <option>수상</option>
-            <option>세미나</option>
-            <option>기타</option>
+            <option>MT</option><option>개강총회</option><option>종강파티</option>
+            <option>수상</option><option>세미나</option><option>기타</option>
           </select>
         </div>
         <div>
@@ -50,13 +44,13 @@
           <textarea name="description" class="form-control" rows="2" placeholder="행사 소개를 간단히 적어주세요"></textarea>
         </div>
         <div style="grid-column:1/-1">
-          <label class="form-label">사진 업로드 (여러 장 가능, 각 20MB 이하)</label>
+          <label class="form-label">사진 업로드 (여러 장, 각 20MB 이하)</label>
           <input type="file" name="images" class="form-control" multiple accept="image/*">
         </div>
         <div style="grid-column:1/-1">
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
             <input type="checkbox" name="is_public" value="true" checked style="width:16px;height:16px;accent-color:var(--primary)">
-            <span style="font-size:.88rem;font-weight:500">공개 (체크 해제 시 관리자만 볼 수 있음)</span>
+            <span style="font-size:.88rem;font-weight:500">공개</span>
           </label>
         </div>
       </div>
@@ -69,69 +63,80 @@
 </div>
 {% endif %}
 
-<main style="padding-bottom:60px">
+<main style="padding-bottom:80px">
   <div class="container">
 
-    {# 행사 유형 필터 #}
     {% if posts %}
+    {# ── 행사 유형 필터 탭 ── #}
     {% set types = posts | map(attribute='event_type') | list | unique | list %}
-    <div style="display:flex;gap:8px;flex-wrap:wrap;padding-top:32px;margin-bottom:-10px">
-      <button class="filter-btn active" data-type="all" onclick="filterGallery('all',this)">전체</button>
+    <div class="gl-filter-tabs">
+      <button class="gl-tab is-active" data-type="all" onclick="filterGallery('all',this)">전체</button>
       {% for t in types %}
-        <button class="filter-btn" data-type="{{ t }}" onclick="filterGallery('{{ t }}',this)">{{ t }}</button>
+        <button class="gl-tab" data-type="{{ t }}" onclick="filterGallery('{{ t }}',this)">{{ t }}</button>
       {% endfor %}
     </div>
-    {% endif %}
 
-    {% if posts %}
-    <div class="gallery-grid" id="galleryGrid">
+    {# ── 이벤트별 섹션 ── #}
+    <div id="galleryContainer">
       {% for post in posts %}
       {% set imgs = post.images | fromjson %}
-      <div class="gallery-card" data-type="{{ post.event_type }}" onclick="openLightbox({{ imgs | tojson }}, 0)">
-        <div class="gallery-thumb">
-          {% if imgs %}
-            <img src="/uploads/{{ imgs[0] }}" alt="{{ post.title }}" loading="lazy">
-            {% if imgs | length > 1 %}
-              <span class="gallery-thumb-count">+{{ imgs | length }}장</span>
+      <section class="gl-event-section" data-type="{{ post.event_type }}">
+
+        {# 섹션 헤더 #}
+        <div class="gl-event-header">
+          <div class="gl-event-header-left">
+            <span class="gl-event-type-badge">{{ post.event_type }}</span>
+            <h2 class="gl-event-title">{{ post.title }}</h2>
+          </div>
+          <div class="gl-event-header-right">
+            {% if post.event_date %}
+              <span class="gl-event-date">{{ post.event_date.strftime('%Y.%m.%d') }}</span>
             {% endif %}
-          {% else %}
-            <div class="gallery-thumb-empty">📷</div>
-          {% endif %}
+            {% if is_privileged %}
+              <form method="post" action="/gallery/{{ post.id }}/delete"
+                    style="display:inline" onsubmit="return confirm('삭제하시겠습니까?')">
+                <button type="submit" class="gl-delete-btn">삭제</button>
+              </form>
+            {% endif %}
+          </div>
         </div>
-        <div class="gallery-info">
-          <span class="gallery-type-badge">{{ post.event_type }}</span>
-          <h3 class="gallery-card-title">{{ post.title }}</h3>
-          {% if post.event_date %}
-            <p class="gallery-card-date">{{ post.event_date.strftime('%Y년 %m월 %d일') }}</p>
-          {% endif %}
-          {% if post.description %}
-            <p style="font-size:.8rem;color:var(--muted);margin-top:6px;line-height:1.5;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">{{ post.description }}</p>
-          {% endif %}
-          {% if is_privileged %}
-          <form method="post" action="/gallery/{{ post.id }}/delete"
-                style="margin-top:8px" onsubmit="return confirm('삭제하시겠습니까?')">
-            <button type="submit" class="btn btn-ghost btn-xs" style="color:var(--danger)" onclick="event.stopPropagation()">삭제</button>
-          </form>
-          {% endif %}
+
+        {# 설명 #}
+        {% if post.description %}
+          <p class="gl-event-desc">{{ post.description }}</p>
+        {% endif %}
+
+        {# 사진 모자이크 #}
+        {% if imgs %}
+        <div class="gl-mosaic gl-mosaic-{{ imgs | length | min(6) }}">
+          {% for img in imgs[:6] %}
+            <div class="gl-mosaic-item" onclick="openLightbox({{ imgs | tojson }}, {{ loop.index0 }})">
+              <img src="/uploads/{{ img }}" alt="{{ post.title }}" loading="lazy">
+              {% if loop.last and imgs | length > 6 %}
+                <div class="gl-mosaic-more">+{{ imgs | length - 6 }}</div>
+              {% endif %}
+            </div>
+          {% endfor %}
         </div>
-      </div>
+        {% else %}
+        <div class="gl-no-photo">📷 사진이 없습니다</div>
+        {% endif %}
+
+      </section>
       {% endfor %}
     </div>
 
     {% else %}
-    <div class="empty-state" style="padding:80px 0">
+    <div class="empty-state" style="padding:80px 0;text-align:center">
       <p style="font-size:3rem;margin-bottom:12px">📷</p>
       <p class="empty-text">아직 갤러리가 없습니다.</p>
-      {% if is_admin %}
-        <p class="muted" style="font-size:.88rem">위 '갤러리 추가' 버튼으로 첫 게시물을 등록해보세요.</p>
-      {% endif %}
     </div>
     {% endif %}
 
   </div>
 </main>
 
-{# ── 라이트박스 ─────────────────────────────────────────────── #}
+{# 라이트박스 #}
 <div class="c-lightbox" id="lightbox" onclick="closeLightboxIfBg(event)">
   <button class="c-lightbox-close" onclick="closeLightbox()">✕</button>
   <button class="c-lightbox-prev" onclick="lightboxNav(-1)">‹</button>
@@ -139,45 +144,315 @@
   <button class="c-lightbox-next" onclick="lightboxNav(1)">›</button>
 </div>
 
+<style>
+/* ── 추가 버튼 ── */
+.gl-add-btn {
+  background: rgba(255,255,255,0.12);
+  border: 1.5px solid rgba(255,255,255,0.3);
+  color: #fff;
+  backdrop-filter: blur(6px);
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: .88rem;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background .15s;
+}
+.gl-add-btn:hover { background: rgba(255,255,255,0.22); }
+
+.gl-form-wrap {
+  background: #f8faff;
+  border-bottom: 1px solid var(--line);
+  padding: 28px 0;
+}
+
+/* ── 필터 탭 ── */
+.gl-filter-tabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 28px 0 36px;
+  border-bottom: 2px solid var(--line);
+  padding-bottom: 12px;
+}
+.gl-tab {
+  font-family: var(--font-display);
+  font-size: .85rem;
+  font-weight: 600;
+  padding: 7px 18px;
+  border: 1.5px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+  transition: border-color .15s, color .15s, background .15s;
+}
+.gl-tab.is-active,
+.gl-tab:hover {
+  border-color: var(--cartel-blue);
+  color: var(--cartel-blue);
+  background: rgba(59,130,246,0.07);
+}
+
+/* ── 이벤트 섹션 ── */
+.gl-event-section {
+  margin-bottom: 56px;
+}
+
+/* 섹션 헤더 */
+.gl-event-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 2px solid var(--line);
+  flex-wrap: wrap;
+}
+.gl-event-header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.gl-event-type-badge {
+  font-size: .72rem;
+  font-weight: 700;
+  background: var(--cartel-blue);
+  color: #fff;
+  padding: 3px 10px;
+  border-radius: 999px;
+  letter-spacing: .03em;
+}
+.gl-event-title {
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0;
+}
+.gl-event-header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.gl-event-date {
+  font-size: .82rem;
+  color: var(--muted);
+}
+.gl-delete-btn {
+  font-size: .75rem;
+  color: var(--danger, #ef4444);
+  background: none;
+  border: 1px solid rgba(239,68,68,0.3);
+  border-radius: 6px;
+  padding: 3px 9px;
+  cursor: pointer;
+  transition: background .15s;
+}
+.gl-delete-btn:hover { background: rgba(239,68,68,0.06); }
+
+.gl-event-desc {
+  font-size: .85rem;
+  color: var(--muted);
+  margin: -4px 0 12px;
+  line-height: 1.55;
+}
+
+/* ── 사진 모자이크 ── */
+.gl-mosaic {
+  display: grid;
+  gap: 6px;
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+/* 1장 */
+.gl-mosaic-1 {
+  grid-template-columns: 1fr;
+}
+.gl-mosaic-1 .gl-mosaic-item { aspect-ratio: 16/7; }
+
+/* 2장 */
+.gl-mosaic-2 {
+  grid-template-columns: 1fr 1fr;
+}
+.gl-mosaic-2 .gl-mosaic-item { aspect-ratio: 4/3; }
+
+/* 3장: 첫 번째가 2배 높이 (왼쪽 큰 사진 + 오른쪽 2장) */
+.gl-mosaic-3 {
+  grid-template-columns: 2fr 1fr;
+  grid-template-rows: 1fr 1fr;
+}
+.gl-mosaic-3 .gl-mosaic-item:first-child {
+  grid-row: span 2;
+  aspect-ratio: unset;
+}
+.gl-mosaic-3 .gl-mosaic-item { aspect-ratio: 4/3; }
+
+/* 4장: 첫 번째 크게, 나머지 3개 오른쪽 */
+.gl-mosaic-4 {
+  grid-template-columns: 2fr 1fr;
+  grid-template-rows: repeat(3, 1fr);
+}
+.gl-mosaic-4 .gl-mosaic-item:first-child {
+  grid-row: span 3;
+  aspect-ratio: unset;
+}
+.gl-mosaic-4 .gl-mosaic-item { aspect-ratio: 4/3; }
+
+/* 5장 이상: 첫 번째 크게, 2~5번째 2열 오른쪽 */
+.gl-mosaic-5, .gl-mosaic-6 {
+  grid-template-columns: 3fr 2fr;
+  grid-template-rows: repeat(2, 1fr);
+}
+.gl-mosaic-5 .gl-mosaic-item:first-child,
+.gl-mosaic-6 .gl-mosaic-item:first-child {
+  grid-row: span 2;
+  aspect-ratio: unset;
+}
+.gl-mosaic-5 .gl-mosaic-item { aspect-ratio: 4/3; }
+.gl-mosaic-6 .gl-mosaic-item { aspect-ratio: 4/3; }
+
+/* 공통 아이템 스타일 */
+.gl-mosaic-item {
+  position: relative;
+  overflow: hidden;
+  cursor: pointer;
+  background: #e2e8f0;
+  min-height: 120px;
+}
+.gl-mosaic-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform .35s ease;
+}
+.gl-mosaic-item:hover img { transform: scale(1.05); }
+.gl-mosaic-item::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0);
+  transition: background .2s;
+}
+.gl-mosaic-item:hover::after { background: rgba(0,0,0,0.08); }
+
+/* 더보기 오버레이 (마지막 사진에 표시) */
+.gl-mosaic-more {
+  position: absolute;
+  inset: 0;
+  background: rgba(5,13,26,0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-size: 1.4rem;
+  font-weight: 800;
+  color: #fff;
+  letter-spacing: .04em;
+}
+
+.gl-no-photo {
+  text-align: center;
+  padding: 40px;
+  color: var(--muted);
+  font-size: .88rem;
+  background: var(--surface);
+  border-radius: 12px;
+}
+
+/* ── 라이트박스 ── */
+.c-lightbox {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(0,0,0,0.92);
+  align-items: center;
+  justify-content: center;
+}
+.c-lightbox.is-open { display: flex; }
+.c-lightbox img {
+  max-width: 90vw;
+  max-height: 88vh;
+  object-fit: contain;
+  border-radius: 4px;
+}
+.c-lightbox-close {
+  position: absolute;
+  top: 20px; right: 24px;
+  background: rgba(255,255,255,0.12);
+  border: none;
+  color: #fff;
+  font-size: 1.4rem;
+  width: 40px; height: 40px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background .15s;
+}
+.c-lightbox-close:hover { background: rgba(255,255,255,0.25); }
+.c-lightbox-prev,
+.c-lightbox-next {
+  position: absolute;
+  top: 50%; transform: translateY(-50%);
+  background: rgba(255,255,255,0.12);
+  border: none; color: #fff;
+  font-size: 2rem; font-weight: 300;
+  width: 48px; height: 48px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background .15s;
+}
+.c-lightbox-prev { left: 20px; }
+.c-lightbox-next { right: 20px; }
+.c-lightbox-prev:hover,
+.c-lightbox-next:hover { background: rgba(255,255,255,0.25); }
+</style>
+
 <script>
-// ── 갤러리 추가 폼 토글 ─────────────────────────────────────────
+// 갤러리 추가 폼 토글
 (function () {
-  const btn = document.getElementById('newGalleryBtn');
-  const form = document.getElementById('newGalleryForm');
+  const btn    = document.getElementById('newGalleryBtn');
+  const form   = document.getElementById('newGalleryForm');
   const cancel = document.getElementById('cancelGalleryBtn');
   if (btn) btn.addEventListener('click', function () {
-    form.style.display = form.style.display === 'none' ? 'block' : 'none';
-    if (form.style.display === 'block') {
-      form.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
+    const show = form.style.display === 'none' || form.style.display === '';
+    form.style.display = show ? 'block' : 'none';
+    if (show) form.scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
   if (cancel) cancel.addEventListener('click', function () { form.style.display = 'none'; });
 })();
 
-// ── 필터 ───────────────────────────────────────────────────────
+// 이벤트 유형 필터
 function filterGallery(type, btn) {
-  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
-  document.querySelectorAll('#galleryGrid .gallery-card').forEach(function (card) {
-    card.style.display = (type === 'all' || card.dataset.type === type) ? '' : 'none';
+  document.querySelectorAll('.gl-tab').forEach(b => b.classList.remove('is-active'));
+  btn.classList.add('is-active');
+  document.querySelectorAll('.gl-event-section').forEach(function (sec) {
+    sec.style.display = (type === 'all' || sec.dataset.type === type) ? '' : 'none';
   });
 }
 
-// ── 라이트박스 ─────────────────────────────────────────────────
-var _lbImages = [];
-var _lbIdx = 0;
+// 라이트박스
+var _lbImages = [], _lbIdx = 0;
 function openLightbox(images, idx) {
   _lbImages = images;
-  _lbIdx = idx;
+  _lbIdx    = idx;
   showLbImage();
   document.getElementById('lightbox').classList.add('is-open');
   document.body.style.overflow = 'hidden';
 }
 function showLbImage() {
-  var img = document.getElementById('lightboxImg');
-  img.src = '/uploads/' + _lbImages[_lbIdx];
-  document.querySelector('.c-lightbox-prev').style.display = _lbImages.length > 1 ? '' : 'none';
-  document.querySelector('.c-lightbox-next').style.display = _lbImages.length > 1 ? '' : 'none';
+  document.getElementById('lightboxImg').src = '/uploads/' + _lbImages[_lbIdx];
+  var prev = document.querySelector('.c-lightbox-prev');
+  var next = document.querySelector('.c-lightbox-next');
+  if (prev) prev.style.display = _lbImages.length > 1 ? '' : 'none';
+  if (next) next.style.display = _lbImages.length > 1 ? '' : 'none';
 }
 function lightboxNav(dir) {
   _lbIdx = (_lbIdx + dir + _lbImages.length) % _lbImages.length;
@@ -192,9 +467,10 @@ function closeLightboxIfBg(e) {
 }
 document.addEventListener('keydown', function (e) {
   if (!document.getElementById('lightbox').classList.contains('is-open')) return;
-  if (e.key === 'Escape') closeLightbox();
   if (e.key === 'ArrowLeft')  lightboxNav(-1);
   if (e.key === 'ArrowRight') lightboxNav(1);
+  if (e.key === 'Escape')     closeLightbox();
 });
 </script>
+
 {% endblock %}

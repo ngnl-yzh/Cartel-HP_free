@@ -129,16 +129,16 @@
            class="sort-btn {% if current_sort == 'views' %}active{% endif %}">조회순</a>
         <a href="/competitions?tag={{ current_tag | urlencode }}&sort=newest&q={{ query | urlencode }}"
            class="sort-btn {% if current_sort == 'newest' %}active{% endif %}">최신순</a>
+        <span style="flex:1"></span>
+        {% if query %}
+        <span style="font-size:.8rem;color:var(--muted);padding-right:4px">
+          "<strong style="color:var(--text)">{{ query }}</strong>" · {{ competitions | length }}건
+        </span>
+        {% else %}
+        <span style="font-size:.8rem;color:var(--muted);padding-right:4px">전체 {{ competitions | length }}개</span>
+        {% endif %}
       </div>
     </div>
-
-    <p class="result-count">
-      {% if query %}
-        "<strong>{{ query }}</strong>" 검색 결과 {{ competitions | length }}건
-      {% else %}
-        전체 {{ competitions | length }}개 공모전
-      {% endif %}
-    </p>
 
     {% if competitions %}
     <div class="competition-grid">
@@ -490,16 +490,7 @@
   .fc-title { font-size: 1.15rem; }
 }
 
-/* ── 필터바 스크롤 ── */
-.filter-bar {
-  display: flex;
-  gap: 6px;
-  overflow-x: auto;
-  padding-bottom: 4px;
-  flex-wrap: nowrap;
-}
-.filter-bar::-webkit-scrollbar { height: 3px; }
-.filter-bar::-webkit-scrollbar-thumb { background: var(--line); border-radius: 2px; }
+/* index 페이지 전용 – style.css의 .filter-bar 오버라이드 없음 */
 </style>
 
 {% block scripts %}

@@ -277,42 +277,92 @@ select {
 
 .toolbar {
   display: flex;
-  justify-content: space-between;
-  gap: 20px;
-  align-items: flex-start;
-  margin-bottom: 18px;
+  flex-direction: column;
+  gap: 0;
+  margin-bottom: 20px;
+  border: 1.5px solid var(--line);
+  border-radius: 16px;
+  overflow: hidden;
+  background: var(--surface);
 }
 
-.filter-bar,
+/* ── 필터 행 ── */
+.filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  overflow-x: auto;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line);
+  flex-wrap: nowrap;
+  scrollbar-width: none;
+}
+.filter-bar::-webkit-scrollbar { display: none; }
+
+.filter-btn {
+  flex-shrink: 0;
+  border: none;
+  border-radius: 10px;
+  padding: 6px 14px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.84rem;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: background .13s, color .13s;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-block;
+}
+.filter-btn:hover { background: var(--hover); color: var(--text); }
+.filter-btn.active {
+  background: var(--primary);
+  color: #fff;
+}
+
+/* ── 정렬 행 ── */
 .sort-bar {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
   align-items: center;
+  gap: 0;
+  padding: 5px 8px;
 }
 
-.filter-btn,
-.sort-btn {
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  padding: 7px 11px;
-  background: #fff;
+.sort-label {
+  font-size: 0.78rem;
+  font-weight: 600;
   color: var(--muted);
-  font-size: 0.9rem;
-  font-weight: 700;
+  padding: 0 8px 0 4px;
+  flex-shrink: 0;
+  letter-spacing: .03em;
+  text-transform: uppercase;
 }
 
-.filter-btn.active,
+.sort-btn {
+  border: none;
+  border-radius: 8px;
+  padding: 5px 12px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-block;
+  transition: background .13s, color .13s;
+  white-space: nowrap;
+}
+.sort-btn:hover { background: var(--hover); color: var(--text); }
 .sort-btn.active {
-  border-color: var(--primary);
-  background: #e6f5f2;
-  color: var(--primary-dark);
+  color: var(--primary);
+  background: rgba(37,99,235,0.08);
 }
 
-.sort-label,
 .result-count {
   color: var(--muted);
-  font-size: 0.92rem;
+  font-size: 0.88rem;
+  margin-bottom: 16px;
+  padding: 0 2px;
 }
 
 .competition-grid {
@@ -1329,8 +1379,10 @@ select {
 
   /* 툴바 */
   .toolbar {
-    gap: 10px;
+    gap: 0;
   }
+  .filter-btn { padding: 5px 11px; font-size: .8rem; }
+  .sort-btn   { padding: 4px 9px;  font-size: .79rem; }
   .board-search-bar {
     flex-wrap: wrap;
   }

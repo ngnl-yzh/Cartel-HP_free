@@ -3069,31 +3069,63 @@ async def admin_crawl_add_with_gpt(
                 _href = str(_a.get("href", "")).strip()
                 if not _href or _href.startswith("javascript"):
                     continue
-                _ext = _href.lower().split("?")[0].rsplit(".", 1)[-1]
-                if _ext in _FILE_EXTS:
+                _link_text = _a.get_text(strip=True)
+                _url_path  = _href.lower().split("?")[0]
+                _ext_from_url  = _url_path.rsplit(".", 1)[-1] if "." in _url_path else ""
+                # 링크 텍스트에서 확장자 추출 (file_dn.php 같은 동적 URL 대응)
+                _ext_from_text = ""
+                if _link_text:
+                    _m = re.search(r"\.([a-z0-9]{2,5})$", _link_text.lower())
+                    if _m:
+                        _ext_from_text = _m.group(1)
+                _ext = _ext_from_url if _ext_from_url in _FILE_EXTS else _ext_from_text
+                # 공모전코리아 다운로드 URL 패턴도 포함 (file_dn.php)
+                _is_download = "file_dn.php" in _url_path or "download" in _url_path
+                if _ext in _FILE_EXTS or (_is_download and _ext_from_text in _FILE_EXTS):
                     _full = _urljoin(link, _href)
                     if _full not in _seen:
                         _seen.add(_full)
+                        # 링크 텍스트에 파일명이 있으면 사용, 없으면 URL 마지막 경로
+                        _name = _link_text or _href.rsplit("/", 1)[-1]
                         attach_links.append({
-                            "name": _a.get_text(strip=True) or _href.rsplit("/", 1)[-1],
+                            "name": _name,
                             "url":  _full,
-                            "ext":  _ext,
+                            "ext":  _ext or _ext_from_text,
                         })
 
             # ── 1-d. 본문 텍스트 추출 ────────────────────────────────────────
-            # 공모전코리아 전용 선택자 → 일반 선택자 순으로 시도
             for _tag in soup(["script", "style", "noscript"]):
                 _tag.decompose()
 
+            # 공모전코리아 정보 테이블 구조화 추출 (접수기간·시상내역 등 라벨:값 형식)
+            _info_lines: list[str] = []
+            _info_tbl = soup.select_one(".txt_area table") or soup.select_one(".view_top_area table")
+            if _info_tbl:
+                for _tr in _info_tbl.select("tr"):
+                    _th = _tr.select_one("th")
+                    _td = _tr.select_one("td")
+                    if _th and _td:
+                        _k = re.sub(r"\s+", " ", _th.get_text()).strip()
+                        _v = re.sub(r"\s+", " ", _td.get_text()).strip()
+                        # SNS·오류제보 행 제외
+                        if _k and _v and "SNS" not in _k and "오류" not in _k and len(_v) < 200:
+                            _info_lines.append(f"{_k}: {_v}")
+
+            _info_text = ""
+            if _info_lines:
+                _info_text = "【공모전 정보】\n" + "\n".join(_info_lines) + "\n\n"
+
+            # 메인 본문: 공모전코리아 전용 선택자 → 일반 선택자 순
             _MAIN_SELECTORS = [
-                # 공모전코리아 뷰 페이지
+                ".view_cont_area",    # 공모전코리아 전체 뷰 컨테이너
+                ".view_detail_area",  # 세부요강 영역
+                ".tab_cont",          # 탭 콘텐츠
                 ".view_area",
                 ".view_cont",
                 ".contest_view",
                 ".board_view_wrap",
                 ".sub_content",
                 "#content .inner",
-                # 일반
                 "article",
                 "main",
                 ".content",
@@ -3107,7 +3139,6 @@ async def admin_crawl_add_with_gpt(
                     break
 
             if _main_el:
-                # nav/aside 같은 자식 제거
                 for _t in _main_el(["nav", "footer", "header", "aside"]):
                     _t.decompose()
                 _raw = _main_el.get_text(separator="\n")
@@ -3116,8 +3147,11 @@ async def admin_crawl_add_with_gpt(
                     _t.decompose()
                 _raw = (soup.body or soup).get_text(separator="\n")
 
-            page_text = re.sub(r"[ \t]+", " ", _raw)
-            page_text = re.sub(r"\n{3,}", "\n\n", page_text).strip()[:12000]
+            _body_text = re.sub(r"[ \t]+", " ", _raw)
+            _body_text = re.sub(r"\n{3,}", "\n\n", _body_text).strip()
+
+            # 정보 테이블을 앞에 붙여 GPT가 날짜·시상내역을 먼저 인식하게 함
+            page_text = (_info_text + _body_text)[:12000]
 
             _log.info("GPT추가 page_text %d자, 첨부%d개, og_image=%s — %s",
                       len(page_text), len(attach_links), bool(og_image_url), link)
@@ -3142,11 +3176,39 @@ async def admin_crawl_add_with_gpt(
             # ── 1-f. 첨부파일 다운로드 + 텍스트 추출 ────────────────────────
             for _att in attach_links[:5]:
                 try:
-                    _fr = await _cli.get(_att["url"], headers={"User-Agent": _UA})
+                    _fr = await _cli.get(_att["url"], headers={"User-Agent": _UA, "Referer": link})
                     if _fr.status_code != 200 or not _fr.content:
                         continue
                     if len(_fr.content) > MAX_FILE_SIZE:
                         continue
+
+                    # Content-Disposition 에서 실제 파일명·확장자 추출 (file_dn.php 등 동적 URL 대응)
+                    _cd = _fr.headers.get("content-disposition", "")
+                    _cd_match = re.search(r'filename[^=]*=\s*["\']?([^"\';\r\n]+)', _cd, re.IGNORECASE)
+                    if _cd_match:
+                        _cd_name = _cd_match.group(1).strip().strip("\"'")
+                        # URL 인코딩·EUC-KR 디코딩 처리
+                        try:
+                            from urllib.parse import unquote
+                            _cd_name = unquote(_cd_name, encoding="utf-8")
+                        except Exception:
+                            pass
+                        if _cd_name:
+                            _att["name"] = _cd_name
+                            _cd_ext = _cd_name.rsplit(".", 1)[-1].lower()
+                            if _cd_ext in _FILE_EXTS:
+                                _att["ext"] = _cd_ext
+
+                    # 확장자가 여전히 없으면 Content-Type으로 추론
+                    if not _att.get("ext") or _att["ext"] not in _FILE_EXTS:
+                        _ct_map = {
+                            "application/pdf": "pdf",
+                            "application/haansofthwp": "hwp",
+                            "application/x-hwp": "hwp",
+                        }
+                        _mime = _fr.headers.get("content-type", "").split(";")[0].strip()
+                        _att["ext"] = _ct_map.get(_mime, _att.get("ext", "bin"))
+
                     _ffn = f"{uuid.uuid4().hex}.{_att['ext']}"
                     (UPLOAD_DIR / _ffn).write_bytes(_fr.content)
                     saved_files.append({"name": _att["name"], "path": _ffn})

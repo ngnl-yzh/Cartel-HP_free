@@ -242,7 +242,8 @@ def _parse_contestkorea_items(soup: BeautifulSoup) -> list:
             if not href:
                 continue
             if not href.startswith("http"):
-                href = "https://www.contestkorea.com" + href
+                # 슬래시가 없으면 반드시 붙여서 도메인+경로 분리
+                href = "https://www.contestkorea.com/" + href.lstrip("/")
 
             # 마감일: span.step-1 "접수 04.15~06.17"
             step1 = li.select_one(".date .step-1") or li.select_one(".date-detail .step-1")

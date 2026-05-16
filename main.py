@@ -2981,9 +2981,19 @@ async def admin_crawl_add_with_gpt(
         raise HTTPException(status_code=400, detail="잘못된 인덱스입니다.")
 
     item  = items[idx]
-    link  = item.get("link", "")
+    link  = item.get("link", "").strip()
     if not link:
         raise HTTPException(status_code=400, detail="URL이 없는 항목입니다.")
+
+    # 슬래시 누락으로 인한 잘못된 URL 자동 교정
+    # 예: "https://www.contestkorea.comview.php?..." → "https://www.contestkorea.com/view.php?..."
+    _pu = urlparse(link)
+    if _pu.scheme and _pu.netloc and _pu.path and not _pu.path.startswith("/"):
+        link = f"{_pu.scheme}://{_pu.netloc}/{_pu.path}"
+        if _pu.query:
+            link += f"?{_pu.query}"
+        if _pu.fragment:
+            link += f"#{_pu.fragment}"
 
     from urllib.parse import urljoin as _urljoin
     from bs4 import BeautifulSoup as _BS

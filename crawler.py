@@ -432,129 +432,7 @@ async def _crawl_thinkcontest(client: httpx.AsyncClient) -> list:
     return results
 
 
-# ── 4. 데티즌 ─────────────────────────────────────────────────────────────────
-# React SPA → body가 <div id="root"></div>이므로 JS 번들에서 API 도메인 추출 시도
-
-async def _crawl_detizen(client: httpx.AsyncClient) -> list:
-    results = []
-
-    api_headers = {
-        **HEADERS,
-        "Accept": "application/json",
-        "Origin": "https://www.detizen.com",
-        "Referer": "https://www.detizen.com/",
-    }
-
-    # 1단계: JS 번들에서 API 베이스 URL 추출
-    api_base = None
-    try:
-        html_r = await client.get("https://www.detizen.com/", headers=HEADERS)
-        if html_r.status_code == 200:
-            soup = _soup(html_r.text)
-            # script src 목록 수집
-            script_srcs = [
-                s.get("src", "") for s in soup.find_all("script", src=True)
-                if "chunk" in s.get("src", "") or "main" in s.get("src", "")
-            ]
-            for src in script_srcs[:4]:  # 최대 4개 번들만 검사
-                if not src.startswith("http"):
-                    src = "https://www.detizen.com" + src
-                try:
-                    js_r = await client.get(src, headers=HEADERS)
-                    if js_r.status_code != 200:
-                        continue
-                    # API 도메인 패턴 검색
-                    m = re.search(
-                        r'["\']https?://([a-zA-Z0-9.\-]+detizen[a-zA-Z0-9.\-]*)["\']',
-                        js_r.text,
-                    )
-                    if m:
-                        api_base = f"https://{m.group(1)}"
-                        break
-                    # 환경변수 패턴: REACT_APP_API_URL / VITE_API_BASE 등
-                    m2 = re.search(
-                        r'(?:REACT_APP_API|VITE_API|API_BASE|apiBase)[_A-Z]*["\s:=]+["\']'
-                        r'(https?://[^"\']+)["\']',
-                        js_r.text,
-                    )
-                    if m2:
-                        api_base = m2.group(1).rstrip("/")
-                        break
-                except Exception:
-                    continue
-    except Exception:
-        pass
-
-    # 2단계: API 엔드포인트 후보 목록 (번들에서 추출한 도메인 + 기존 후보)
-    bases = []
-    if api_base:
-        bases.append(api_base)
-    bases += [
-        "https://newdevapi.detizenonline.com",
-        "https://api.detizenonline.com",
-        "https://api.detizen.com",
-    ]
-
-    paths = [
-        "/contest?page=0&size=20&sort=endDate,asc",
-        "/contests?page=0&size=20",
-        "/api/contest?page=0&size=20",
-        "/api/contests?page=0&size=20",
-        "/v1/contests?page=0&size=20",
-        "/contest/list?page=0&size=20",
-    ]
-
-    try:
-        for base in bases:
-            for path in paths:
-                try:
-                    r = await client.get(base + path, headers=api_headers)
-                    if r.status_code != 200:
-                        continue
-                    try:
-                        data = r.json()
-                    except Exception:
-                        continue
-                    items = (
-                        data.get("content")
-                        or data.get("data")
-                        or data.get("list")
-                        or data.get("rows")
-                        or (data if isinstance(data, list) else [])
-                    )
-                    if not items:
-                        continue
-                    for it in items:
-                        try:
-                            title = _norm(str(it.get("title", "") or it.get("name", "")))
-                            _id   = it.get("_id") or it.get("id", "")
-                            if not title or not _id:
-                                continue
-                            href = f"https://www.detizen.com/mDetail/{_id}"
-                            host = it.get("host", {})
-                            organizer = _norm(
-                                str(host.get("name", "") if isinstance(host, dict) else host)
-                            )
-                            end_date = str(it.get("endDate", "") or it.get("deadline", ""))
-                            deadline = _parse_date(end_date) if end_date else None
-                            category = str(it.get("category", "") or it.get("field", ""))
-                            tags = _classify_tags(category or title)
-                            if title and _is_current_year(deadline):
-                                results.append(_item("detizen", "데티즌", title, href, organizer, deadline, tags=tags))
-                        except Exception:
-                            continue
-                    if results:
-                        return results
-                except Exception:
-                    continue
-
-        results.append({"_error": "데티즌: React SPA (백엔드 API 접근 실패, 수동 등록 필요)"})
-    except Exception as e:
-        results.append({"_error": f"데티즌 오류: {type(e).__name__}: {e}"})
-    return results
-
-
-# ── 5. 공모주 ─────────────────────────────────────────────────────────────────
+# ── 4. 공모주 ─────────────────────────────────────────────────────────────────
 
 async def _crawl_gongmoju(client: httpx.AsyncClient) -> list:
     results = []
@@ -645,7 +523,6 @@ async def crawl_all() -> dict:
                 _crawl_contestkorea(client),
                 _crawl_wevity(client),
                 _crawl_thinkcontest(client),
-                _crawl_detizen(client),
                 return_exceptions=True,
             )
     except Exception as e:

@@ -22,9 +22,8 @@
 
   <div class="home-hero-inner">
     <div class="hero-logo-wrap">
-      <span class="hero-c">C</span>
+      <img src="/static/images/cartel-logo.png" class="hero-logo-img" alt="CARTEL">
     </div>
-    <h1 class="hero-title">CARTEL</h1>
     <p class="hero-tagline">AI &nbsp;·&nbsp; Competition &nbsp;·&nbsp; Together</p>
     <p class="hero-sub">공모전을 함께 도전하고, 성장을 함께 나누는 공간</p>
     <div class="hero-cta">
@@ -293,40 +292,33 @@
   padding: 40px 20px;
 }
 
-/* 큰 C 아이콘 */
+/* 실제 로고 이미지 — 히어로 */
 .hero-logo-wrap {
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 4px;
+  margin-bottom: 16px;
 }
-.hero-c {
-  font-family: var(--font-display);
-  font-size: clamp(5rem, 12vw, 9rem);
-  font-weight: 800;
-  color: transparent;
-  background: linear-gradient(135deg, #3B82F6 0%, #60A5FA 40%, #93C5FD 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  text-shadow: none;
-  filter: drop-shadow(0 0 32px rgba(59,130,246,0.55)) drop-shadow(0 0 8px rgba(59,130,246,0.4));
-  line-height: 1;
+.hero-logo-img {
+  width: clamp(160px, 32vw, 300px);
+  height: auto;
+  object-fit: contain;
+  /* screen 블렌딩: 흰 배경이 어두운 히어로 배경에 녹아들고 파란 별자리만 빛남 */
+  mix-blend-mode: screen;
+  filter: brightness(1.2)
+          drop-shadow(0 0 40px rgba(59,130,246,0.7))
+          drop-shadow(0 0 12px rgba(59,130,246,0.5));
   animation: heroGlow 3s ease-in-out infinite alternate;
 }
 @keyframes heroGlow {
-  from { filter: drop-shadow(0 0 24px rgba(59,130,246,0.45)) drop-shadow(0 0 6px rgba(59,130,246,0.3)); }
-  to   { filter: drop-shadow(0 0 44px rgba(59,130,246,0.75)) drop-shadow(0 0 14px rgba(59,130,246,0.55)); }
+  from { filter: brightness(1.1)
+                 drop-shadow(0 0 24px rgba(59,130,246,0.5))
+                 drop-shadow(0 0 8px rgba(59,130,246,0.35)); }
+  to   { filter: brightness(1.35)
+                 drop-shadow(0 0 56px rgba(59,130,246,0.9))
+                 drop-shadow(0 0 20px rgba(59,130,246,0.7)); }
 }
 
-.hero-title {
-  font-family: var(--font-display);
-  font-size: clamp(2rem, 6vw, 4rem);
-  font-weight: 800;
-  letter-spacing: 0.2em;
-  color: #fff;
-  margin: 0 0 8px;
-  line-height: 1;
-}
 .hero-tagline {
   font-family: var(--font-display);
   font-size: clamp(0.8rem, 2vw, 1rem);

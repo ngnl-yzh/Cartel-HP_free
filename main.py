@@ -27,7 +27,7 @@ BASE_DIR = Path(__file__).resolve().parent
 load_dotenv(BASE_DIR / ".env")
 
 from ai_parser import parse_document_file, parse_image_file, parse_text
-from crawler import crawl_all as _do_crawl_all
+from crawler import CRAWL_SOURCES, crawl_all as _do_crawl_all
 from auth import create_token, verify_token
 from database import SessionLocal, get_db, init_db
 from member_auth import create_member_token, hash_password, verify_member_token, verify_password, verify_team_password
@@ -3404,23 +3404,57 @@ async def ws_chat(ws: WebSocket, room_id: int):
 
 # 크롤 결과를 서버 인스턴스 메모리에 캐시 (재크롤 전까지 유지)
 _crawl_cache: dict = {"items": [], "errors": [], "counts": {}, "crawled_at": None}
+# 크롤 히스토리 (최근 10회, 최신순)
+_crawl_history: list = []
+
+
+def _get_enabled_sources(db: Session) -> list:
+    """AppSetting에서 활성 크롤링 소스 목록 로드. 없으면 전체 반환."""
+    try:
+        row = db.query(AppSetting).filter(AppSetting.key == "enabled_crawl_sources").first()
+        if row and row.value:
+            parsed = json.loads(row.value)
+            if isinstance(parsed, list):
+                return [s for s in parsed if s in CRAWL_SOURCES]
+    except Exception:
+        pass
+    return list(CRAWL_SOURCES.keys())
+
+
+def _save_enabled_sources(db: Session, sources: list) -> None:
+    """활성 크롤링 소스 AppSetting에 저장."""
+    val = json.dumps(sources, ensure_ascii=False)
+    row = db.query(AppSetting).filter(AppSetting.key == "enabled_crawl_sources").first()
+    if row:
+        row.value = val
+        row.updated_at = datetime.now()
+    else:
+        db.add(AppSetting(key="enabled_crawl_sources", value=val))
+    db.commit()
 
 
 @app.get("/admin/crawl", response_class=HTMLResponse)
 async def admin_crawl_page(request: Request, db: Session = Depends(get_db)):
     if r := _admin_redirect(request):
         return r
-    # 캐시에 아직 남아있는 항목 중 새로 추가된 것 재필터 (항목 추가 후 페이지 재방문 시)
+    # 최신 캐시에서 새로 추가된 항목 재필터
     cache = dict(_crawl_cache)
     if cache.get("items"):
         refreshed, extra_skipped = _dedup_crawl_items(cache["items"], db)
         if extra_skipped:
-            cache = dict(cache)
-            cache["items"]   = refreshed
+            cache["items"] = refreshed
+            _crawl_cache["items"] = refreshed
+            if _crawl_history:
+                _crawl_history[0]["items"] = refreshed
             cache["skipped"] = cache.get("skipped", 0) + extra_skipped
     return _render(request,
         "admin/crawl.html",
-        _ctx(request, db, cache=cache, all_tags=_get_tags(db)),
+        _ctx(request, db,
+             cache=cache,
+             history=_crawl_history,
+             all_tags=_get_tags(db),
+             all_sources=CRAWL_SOURCES,
+             enabled_sources=_get_enabled_sources(db)),
     )
 
 
@@ -3447,24 +3481,45 @@ def _dedup_crawl_items(items: list, db: Session) -> tuple[list, int]:
 
 
 @app.post("/admin/crawl/run")
-async def admin_crawl_run(request: Request, db: Session = Depends(get_db)):
+async def admin_crawl_run(
+    request: Request,
+    sources: List[str] = Form(default=[]),
+    db: Session = Depends(get_db),
+):
     """크롤링 실행 — 완료까지 기다린 후 결과 페이지로 이동"""
     if r := _admin_redirect(request):
         return r
-    global _crawl_cache
+    global _crawl_cache, _crawl_history
+
+    # 선택 소스 저장 (비어있으면 전체)
+    selected = [s for s in sources if s in CRAWL_SOURCES] or list(CRAWL_SOURCES.keys())
+    _save_enabled_sources(db, selected)
+
     try:
-        result = await _do_crawl_all()
+        result = await _do_crawl_all(sources=selected)
     except Exception as exc:
         result = {"items": [], "errors": [f"크롤링 전체 실패: {type(exc).__name__}: {exc}"], "counts": {}}
 
     # 이미 등록된 항목 중복 제거
     raw_items = result.get("items", [])
     filtered_items, skipped = _dedup_crawl_items(raw_items, db)
-    result["items"]   = filtered_items
-    result["skipped"] = skipped           # 제거된 개수 (템플릿에서 표시용)
+
+    # 활성 태그 외 태그 제거 → 기타 항목으로 분류
+    active_tags = set(_get_tags(db))
+    for item in filtered_items:
+        item["tags"] = [t for t in item.get("tags", []) if t in active_tags]
+
+    result["items"]             = filtered_items
+    result["skipped"]           = skipped
     result["total_before_dedup"] = len(raw_items)
-    result["crawled_at"] = datetime.now().strftime("%Y년 %m월 %d일 %H:%M")
+    result["crawled_at"]        = datetime.now().strftime("%Y년 %m월 %d일 %H:%M")
+
     _crawl_cache = result
+    # 히스토리 앞에 추가 (최대 10회 유지)
+    _crawl_history.insert(0, result)
+    if len(_crawl_history) > 10:
+        _crawl_history.pop()
+
     return RedirectResponse(url="/admin/crawl", status_code=303)
 
 

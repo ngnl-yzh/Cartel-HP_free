@@ -295,13 +295,97 @@ async def _crawl_contestkorea(client: httpx.AsyncClient) -> list:
 
 
 
+# ── 2. 데이콘 ──────────────────────────────────────────────────────────────────
+
+async def _crawl_dacon(client: httpx.AsyncClient) -> list:
+    """데이콘(dacon.io) — 데이터·AI 공모전 플랫폼"""
+    results = []
+    try:
+        r = await client.get(
+            "https://dacon.io/competitions",
+            headers={**HEADERS, "Accept": "text/html,application/xhtml+xml,*/*"},
+            timeout=20,
+        )
+        _check_response(r, "데이콘")
+        soup = _soup(r.text)
+
+        # ① Next.js __NEXT_DATA__ JSON 추출 시도
+        import json as _json
+        nxt = soup.find("script", {"id": "__NEXT_DATA__"})
+        if nxt and nxt.string:
+            try:
+                page_data = _json.loads(nxt.string)
+                props = page_data.get("props", {}).get("pageProps", {})
+                comps = (
+                    props.get("competitions")
+                    or props.get("data")
+                    or props.get("list")
+                    or []
+                )
+                if isinstance(comps, dict):
+                    comps = comps.get("results") or comps.get("data") or []
+                for comp in (comps if isinstance(comps, list) else []):
+                    title = (comp.get("title") or comp.get("name") or "").strip()
+                    if not title:
+                        continue
+                    comp_id = comp.get("id") or ""
+                    link = f"https://dacon.io/competitions/{comp_id}" if comp_id else "https://dacon.io/competitions"
+                    deadline_raw = (
+                        comp.get("end_date") or comp.get("deadline")
+                        or comp.get("finish_date") or comp.get("endDate") or ""
+                    )
+                    deadline = _parse_date(str(deadline_raw)) if deadline_raw else None
+                    organizer = (comp.get("host") or comp.get("organizer") or "").strip()
+                    prize = str(comp.get("prize") or comp.get("reward") or "").strip()
+                    if title and _is_current_year(deadline):
+                        results.append(_item("dacon", "데이콘", title, link, organizer, deadline, prize, tags=["AI/SW"]))
+                if results:
+                    return results
+            except Exception:
+                pass
+
+        # ② HTML fallback — /competitions/숫자 형태 링크 추출
+        seen_links: set = set()
+        for a in soup.select("a[href]"):
+            href = a.get("href", "")
+            if not re.search(r"/competitions/\d+", href):
+                continue
+            if not href.startswith("http"):
+                href = "https://dacon.io" + href
+            if href in seen_links:
+                continue
+            seen_links.add(href)
+            title_el = (
+                a.select_one("h2, h3, h4, [class*='tit'], [class*='title'], [class*='name']")
+                or a
+            )
+            title = _norm(title_el.get_text())
+            if len(title) < 4:
+                continue
+            results.append(_item("dacon", "데이콘", title, href, "", None, tags=["AI/SW"]))
+
+        if not results:
+            results.append({"_error": "데이콘: 공모전 파싱 실패 (JavaScript 렌더링 또는 구조 변경)"})
+
+    except Exception as e:
+        results.append({"_error": f"데이콘 오류: {type(e).__name__}: {e}"})
+    return results
+
+
 # ════════════════════════════════════════════════════════════════════════════
-#  메인 진입점
+#  지원 소스 목록 & 메인 진입점
 # ════════════════════════════════════════════════════════════════════════════
 
-async def crawl_all() -> dict:
+# 소스 ID → (표시 이름, 크롤러 함수)
+CRAWL_SOURCES: dict = {
+    "contestkorea": ("공모전코리아", _crawl_contestkorea),
+    "dacon":        ("데이콘",       _crawl_dacon),
+}
+
+
+async def crawl_all(sources: list = None) -> dict:
     """
-    모든 사이트를 동시에 크롤링하고 결과를 반환합니다.
+    지정된 소스(기본: 전체)를 동시에 크롤링하고 결과를 반환합니다.
     반환 형식:
     {
         "items": [{ source, source_label, title, link, organizer, deadline, prize, tags }, ...],
@@ -309,7 +393,10 @@ async def crawl_all() -> dict:
         "counts": { "사이트": n, ... },
     }
     """
-    # 공모주(gongmoju.com): 사이트 접속 불가(ConnectTimeout) → 제외
+    valid_sources = [s for s in (sources or list(CRAWL_SOURCES.keys())) if s in CRAWL_SOURCES]
+    if not valid_sources:
+        return {"items": [], "errors": ["선택된 크롤링 소스가 없습니다."], "counts": {}}
+
     try:
         async with httpx.AsyncClient(
             timeout=30,
@@ -318,15 +405,15 @@ async def crawl_all() -> dict:
             verify=True,
         ) as client:
             raw_results = await asyncio.gather(
-                _crawl_contestkorea(client),
+                *[CRAWL_SOURCES[s][1](client) for s in valid_sources],
                 return_exceptions=True,
             )
     except Exception as e:
         return {"items": [], "errors": [f"크롤러 초기화 실패: {type(e).__name__}: {e}"], "counts": {}}
 
-    items   = []
-    errors  = []
-    counts  = {}
+    items  = []
+    errors = []
+    counts = {}
 
     for site_list in raw_results:
         if isinstance(site_list, Exception):
@@ -334,17 +421,13 @@ async def crawl_all() -> dict:
             continue
         if not isinstance(site_list, list):
             continue
-
-        site_items = []
         for item in site_list:
             if "_error" in item:
                 errors.append(item["_error"])
             else:
-                site_items.append(item)
+                items.append(item)
                 label = item.get("source_label", item.get("source", "?"))
                 counts[label] = counts.get(label, 0) + 1
-
-        items.extend(site_items)
 
     # 중복 제거: URL 우선, URL 없으면 (사이트+제목)
     seen  = set()

@@ -3727,10 +3727,9 @@ def _norm_url(url: str) -> str:
     if not url:
         return ""
     url = url.strip().lower()
-    url = re.sub(r'^https?://', '', url)   # 스킴 제거
-    url = re.sub(r'^www\.', '', url)       # www 제거
-    url = url.rstrip('/')                  # 끝 슬래시 제거
-    # 쿼리스트링 파라미터 정렬 (순서 차이 무시)
+    url = re.sub(r'^https?://', '', url)
+    url = re.sub(r'^www\.', '', url)
+    url = url.rstrip('/')
     if '?' in url:
         from urllib.parse import parse_qsl, urlencode as _enc
         path, qs = url.split('?', 1)
@@ -3739,33 +3738,66 @@ def _norm_url(url: str) -> str:
             url = path + ('?' + _enc(params) if params else '')
         except Exception:
             pass
-    # 프래그먼트(#) 제거
     url = url.split('#')[0]
     return url
+
+
+# 제목에서 제거할 일반 접미어 (공모전명 핵심 추출용)
+_TITLE_SUFFIX_RE = re.compile(
+    r'(공모전|공모|콘테스트|어워드|어워즈|경진대회|대회|모집|접수|안내'
+    r'|참가자|신청|참여|온라인|오프라인|공고|발표|선정|지원|구인)+$'
+)
 
 
 def _norm_title(title: str) -> str:
     """제목 정규화 — 공백·특수문자·대소문자 차이 무시"""
     if not title:
         return ""
-    title = re.sub(r'\s+', ' ', title).strip()  # 공백 통일
-    title = re.sub(r'[^\w가-힣]', '', title)     # 특수문자 제거
+    title = re.sub(r'\s+', ' ', title).strip()
+    title = re.sub(r'[^\w가-힣]', '', title)
     return title.lower()
 
 
+def _core_title(nt: str) -> str:
+    """정규화 제목에서 일반 접미어를 제거한 핵심 부분 반환 (유사도 비교용)"""
+    return _TITLE_SUFFIX_RE.sub('', nt).strip()
+
+
+def _is_similar_title(nt: str, seen_list: list[str], threshold: float = 0.82) -> bool:
+    """정규화된 제목이 기존 제목 목록과 threshold 이상 유사하면 True.
+    difflib.SequenceMatcher 기반 문자 유사도 비교.
+    """
+    from difflib import SequenceMatcher
+    if len(nt) < 6:          # 너무 짧으면 퍼지 체크 무의미
+        return False
+    nc = _core_title(nt)     # 핵심 부분으로 비교 (접미어 차이 무시)
+    for st in seen_list:
+        # 길이 차이가 60% 이상이면 스킵 (최적화)
+        if abs(len(nc) - len(st)) > max(len(nc), len(st)) * 0.6:
+            continue
+        if SequenceMatcher(None, nc, _core_title(st)).ratio() >= threshold:
+            return True
+    return False
+
+
 def _dedup_crawl_items(items: list, db: Session) -> tuple[list, int]:
-    """크롤링 결과에서 이미 등록됐거나 이전 크롤 세션에 있던 항목 제거.
-    URL과 제목 모두 정규화 후 비교 — http/https·www·공백·특수문자 차이 무시.
+    """크롤링 결과 중복 제거.
+    ① URL 정규화 exact match
+    ② 제목 정규화 exact match
+    ③ 제목 유사도 퍼지 매칭 (다른 사이트의 같은 공모전 감지)
     반환: (중복 제거된 items, 제거된 개수)
     """
-    seen_urls:   set[str] = set()
-    seen_titles: set[str] = set()
+    seen_urls:   set[str]  = set()
+    seen_titles: set[str]  = set()
+    seen_title_list: list[str] = []   # 퍼지 비교용 리스트
 
     def _add(link: str, title: str):
         nu = _norm_url(link)
         nt = _norm_title(title)
-        if nu:  seen_urls.add(nu)
-        if nt:  seen_titles.add(nt)
+        if nu: seen_urls.add(nu)
+        if nt and nt not in seen_titles:
+            seen_titles.add(nt)
+            seen_title_list.append(nt)
 
     # ① 공모전 DB 기존 항목
     for row in db.query(Competition.link, Competition.title).all():
@@ -3783,14 +3815,21 @@ def _dedup_crawl_items(items: list, db: Session) -> tuple[list, int]:
     for item in items:
         nu = _norm_url(item.get("link") or "")
         nt = _norm_title(item.get("title") or "")
-        is_dup = (nu and nu in seen_urls) or (nt and nt in seen_titles)
+
+        is_dup = (
+            (nu and nu in seen_urls)           # URL 일치
+            or (nt and nt in seen_titles)      # 제목 완전 일치
+            or (nt and _is_similar_title(nt, seen_title_list))  # 제목 유사 (다른 사이트)
+        )
+
         if is_dup:
             skipped += 1
         else:
             filtered.append(item)
-            # 현재 배치 내 중복 방지
             if nu: seen_urls.add(nu)
-            if nt: seen_titles.add(nt)
+            if nt and nt not in seen_titles:
+                seen_titles.add(nt)
+                seen_title_list.append(nt)
     return filtered, skipped
 
 

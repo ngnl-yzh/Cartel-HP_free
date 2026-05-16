@@ -3812,6 +3812,18 @@ async def admin_crawl_session_delete(
     return RedirectResponse(url="/admin/crawl", status_code=303)
 
 
+def _latest_crawl_items(db: Session) -> list:
+    """최신 CrawlSession의 items 반환 (메모리 캐시 → DB 순으로 폴백)"""
+    items = _crawl_cache.get("items", [])
+    if items:
+        return items
+    # 메모리 캐시 없으면 DB 최신 세션에서 로드
+    latest = db.query(CrawlSession).order_by(CrawlSession.id.desc()).first()
+    if latest:
+        return json.loads(latest.items or "[]")
+    return []
+
+
 @app.post("/admin/crawl/add")
 async def admin_crawl_add(
     request: Request,
@@ -3822,9 +3834,9 @@ async def admin_crawl_add(
     if r := _admin_redirect(request):
         return r
 
-    items = _crawl_cache.get("items", [])
+    items = _latest_crawl_items(db)
     if idx < 0 or idx >= len(items):
-        raise HTTPException(status_code=400, detail="잘못된 인덱스입니다.")
+        raise HTTPException(status_code=400, detail="잘못된 인덱스입니다. 페이지를 새로고침하거나 다시 크롤링해주세요.")
 
     item = items[idx]
     deadline_str = item.get("deadline")
@@ -3863,9 +3875,9 @@ async def admin_crawl_add_with_gpt(
             detail="OPENAI_API_KEY 환경변수가 설정되지 않았습니다. Railway 서비스 환경변수를 확인하세요.",
         )
 
-    items = _crawl_cache.get("items", [])
+    items = _latest_crawl_items(db)
     if idx < 0 or idx >= len(items):
-        raise HTTPException(status_code=400, detail="잘못된 인덱스입니다.")
+        raise HTTPException(status_code=400, detail="잘못된 인덱스입니다. 페이지를 새로고침하거나 다시 크롤링해주세요.")
 
     item  = items[idx]
     link  = item.get("link", "").strip()

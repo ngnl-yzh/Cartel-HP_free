@@ -8,6 +8,7 @@ import asyncio
 import re
 from datetime import date, datetime
 from typing import Optional
+from urllib.parse import urljoin as _urljoin
 
 import httpx
 from bs4 import BeautifulSoup
@@ -241,9 +242,11 @@ def _parse_contestkorea_items(soup: BeautifulSoup) -> list:
             href = a.get("href", "")
             if not href:
                 continue
-            if not href.startswith("http"):
-                # 슬래시가 없으면 반드시 붙여서 도메인+경로 분리
-                href = "https://www.contestkorea.com/" + href.lstrip("/")
+            # urljoin으로 상대경로 해결 (view.php?... → /sub/view.php?...)
+            # 절대 URL이어도 안전하게 처리됨
+            href = _urljoin("https://www.contestkorea.com/sub/list.php", href)
+            # www 없는 도메인 정규화 (contestkorea.com → www.contestkorea.com)
+            href = href.replace("://contestkorea.com/", "://www.contestkorea.com/")
 
             # 마감일: span.step-1 "접수 04.15~06.17"
             step1 = li.select_one(".date .step-1") or li.select_one(".date-detail .step-1")

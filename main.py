@@ -2985,15 +2985,12 @@ async def admin_crawl_add_with_gpt(
     if not link:
         raise HTTPException(status_code=400, detail="URL이 없는 항목입니다.")
 
-    # 슬래시 누락으로 인한 잘못된 URL 자동 교정
-    # 예: "https://www.contestkorea.comview.php?..." → "https://www.contestkorea.com/view.php?..."
-    _pu = urlparse(link)
-    if _pu.scheme and _pu.netloc and _pu.path and not _pu.path.startswith("/"):
-        link = f"{_pu.scheme}://{_pu.netloc}/{_pu.path}"
-        if _pu.query:
-            link += f"?{_pu.query}"
-        if _pu.fragment:
-            link += f"#{_pu.fragment}"
+    # contestkorea 상대경로 복원: /sub/ 없이 저장된 캐시 URL 교정
+    # 예) https://www.contestkorea.com/view.php?... → https://www.contestkorea.com/sub/view.php?...
+    if "contestkorea.com/view.php" in link:
+        link = link.replace("contestkorea.com/view.php", "contestkorea.com/sub/view.php")
+    # www 없는 도메인 정규화
+    link = link.replace("://contestkorea.com/", "://www.contestkorea.com/")
 
     from urllib.parse import urljoin as _urljoin
     from bs4 import BeautifulSoup as _BS

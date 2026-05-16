@@ -291,13 +291,11 @@ select {
   display: flex;
   align-items: center;
   gap: 0;
-  overflow-x: auto;
   padding: 6px 8px;
   border-bottom: 1px solid var(--line);
-  flex-wrap: nowrap;
-  scrollbar-width: none;
+  flex-wrap: wrap;
+  row-gap: 2px;
 }
-.filter-bar::-webkit-scrollbar { display: none; }
 
 .filter-btn {
   flex-shrink: 0;

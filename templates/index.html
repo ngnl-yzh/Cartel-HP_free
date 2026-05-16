@@ -23,89 +23,90 @@
 
 {% if featured %}
 <section class="featured-section">
-  {# ── 캐러셀 트랙 ── #}
-  <div class="fc-track" id="featuredCarousel">
-    {% for comp in featured %}
-    <a href="/competition/{{ comp.id }}" class="fc-slide"
-       {% if comp.image %}
-         style="--slide-bg:url('/uploads/{{ comp.image }}')"
-       {% else %}
-         style="--slide-bg:none;--slide-color1:{{ ['#0f2340','#1a2240','#16213e','#0d1b2a','#1b2838'] | random }};--slide-color2:{{ ['#2563eb','#1d4ed8','#1e40af','#2952c8','#3b52e8'] | random }}"
-       {% endif %}
-    >
-      <div class="fc-bg {% if not comp.image %}fc-bg-grad{% endif %}"></div>
-      <div class="fc-overlay"></div>
-      <div class="fc-content">
-        <div class="fc-meta">
-          {% for tag in comp.tags | fromjson %}
-            <span class="fc-tag">{{ tag }}</span>
-          {% endfor %}
-          {% if comp.is_featured %}<span class="fc-tag fc-tag-star">⭐ 주목</span>{% endif %}
-          {% if comp.status == 'urgent' %}
-            <span class="fc-tag fc-tag-urgent">D-{{ comp.days_left }}</span>
-          {% elif comp.status == 'soon' %}
-            <span class="fc-tag fc-tag-soon">D-{{ comp.days_left }}</span>
-          {% endif %}
-        </div>
-        <h2 class="fc-title">{{ comp.title }}</h2>
-        <p class="fc-org">{{ comp.organizer }}</p>
-        {% if comp.prize %}
-          <p class="fc-prize">🏆 {{ comp.prize | truncate(60, true, '…') }}</p>
-        {% endif %}
-        <div class="fc-cta">
-          <span class="fc-cta-btn">자세히 보기 →</span>
-          <span class="fc-views">조회 {{ comp.view_count }}</span>
-        </div>
-      </div>
-    </a>
-    {% endfor %}
-  </div>
+  <div class="container">
 
-  {# ── 오른쪽 썸네일 스택 (4개 이상일 때) ── #}
-  {% if featured | length >= 4 %}
-  <div class="fc-thumbs" id="fcThumbs">
-    {% for comp in featured %}
-    <button class="fc-thumb {% if loop.first %}is-active{% endif %}" data-idx="{{ loop.index0 }}">
-      <div class="fc-thumb-img
-        {% if not comp.image %} fc-thumb-grad{% endif %}"
-        {% if comp.image %}
-          style="background-image:url('/uploads/{{ comp.image }}')"
-        {% endif %}
-      ></div>
-      <div class="fc-thumb-info">
-        <p class="fc-thumb-title">{{ comp.title | truncate(32, true, '…') }}</p>
-        <p class="fc-thumb-org">{{ comp.organizer }}</p>
+    {# ── 섹션 헤더 ── #}
+    <div class="fc-header">
+      <div>
+        <h2 class="fc-header-title">
+          {% if featured | selectattr('is_featured') | list %}⭐ 주목 공모전
+          {% else %}🔥 마감 임박 · 인기 공모전{% endif %}
+        </h2>
+        <p class="fc-header-sub">
+          {% if featured | selectattr('is_featured') | list %}관리자 선정
+          {% else %}마감일 · 조회수 기준 자동 선정{% endif %}
+          · {{ featured | length }}개
+        </p>
       </div>
-    </button>
-    {% endfor %}
-  </div>
-  {% endif %}
-
-  {# ── 하단 컨트롤바 ── #}
-  <div class="fc-bar">
-    <div class="fc-bar-left">
-      <h3 class="fc-bar-title">
-        {% if featured | selectattr('is_featured') | list %}⭐ 주목 공모전
-        {% else %}🔥 마감 임박 · 인기 공모전{% endif %}
-      </h3>
-      <p class="fc-bar-sub">
-        {% if featured | selectattr('is_featured') | list %}관리자 선정
-        {% else %}마감일 · 조회수 기준 자동 선정{% endif %}
-        · {{ featured | length }}개
-      </p>
+      {% if featured | length > 1 %}
+      <div class="fc-nav">
+        <button class="fc-nav-btn" id="fcPause" title="일시정지">⏸</button>
+        <button class="fc-nav-btn" id="fcPrev" title="이전">‹</button>
+        <button class="fc-nav-btn" id="fcNext" title="다음">›</button>
+      </div>
+      {% endif %}
     </div>
+
+    {# ── 카드 트랙 ── #}
+    <div class="fc-viewport">
+      <div class="fc-track" id="featuredCarousel">
+        {% for comp in featured %}
+        <a href="/competition/{{ comp.id }}" class="fc-card status-{{ comp.status }}">
+          {# 이미지 영역 #}
+          <div class="fc-card-img"
+            {% if comp.image %}
+              style="background-image:url('/uploads/{{ comp.image }}')"
+            {% else %}
+              style="background:linear-gradient(135deg,
+                {{ ['#1e3a5f','#1a2e4a','#0f2340','#1b3a6b','#162d50','#1a2640'] | random }} 0%,
+                {{ ['#2563eb','#1d4ed8','#3b82f6','#1e40af','#2952c8','#1a6fb5'] | random }} 100%)"
+            {% endif %}
+          >
+            <div class="fc-card-overlay"></div>
+            <div class="fc-card-badges">
+              {% if comp.is_featured %}<span class="fc-badge fc-badge-star">⭐ 주목</span>{% endif %}
+              {% if comp.status == 'urgent' %}
+                <span class="fc-badge fc-badge-urgent">D-{{ comp.days_left }}</span>
+              {% elif comp.status == 'soon' %}
+                <span class="fc-badge fc-badge-soon">D-{{ comp.days_left }}</span>
+              {% elif comp.status == 'upcoming' %}
+                <span class="fc-badge fc-badge-open">이벤트</span>
+              {% else %}
+                <span class="fc-badge fc-badge-open">D-{{ comp.days_left }}</span>
+              {% endif %}
+            </div>
+          </div>
+          {# 텍스트 영역 #}
+          <div class="fc-card-body">
+            <div class="fc-card-tags">
+              {% for tag in comp.tags | fromjson %}
+                <span class="fc-card-tag">{{ tag }}</span>
+              {% endfor %}
+            </div>
+            <p class="fc-card-title">{{ comp.title }}</p>
+            <p class="fc-card-org">{{ comp.organizer }}</p>
+            {% if comp.prize %}
+              <p class="fc-card-prize">🏆 {{ comp.prize | truncate(30, true, '…') }}</p>
+            {% endif %}
+            <p class="fc-card-views">조회 {{ comp.view_count }}</p>
+          </div>
+        </a>
+        {% endfor %}
+      </div>
+    </div>
+
+    {# ── 프로그레스 + 도트 ── #}
     {% if featured | length > 1 %}
-    <div class="fc-controls">
-      <button class="fc-nav-btn" id="fcPause" aria-label="일시정지">⏸</button>
-      <button class="fc-nav-btn" id="fcPrev" aria-label="이전">‹</button>
+    <div class="fc-footer">
+      <div class="fc-progress-wrap"><div class="fc-progress" id="fcProgress"></div></div>
       <div class="fc-dots" id="fcDots">
         {% for comp in featured %}
         <button class="fcdot {% if loop.first %}is-active{% endif %}" data-idx="{{ loop.index0 }}"></button>
         {% endfor %}
       </div>
-      <button class="fc-nav-btn" id="fcNext" aria-label="다음">›</button>
     </div>
     {% endif %}
+
   </div>
 </section>
 {% endif %}
@@ -204,409 +205,317 @@
 
 <style>
 /* ══════════════════════════════════════════════
-   Featured 캐러셀 – 풀블리드 히어로 슬라이더
+   Featured – 5카드 슬라이드 캐러셀
    ══════════════════════════════════════════════ */
 .featured-section {
-  position: relative;
-  display: grid;
-  grid-template-columns: 1fr auto;
-  grid-template-rows: minmax(380px, 440px) auto;
-  grid-template-areas:
-    "track  thumbs"
-    "bar    thumbs";
-  background: #0a0f1e;
-  overflow: hidden;
+  padding: 36px 0 28px;
+  background: linear-gradient(180deg, #f0f5ff 0%, var(--bg, #f8f9fc) 100%);
+  border-bottom: 1px solid var(--line);
 }
 
-/* ── 슬라이드 트랙 ── */
-.fc-track {
-  grid-area: track;
-  position: relative;
-  overflow: hidden;
-  min-height: 380px;
-}
-
-/* ── 개별 슬라이드 ── */
-.fc-slide {
-  position: absolute;
-  inset: 0;
+/* ── 헤더 ── */
+.fc-header {
   display: flex;
-  align-items: flex-end;
-  text-decoration: none;
-  color: #fff;
-  opacity: 0;
-  transition: opacity .55s ease;
-  pointer-events: none;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 18px;
+  gap: 12px;
 }
-.fc-slide.is-active {
-  opacity: 1;
-  pointer-events: auto;
+.fc-header-title {
+  font-family: var(--font-display);
+  font-size: clamp(1.1rem, 2vw, 1.45rem);
+  font-weight: 800;
+  margin: 0 0 3px;
+  color: var(--text);
+}
+.fc-header-sub { font-size: .8rem; color: var(--muted); margin: 0; }
+
+/* ── 네비게이션 버튼 ── */
+.fc-nav { display: flex; gap: 6px; flex-shrink: 0; }
+.fc-nav-btn {
+  width: 34px; height: 34px;
+  border-radius: 50%;
+  border: 1.5px solid var(--line);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background .15s, border-color .15s, color .15s;
+  box-shadow: 0 1px 4px rgba(0,0,0,.06);
+}
+.fc-nav-btn:hover {
+  background: var(--cartel-blue);
+  border-color: var(--cartel-blue);
+  color: #fff;
 }
 
-/* ── 배경 이미지 ── */
-.fc-bg {
-  position: absolute;
-  inset: 0;
-  background-image: var(--slide-bg);
+/* ── 뷰포트 + 트랙 ── */
+.fc-viewport {
+  overflow: hidden;
+  border-radius: 16px;
+}
+.fc-track {
+  display: flex;
+  gap: 14px;
+  transition: transform .42s cubic-bezier(.4,0,.2,1);
+  will-change: transform;
+}
+
+/* ── 카드 ── */
+.fc-card {
+  flex: 0 0 calc(20% - 12px);   /* 5장 */
+  min-width: 0;
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1.5px solid var(--line);
+  text-decoration: none;
+  color: var(--text);
+  transition: transform .2s, box-shadow .2s, border-color .2s;
+  display: flex;
+  flex-direction: column;
+}
+.fc-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 10px 36px rgba(37,99,235,.14);
+  border-color: rgba(37,99,235,.25);
+}
+
+/* ── 카드 이미지 ── */
+.fc-card-img {
+  position: relative;
+  height: 148px;
   background-size: cover;
   background-position: center;
-  transform: scale(1.04);
-  transition: transform 6s ease;
+  flex-shrink: 0;
 }
-.fc-slide.is-active .fc-bg { transform: scale(1); }
-.fc-bg-grad {
-  background-image: linear-gradient(135deg, var(--slide-color1, #0f2340) 0%, var(--slide-color2, #2563eb) 100%);
-}
-
-/* ── 어두운 오버레이 ── */
-.fc-overlay {
+.fc-card-overlay {
   position: absolute;
   inset: 0;
-  background: linear-gradient(
-    to top,
-    rgba(0,0,0,.88) 0%,
-    rgba(0,0,0,.45) 45%,
-    rgba(0,0,0,.15) 100%
-  );
+  background: linear-gradient(0deg, rgba(0,0,0,.52) 0%, transparent 55%);
 }
-
-/* ── 슬라이드 텍스트 컨텐츠 ── */
-.fc-content {
-  position: relative;
-  z-index: 2;
-  padding: 32px 36px;
-  width: 100%;
-  max-width: 680px;
+.fc-card-badges {
+  position: absolute;
+  top: 9px; left: 9px;
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
 }
-.fc-meta { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
-.fc-tag {
-  font-size: .7rem;
+.fc-badge {
+  font-size: .64rem;
   font-weight: 700;
-  padding: 3px 10px;
+  padding: 2px 8px;
   border-radius: 999px;
-  background: rgba(255,255,255,.15);
-  color: #fff;
   backdrop-filter: blur(6px);
-  border: 1px solid rgba(255,255,255,.2);
+  border: 1px solid rgba(255,255,255,.25);
+  color: #fff;
   letter-spacing: .02em;
 }
-.fc-tag-star { background: rgba(245,158,11,.45); border-color: rgba(245,158,11,.5); }
-.fc-tag-urgent { background: rgba(239,68,68,.45); border-color: rgba(239,68,68,.5); }
-.fc-tag-soon   { background: rgba(234,179,8,.35); border-color: rgba(234,179,8,.5); }
+.fc-badge-star   { background: rgba(245,158,11,.75); }
+.fc-badge-urgent { background: rgba(239,68,68,.8); }
+.fc-badge-soon   { background: rgba(234,179,8,.75); color: #1a1a00; }
+.fc-badge-open   { background: rgba(37,99,235,.7); }
 
-.fc-title {
+/* ── 카드 텍스트 ── */
+.fc-card-body {
+  padding: 12px 13px 13px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.fc-card-tags {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-bottom: 2px;
+}
+.fc-card-tag {
+  font-size: .62rem;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(37,99,235,.08);
+  color: var(--cartel-blue);
+  border: 1px solid rgba(37,99,235,.15);
+}
+.fc-card-title {
   font-family: var(--font-display);
-  font-size: clamp(1.25rem, 2.8vw, 1.9rem);
-  font-weight: 800;
-  line-height: 1.3;
-  margin: 0 0 8px;
-  text-shadow: 0 2px 12px rgba(0,0,0,.4);
+  font-size: .84rem;
+  font-weight: 700;
+  line-height: 1.4;
+  margin: 0;
+  color: var(--text);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
-.fc-org {
-  font-size: .88rem;
-  color: rgba(255,255,255,.7);
-  margin: 0 0 6px;
-  font-weight: 500;
+.fc-card-org   { font-size: .73rem; color: var(--muted); margin: 0; }
+.fc-card-prize { font-size: .72rem; color: var(--muted); margin: 0; }
+.fc-card-views {
+  font-size: .7rem;
+  color: var(--muted);
+  margin-top: auto;
+  padding-top: 4px;
 }
-.fc-prize {
-  font-size: .82rem;
-  color: rgba(255,255,255,.65);
-  margin: 0 0 18px;
-}
-.fc-cta {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-.fc-cta-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 9px 22px;
-  border-radius: 999px;
-  background: var(--cartel-blue, #2563eb);
-  color: #fff;
-  font-size: .85rem;
-  font-weight: 700;
-  letter-spacing: .01em;
-  box-shadow: 0 4px 16px rgba(37,99,235,.5);
-  transition: background .15s, transform .15s;
-}
-.fc-slide:hover .fc-cta-btn {
-  background: #1d4ed8;
-  transform: translateX(2px);
-}
-.fc-views { font-size: .78rem; color: rgba(255,255,255,.5); }
 
-/* ── 썸네일 스택 (4개 이상) ── */
-.fc-thumbs {
-  grid-area: thumbs;
+/* ── 하단 (프로그레스 + 도트) ── */
+.fc-footer {
   display: flex;
   flex-direction: column;
-  gap: 0;
-  width: 220px;
-  overflow-y: auto;
-  background: rgba(0,0,0,.55);
-  backdrop-filter: blur(12px);
-  border-left: 1px solid rgba(255,255,255,.08);
-}
-.fc-thumbs::-webkit-scrollbar { width: 3px; }
-.fc-thumbs::-webkit-scrollbar-thumb { background: rgba(255,255,255,.15); }
-
-.fc-thumb {
-  display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 12px;
-  background: none;
-  border: none;
-  border-bottom: 1px solid rgba(255,255,255,.06);
-  cursor: pointer;
-  text-align: left;
-  color: rgba(255,255,255,.55);
-  transition: background .15s, color .15s;
-  flex-shrink: 0;
+  margin-top: 18px;
 }
-.fc-thumb:hover { background: rgba(255,255,255,.07); color: #fff; }
-.fc-thumb.is-active {
-  background: rgba(37,99,235,.2);
-  color: #fff;
-  border-left: 3px solid var(--cartel-blue, #2563eb);
-}
-
-.fc-thumb-img {
-  width: 44px;
-  height: 44px;
-  border-radius: 8px;
-  flex-shrink: 0;
-  background-size: cover;
-  background-position: center;
-}
-.fc-thumb-grad {
-  background: linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%);
-}
-.fc-thumb-info { overflow: hidden; }
-.fc-thumb-title {
-  font-size: .74rem;
-  font-weight: 600;
-  margin: 0 0 2px;
+.fc-progress-wrap {
+  width: 100%;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--line);
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: inherit;
-  max-width: 140px;
 }
-.fc-thumb-org {
-  font-size: .67rem;
-  color: rgba(255,255,255,.4);
-  margin: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 140px;
+.fc-progress {
+  height: 100%;
+  background: var(--cartel-blue);
+  width: 0%;
+  border-radius: 2px;
+  transition: width linear;
 }
-
-/* ── 하단 컨트롤 바 ── */
-.fc-bar {
-  grid-area: bar;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 36px;
-  background: rgba(0,0,0,.6);
-  backdrop-filter: blur(10px);
-  border-top: 1px solid rgba(255,255,255,.07);
-  gap: 12px;
-}
-.fc-bar-title {
-  font-family: var(--font-display);
-  font-size: .9rem;
-  font-weight: 700;
-  color: #fff;
-  margin: 0 0 2px;
-}
-.fc-bar-sub { font-size: .74rem; color: rgba(255,255,255,.45); margin: 0; }
-
-.fc-controls {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
-}
-.fc-nav-btn {
-  width: 32px; height: 32px;
-  border-radius: 50%;
-  border: 1.5px solid rgba(255,255,255,.2);
-  background: rgba(255,255,255,.08);
-  color: #fff;
-  font-size: 1.15rem;
-  line-height: 1;
-  cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
-  transition: background .15s, border-color .15s;
-}
-.fc-nav-btn:hover { background: rgba(255,255,255,.18); border-color: rgba(255,255,255,.5); }
-
-.fc-dots { display: flex; gap: 5px; align-items: center; }
+.fc-dots { display: flex; gap: 5px; }
 .fcdot {
   width: 7px; height: 7px;
   border-radius: 50%;
   border: none;
-  background: rgba(255,255,255,.3);
+  background: var(--line);
   cursor: pointer;
   padding: 0;
   transition: background .2s, width .2s;
 }
-.fcdot.is-active { background: #fff; width: 18px; border-radius: 4px; }
-
-/* ── 프로그레스 바 ── */
-.fc-progress {
-  position: absolute;
-  bottom: 0; left: 0;
-  height: 3px;
-  background: var(--cartel-blue, #2563eb);
-  width: 0%;
-  transition: width linear;
-  z-index: 10;
-}
+.fcdot.is-active { background: var(--cartel-blue); width: 20px; border-radius: 4px; }
 
 /* ── 반응형 ── */
-@media (max-width: 860px) {
-  .featured-section {
-    grid-template-areas: "track" "bar";
-    grid-template-columns: 1fr;
-    max-height: none;
-  }
-  .fc-thumbs { display: none; }
-  .fc-content { padding: 24px 20px; }
-  .fc-bar { padding: 10px 20px; }
+@media (max-width: 1100px) {
+  .fc-card { flex: 0 0 calc(25% - 11px); }   /* 4장 */
 }
-@media (max-width: 480px) {
-  .fc-track { min-height: 300px; }
-  .fc-title { font-size: 1.15rem; }
+@media (max-width: 800px) {
+  .fc-card { flex: 0 0 calc(33.33% - 10px); } /* 3장 */
 }
-
-/* index 페이지 전용 – style.css의 .filter-bar 오버라이드 없음 */
+@media (max-width: 560px) {
+  .fc-card { flex: 0 0 calc(50% - 7px); }     /* 2장 */
+}
+@media (max-width: 380px) {
+  .fc-card { flex: 0 0 85vw; }                /* 1장 */
+}
 </style>
 
 {% block scripts %}
 <script>
 (function () {
-  const track   = document.getElementById('featuredCarousel');
+  const track    = document.getElementById('featuredCarousel');
   if (!track) return;
 
-  const slides  = Array.from(track.querySelectorAll('.fc-slide'));
-  const dots    = Array.from(document.querySelectorAll('.fcdot'));
-  const thumbs  = Array.from(document.querySelectorAll('.fc-thumb'));
-  const prevBtn = document.getElementById('fcPrev');
-  const nextBtn = document.getElementById('fcNext');
-  const pauseBtn= document.getElementById('fcPause');
-  const total   = slides.length;
-  if (total <= 1) { if (slides[0]) slides[0].classList.add('is-active'); return; }
+  const cards    = Array.from(track.querySelectorAll('.fc-card'));
+  const dots     = Array.from(document.querySelectorAll('.fcdot'));
+  const prevBtn  = document.getElementById('fcPrev');
+  const nextBtn  = document.getElementById('fcNext');
+  const pauseBtn = document.getElementById('fcPause');
+  const progEl   = document.getElementById('fcProgress');
+  const viewport = track.parentElement;
+  const total    = cards.length;
+  if (total <= 1) return;
 
-  let cur     = 0;
-  let paused  = false;
-  let timer   = null;
-  let progTimer = null;
-  const INTERVAL = 5000; // 5초 자동 슬라이드
+  const INTERVAL = 4500;
+  let cur    = 0;
+  let paused = false;
+  let timer  = null;
 
-  /* ── 프로그레스 바 생성 ── */
-  const prog = document.createElement('div');
-  prog.className = 'fc-progress';
-  track.appendChild(prog);
+  /* ── 한 번에 보이는 카드 수 ── */
+  function visibleCount() {
+    const vw = viewport.offsetWidth;
+    if (vw >= 1100) return 5;
+    if (vw >= 800)  return 4;
+    if (vw >= 560)  return 3;
+    if (vw >= 380)  return 2;
+    return 1;
+  }
 
-  /* ── 슬라이드 전환 ── */
+  /* ── 최대 슬라이드 인덱스 ── */
+  function maxIdx() { return Math.max(0, total - visibleCount()); }
+
+  /* ── 트랙 이동 ── */
   function goTo(idx) {
-    slides[cur].classList.remove('is-active');
-    dots[cur]  && dots[cur].classList.remove('is-active');
-    thumbs[cur] && thumbs[cur].classList.remove('is-active');
+    cur = Math.max(0, Math.min(idx, maxIdx()));
 
-    cur = (idx + total) % total;
+    // 카드 한 장 너비 + gap
+    const cardW = cards[0].offsetWidth + 14;
+    track.style.transform = `translateX(-${cur * cardW}px)`;
 
-    slides[cur].classList.add('is-active');
-    dots[cur]  && dots[cur].classList.add('is-active');
-    thumbs[cur] && thumbs[cur].classList.add('is-active');
+    // 도트
+    dots.forEach((d, i) => d.classList.toggle('is-active', i === cur));
 
-    /* 썸네일 스크롤 */
-    if (thumbs[cur]) {
-      thumbs[cur].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }
-
-    /* 프로그레스 바 리셋 */
     startProgress();
   }
 
-  /* ── 프로그레스 애니메이션 ── */
+  /* ── 프로그레스 바 ── */
   function startProgress() {
-    clearTimeout(progTimer);
-    prog.style.transition = 'none';
-    prog.style.width = '0%';
+    if (!progEl) return;
+    progEl.style.transition = 'none';
+    progEl.style.width = '0%';
     requestAnimationFrame(() => requestAnimationFrame(() => {
-      prog.style.transition = `width ${INTERVAL}ms linear`;
-      prog.style.width = '100%';
+      progEl.style.transition = `width ${INTERVAL}ms linear`;
+      progEl.style.width = '100%';
     }));
+  }
+  function stopProgress() {
+    if (!progEl) return;
+    progEl.style.transition = 'none';
+    progEl.style.width = '0%';
   }
 
   /* ── 자동 슬라이드 ── */
   function startAuto() {
     clearInterval(timer);
     timer = setInterval(() => {
-      if (!paused) goTo(cur + 1);
+      if (!paused) goTo(cur >= maxIdx() ? 0 : cur + 1);
     }, INTERVAL);
     startProgress();
   }
+  function stopAuto() { clearInterval(timer); stopProgress(); }
+  function resetAuto() { if (!paused) { stopAuto(); startAuto(); } }
 
-  function stopAuto() {
-    clearInterval(timer);
-    clearTimeout(progTimer);
-    prog.style.transition = 'none';
-    prog.style.width = '0%';
-  }
-
-  /* ── 버튼 이벤트 ── */
+  /* ── 버튼 ── */
   prevBtn && prevBtn.addEventListener('click', () => { goTo(cur - 1); resetAuto(); });
   nextBtn && nextBtn.addEventListener('click', () => { goTo(cur + 1); resetAuto(); });
 
-  function resetAuto() { if (!paused) { stopAuto(); startAuto(); } }
-
-  /* ── 일시정지 버튼 ── */
-  if (pauseBtn) {
-    pauseBtn.addEventListener('click', () => {
-      paused = !paused;
-      pauseBtn.textContent = paused ? '▶' : '⏸';
-      pauseBtn.title = paused ? '재생' : '일시정지';
-      if (paused) stopAuto();
-      else        startAuto();
-    });
-  }
+  pauseBtn && pauseBtn.addEventListener('click', () => {
+    paused = !paused;
+    pauseBtn.textContent = paused ? '▶' : '⏸';
+    paused ? stopAuto() : startAuto();
+  });
 
   /* ── 도트 클릭 ── */
   dots.forEach((d, i) => d.addEventListener('click', () => { goTo(i); resetAuto(); }));
 
-  /* ── 썸네일 클릭 ── */
-  thumbs.forEach((t, i) => t.addEventListener('click', () => { goTo(i); resetAuto(); }));
-
-  /* ── 호버 시 자동슬라이드 일시정지 ── */
-  track.addEventListener('mouseenter', () => { paused = true; stopAuto(); });
-  track.addEventListener('mouseleave', () => {
-    if (paused) return; // 수동 일시정지 유지
-    startAuto();
-  });
+  /* ── 호버 일시정지 ── */
+  viewport.addEventListener('mouseenter', () => { stopAuto(); });
+  viewport.addEventListener('mouseleave', () => { if (!paused) startAuto(); });
 
   /* ── 터치 스와이프 ── */
-  let touchStartX = 0;
-  track.addEventListener('touchstart', e => { touchStartX = e.touches[0].clientX; }, { passive: true });
-  track.addEventListener('touchend', e => {
-    const dx = e.changedTouches[0].clientX - touchStartX;
+  let tx = 0;
+  track.addEventListener('touchstart', e => { tx = e.touches[0].clientX; }, { passive: true });
+  track.addEventListener('touchend',   e => {
+    const dx = e.changedTouches[0].clientX - tx;
     if (Math.abs(dx) > 40) { goTo(cur + (dx < 0 ? 1 : -1)); resetAuto(); }
   }, { passive: true });
 
-  /* ── 첫 슬라이드 활성화 + 자동 시작 ── */
-  slides[0].classList.add('is-active');
+  /* ── 리사이즈 시 재정렬 ── */
+  window.addEventListener('resize', () => goTo(cur));
+
+  /* ── 초기 실행 ── */
+  goTo(0);
   startAuto();
 })();
 </script>

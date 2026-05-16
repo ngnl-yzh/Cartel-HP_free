@@ -61,6 +61,9 @@
             {# 이름 + 기수 + 이메일 #}
             <div class="mem-info">
               <p class="mem-name">{{ m.activity_name }}</p>
+              {% if m.real_name %}
+                <p class="mem-realname">{{ m.real_name }}</p>
+              {% endif %}
               {% if gen != 0 %}
                 <span class="mem-gen">{{ gen }}기</span>
               {% endif %}
@@ -240,6 +243,11 @@
   font-weight: 700;
   color: var(--text);
   margin: 0 0 4px;
+}
+.mem-realname {
+  font-size: .78rem;
+  color: var(--muted);
+  margin: 1px 0 4px;
 }
 .mem-gen {
   font-size: .72rem;

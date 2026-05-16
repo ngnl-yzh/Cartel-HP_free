@@ -81,6 +81,22 @@ def init_db():
             _add_col(conn, inspector, "team_members", "student_id", "student_id VARCHAR(50) DEFAULT ''")
             _add_col(conn, inspector, "team_members", "status",     "status VARCHAR(20) DEFAULT 'approved'")
 
+            # 2025-05 — password_hash를 nullable로 변경 (팀원은 비밀번호 없음)
+            # PostgreSQL: ALTER COLUMN ... DROP NOT NULL
+            # SQLite: NOT NULL 변경 불가이므로 스킵 (새 DB는 nullable로 생성됨)
+            if not DATABASE_URL.startswith("sqlite"):
+                try:
+                    col_info = next(
+                        (c for c in inspector.get_columns("team_members") if c["name"] == "password_hash"),
+                        None,
+                    )
+                    if col_info and not col_info.get("nullable", True):
+                        conn.execute(_t(
+                            "ALTER TABLE team_members ALTER COLUMN password_hash DROP NOT NULL"
+                        ))
+                except Exception:
+                    pass  # 이미 nullable이거나 지원하지 않는 DB
+
         # team_competition_entries — 신규 테이블이므로 create_all로 생성됨
         # gallery_posts — 신규 테이블이므로 create_all로 생성됨
 

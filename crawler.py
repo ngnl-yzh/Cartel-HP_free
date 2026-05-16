@@ -158,31 +158,15 @@ def _is_current_year(deadline_str: Optional[str]) -> bool:
         return True
 
 
-# 공모전이 아닌 항목 제목에 포함될 수 있는 키워드 — 강의/할인/세미나 등 차단
-_NON_CONTEST_KEYWORDS = re.compile(
-    r'할인|리턴즈|강의|강좌|수업|클래스|세미나|워크숍|워크샵|리워드|쿠폰|프로모션'
-    r'|채용|구인|구직|취업|인턴|알바|아르바이트|모의면접|부트캠프|코딩캠프'
-    r'|사전예약|얼리버드|런칭|오픈베타|베타테스트|설문|리서치|서베이'
-    r'|데이스쿨|패스트캠퍼스|인프런|유데미|코드스테이츠'
-)
-
-# 공모전이라면 반드시 포함돼야 할 키워드 (하나라도 있으면 통과)
-_CONTEST_KEYWORDS = re.compile(
-    r'공모|콘테스트|어워드|어워즈|경진|해커톤|공모전|대회|챌린지|경쟁|선발|선정'
-    r'|아이디어|창업|스타트업|발명|디자인|사진|영상|글쓰기|에세이|논문|작품'
-    r'|수상|시상|상금|장학|장학금|우수상|대상|최우수|입선|특선'
-)
+# ── 완전 차단 키워드: 할인/쿠폰/광고성 이벤트만 차단
+_BLOCK_KEYWORDS = re.compile(r'할인|리턴즈|쿠폰|프로모션|특가|사전예약|얼리버드|세일|이벤트할인|무료쿠폰')
 
 
 def _is_contest_title(title: str) -> bool:
-    """공모전성 제목인지 판단 — 비공모전 항목(할인/강의/채용 등) 필터링"""
+    """완전 차단 여부 — 할인·쿠폰·광고성 이벤트만 False, 나머지는 True."""
     if not title:
         return False
-    # 명백한 비공모전 키워드가 있으면 차단
-    if _NON_CONTEST_KEYWORDS.search(title):
-        return False
-    # 공모전 키워드가 하나라도 있으면 통과 (없어도 일단 통과 — 보수적 필터)
-    return True
+    return not bool(_BLOCK_KEYWORDS.search(title))
 
 
 def _item(source: str, source_label: str, title: str, link: str,
@@ -800,6 +784,273 @@ async def crawl_all(sources: list = None) -> dict:
                 counts[label] = counts.get(label, 0) + 1
 
     # 중복 제거: URL 우선, URL 없으면 (사이트+제목)
+    seen  = set()
+    dedup = []
+    for item in items:
+        link = item.get("link", "").strip().rstrip("/")
+        key  = link if link else (item.get("source", ""), item.get("title", ""))
+        if key not in seen:
+            seen.add(key)
+            dedup.append(item)
+
+    return {"items": dedup, "errors": errors, "counts": counts}
+
+
+# ════════════════════════════════════════════════════════════════════════════
+#  취업 크롤러 (링커리어 인턴, 사람인 인턴)
+# ════════════════════════════════════════════════════════════════════════════
+
+def _job_item(source: str, source_label: str, title: str, company: str,
+              link: str, deadline: Optional[str] = None,
+              job_type: str = "인턴", location: str = "") -> dict:
+    return {
+        "source":       source,
+        "source_label": source_label,
+        "title":        title,
+        "company":      company,
+        "link":         link,
+        "deadline":     deadline,
+        "job_type":     job_type,
+        "location":     location,
+    }
+
+
+async def crawl_linkareer(client: httpx.AsyncClient) -> list:
+    """링커리어(linkareer.com) — 인턴/대외활동/서포터즈 전문"""
+    results = []
+    try:
+        # ① API 시도
+        api_urls = [
+            "https://linkareer.com/api/v1/activities?types=INTERN&orderBy=LATEST&first=40",
+            "https://linkareer.com/api/activity/list?type=intern&page=1&pageSize=40",
+        ]
+        for api_url in api_urls:
+            try:
+                ar = await client.get(api_url, headers={**HEADERS, "Accept": "application/json"}, timeout=10)
+                if ar.status_code == 200:
+                    import json as _json
+                    data = ar.json()
+                    comps = (data.get("data") or data.get("results") or
+                             data.get("activities") or data.get("list") or [])
+                    if isinstance(comps, dict):
+                        comps = comps.get("edges") or comps.get("results") or []
+                    if comps and isinstance(comps[0], dict) and "node" in comps[0]:
+                        comps = [c["node"] for c in comps]
+                    for comp in (comps if isinstance(comps, list) else []):
+                        title = (comp.get("title") or comp.get("name") or "").strip()
+                        if not title:
+                            continue
+                        comp_id = comp.get("id") or comp.get("slug") or ""
+                        link = f"https://linkareer.com/activity/{comp_id}" if comp_id else "https://linkareer.com/list/intern"
+                        deadline_raw = comp.get("dueDate") or comp.get("deadline") or comp.get("endDate") or ""
+                        deadline = _parse_date(str(deadline_raw)) if deadline_raw else None
+                        company = (comp.get("organization") or comp.get("organizer") or comp.get("host") or "").strip()
+                        activity_type = (comp.get("type") or "").upper()
+                        if "SUPPORTER" in activity_type:
+                            job_type = "서포터즈"
+                        elif "ACTIVITY" in activity_type:
+                            job_type = "대외활동"
+                        else:
+                            job_type = "인턴"
+                        if title:
+                            results.append(_job_item("linkareer", "링커리어", title, company, link, deadline, job_type))
+                    if results:
+                        return results
+            except Exception:
+                continue
+
+        # ② Next.js __NEXT_DATA__ 파싱
+        for page_path in ["/list/intern", "/list/activity"]:
+            try:
+                r = await client.get(f"https://linkareer.com{page_path}", headers=HEADERS, timeout=20)
+                _check_response(r, "링커리어")
+                soup = _soup(r.text)
+                import json as _json
+                nxt = soup.find("script", {"id": "__NEXT_DATA__"})
+                if nxt and nxt.string:
+                    page_data = _json.loads(nxt.string)
+                    props = page_data.get("props", {}).get("pageProps", {})
+                    comps = []
+                    for key in ("activities", "list", "data", "items"):
+                        candidate = props.get(key)
+                        if isinstance(candidate, list) and candidate:
+                            comps = candidate
+                            break
+                        if isinstance(candidate, dict):
+                            inner = candidate.get("edges") or candidate.get("results") or candidate.get("data") or []
+                            if inner:
+                                comps = inner
+                                break
+                    if comps and isinstance(comps[0], dict) and "node" in comps[0]:
+                        comps = [c["node"] for c in comps]
+                    for comp in comps:
+                        title = (comp.get("title") or comp.get("name") or "").strip()
+                        if not title:
+                            continue
+                        comp_id = comp.get("id") or comp.get("slug") or ""
+                        link = f"https://linkareer.com/activity/{comp_id}" if comp_id else f"https://linkareer.com{page_path}"
+                        deadline_raw = comp.get("dueDate") or comp.get("deadline") or comp.get("endDate") or ""
+                        deadline = _parse_date(str(deadline_raw)) if deadline_raw else None
+                        company = (comp.get("organization") or comp.get("organizer") or "").strip()
+                        if "/activity" in page_path:
+                            job_type = "대외활동"
+                        else:
+                            job_type = "인턴"
+                        if title:
+                            results.append(_job_item("linkareer", "링커리어", title, company, link, deadline, job_type))
+                    if results:
+                        return results
+            except Exception:
+                continue
+
+        # ③ HTML fallback
+        for page_path, job_type in [("/list/intern", "인턴"), ("/list/activity", "대외활동")]:
+            try:
+                r = await client.get(f"https://linkareer.com{page_path}", headers=HEADERS, timeout=20)
+                if r.status_code >= 400:
+                    continue
+                soup = _soup(r.text)
+                for card in soup.select("a[href*='/activity/']"):
+                    href = card.get("href", "")
+                    if not href.startswith("http"):
+                        href = "https://linkareer.com" + href
+                    tit_el = card.select_one("h2, h3, [class*='title'], [class*='name']") or card
+                    title = _norm(tit_el.get_text())
+                    if len(title) < 4 or "링커리어" in title:
+                        continue
+                    org_el = card.select_one("[class*='org'], [class*='company'], [class*='organization']")
+                    company = _norm(org_el.get_text()) if org_el else ""
+                    results.append(_job_item("linkareer", "링커리어", title, company, href, None, job_type))
+            except Exception:
+                continue
+
+        # 중복 제거
+        seen: set = set()
+        dedup = []
+        for it in results:
+            k = it.get("link", it.get("title", ""))
+            if k not in seen:
+                seen.add(k)
+                dedup.append(it)
+        results = dedup
+
+        if not results:
+            results.append({"_error": "링커리어: 취업 공고 파싱 실패 (JavaScript 렌더링 필요 가능성)"})
+    except Exception as e:
+        results.append({"_error": f"링커리어 취업 오류: {type(e).__name__}: {e}"})
+    return results
+
+
+async def crawl_saramin_intern(client: httpx.AsyncClient) -> list:
+    """사람인(saramin.co.kr) — 인턴 공고"""
+    results = []
+    try:
+        url = (
+            "https://www.saramin.co.kr/zf_user/jobs/list/job-category"
+            "?cat_kewd=2232&loc_mcd=101000&education=0"
+            "&panel_type=&search_optional_item=n&search_done=y"
+            "&panel_count=y&preview=y"
+        )
+        r = await client.get(url, headers=HEADERS, timeout=25)
+        _check_response(r, "사람인")
+        soup = _soup(r.text)
+
+        _SARAMIN_BASE = "https://www.saramin.co.kr"
+        items = soup.select(".list_recruit .item_recruit")
+        if not items:
+            items = soup.select(".list-jobs .list-item")  # fallback 선택자
+
+        for item in items:
+            try:
+                # 제목
+                tit_el = item.select_one(".job_tit a") or item.select_one("a.job_tit") or item.select_one("h2 a")
+                if not tit_el:
+                    continue
+                title = _norm(tit_el.get_text())
+                if not title:
+                    continue
+                href = tit_el.get("href", "")
+                if href and not href.startswith("http"):
+                    href = _SARAMIN_BASE + href
+
+                # 회사명
+                corp_el = item.select_one(".corp_name a") or item.select_one(".company_name a") or item.select_one(".company a")
+                company = _norm(corp_el.get_text()) if corp_el else ""
+
+                # 마감일
+                date_el = item.select_one(".job_date .date") or item.select_one(".deadline") or item.select_one(".date")
+                deadline = _parse_date(date_el.get_text()) if date_el else None
+
+                # 근무지
+                loc_el = item.select_one(".work_place") or item.select_one(".location")
+                location = _norm(loc_el.get_text()) if loc_el else ""
+
+                if title and href:
+                    results.append(_job_item("saramin", "사람인", title, company, href, deadline, "인턴", location))
+            except Exception:
+                continue
+
+        if not results:
+            results.append({"_error": "사람인: 인턴 공고 파싱 실패 (HTML 구조 변경 가능성)"})
+    except Exception as e:
+        results.append({"_error": f"사람인 오류: {type(e).__name__}: {e}"})
+    return results
+
+
+# ── 취업 소스 목록 ──────────────────────────────────────────────────────────────
+JOB_SOURCES: dict = {
+    "linkareer": ("링커리어", crawl_linkareer),
+    "saramin":   ("사람인",   crawl_saramin_intern),
+}
+
+
+async def run_job_crawlers(sources: list = None) -> dict:
+    """
+    지정된 취업 소스(기본: 전체)를 동시에 크롤링하고 결과를 반환합니다.
+    반환 형식:
+    {
+        "items": [{ source, source_label, title, company, link, deadline, job_type, location }, ...],
+        "errors": ["사이트A 오류: ...", ...],
+        "counts": { "사이트": n, ... },
+    }
+    """
+    valid_sources = [s for s in (sources or list(JOB_SOURCES.keys())) if s in JOB_SOURCES]
+    if not valid_sources:
+        return {"items": [], "errors": ["선택된 취업 크롤링 소스가 없습니다."], "counts": {}}
+
+    try:
+        async with httpx.AsyncClient(
+            timeout=30,
+            follow_redirects=True,
+            headers=HEADERS,
+            verify=True,
+        ) as client:
+            raw_results = await asyncio.gather(
+                *[JOB_SOURCES[s][1](client) for s in valid_sources],
+                return_exceptions=True,
+            )
+    except Exception as e:
+        return {"items": [], "errors": [f"취업 크롤러 초기화 실패: {type(e).__name__}: {e}"], "counts": {}}
+
+    items  = []
+    errors = []
+    counts = {}
+
+    for site_list in raw_results:
+        if isinstance(site_list, Exception):
+            errors.append(f"{type(site_list).__name__}: {site_list}")
+            continue
+        if not isinstance(site_list, list):
+            continue
+        for item in site_list:
+            if "_error" in item:
+                errors.append(item["_error"])
+            else:
+                items.append(item)
+                label = item.get("source_label", item.get("source", "?"))
+                counts[label] = counts.get(label, 0) + 1
+
+    # 중복 제거
     seen  = set()
     dedup = []
     for item in items:

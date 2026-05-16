@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block title %}취업 · CARTEL{% endblock %}
+
+{% block content %}
+<main class="comp-page">
+  <div class="container">
+
+    <div class="page-heading">
+      <div>
+        <p class="eyebrow">Career</p>
+        <h1>취업 공고</h1>
+      </div>
+    </div>
+
+    {# ── 검색 + 필터 바 ── #}
+    <form method="get" action="/jobs" class="filter-bar" style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:24px;align-items:center">
+      <input type="search" name="q" value="{{ query }}" placeholder="공고명·회사 검색…"
+             class="c-search-input" style="min-width:180px;flex:1">
+
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <a href="/jobs?q={{ query }}&job_type=all&sort={{ current_sort }}"
+           class="tag-btn {% if current_job_type == 'all' %}tag-btn-active{% endif %}">전체</a>
+        {% for jt in job_types %}
+        <a href="/jobs?q={{ query }}&job_type={{ jt }}&sort={{ current_sort }}"
+           class="tag-btn {% if current_job_type == jt %}tag-btn-active{% endif %}">{{ jt }}</a>
+        {% endfor %}
+      </div>
+
+      <select name="sort" onchange="this.form.submit()" class="form-select" style="width:auto">
+        <option value="deadline" {% if current_sort == 'deadline' %}selected{% endif %}>마감일순</option>
+        <option value="newest"   {% if current_sort == 'newest'   %}selected{% endif %}>최신순</option>
+        <option value="views"    {% if current_sort == 'views'    %}selected{% endif %}>조회순</option>
+      </select>
+
+      <input type="hidden" name="job_type" value="{{ current_job_type }}">
+      <button type="submit" class="btn btn-primary btn-sm">검색</button>
+    </form>
+
+    {# ── 공고 카드 그리드 ── #}
+    {% if postings %}
+    <div class="comp-grid">
+      {% for p in postings %}
+      {% set is_closed = p.deadline and p.deadline < today %}
+      <a href="/job/{{ p.id }}" class="comp-card {% if is_closed %}comp-card-closed{% endif %}" target="_blank" rel="noopener">
+        <div class="comp-card-body">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+            <span class="tag tag-sm" style="
+              background:{% if p.job_type == '인턴' %}rgba(99,102,241,.15)
+              {% elif p.job_type == '채용' %}rgba(34,197,94,.15)
+              {% elif p.job_type == '서포터즈' %}rgba(249,115,22,.15)
+              {% else %}rgba(168,85,247,.15){% endif %};
+              color:{% if p.job_type == '인턴' %}#6366f1
+              {% elif p.job_type == '채용' %}#16a34a
+              {% elif p.job_type == '서포터즈' %}#ea580c
+              {% else %}#9333ea{% endif %}">{{ p.job_type }}</span>
+            <span class="tag tag-sm" style="background:rgba(255,255,255,.07);color:var(--c-muted)">{{ p.source_label }}</span>
+          </div>
+
+          {% if p.company %}
+          <p style="font-size:.8rem;color:var(--c-muted);margin-bottom:4px">{{ p.company }}</p>
+          {% endif %}
+
+          <h3 class="comp-card-title" style="font-size:.95rem;line-height:1.4">{{ p.title }}</h3>
+
+          {% if p.location %}
+          <p style="font-size:.78rem;color:var(--c-muted);margin-top:4px">📍 {{ p.location }}</p>
+          {% endif %}
+        </div>
+
+        <div class="comp-card-footer" style="display:flex;justify-content:space-between;align-items:center">
+          {% if p.deadline %}
+            {% if is_closed %}
+              <span class="badge badge-closed">마감</span>
+            {% else %}
+              {% set days = (p.deadline - today).days %}
+              {% if days <= 7 %}
+                <span class="badge badge-urgent">D-{{ days }}</span>
+              {% else %}
+                <span class="badge badge-open">{{ p.deadline.strftime('%m/%d') }}</span>
+              {% endif %}
+            {% endif %}
+          {% else %}
+            <span class="badge" style="background:rgba(255,255,255,.07)">상시</span>
+          {% endif %}
+          <span style="font-size:.75rem;color:var(--c-muted)">👁 {{ p.view_count }}</span>
+        </div>
+      </a>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">
+      <p>조건에 맞는 공고가 없습니다.</p>
+      {% if is_admin is defined and is_admin %}
+      <a href="/admin/jobs/crawl" class="btn btn-primary" style="margin-top:12px">크롤링 시작</a>
+      {% endif %}
+    </div>
+    {% endif %}
+
+  </div>
+</main>
+{% endblock %}

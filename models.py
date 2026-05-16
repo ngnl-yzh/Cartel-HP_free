@@ -345,6 +345,23 @@ class ExternalAchievement(Base):
     created_at     = Column(DateTime, default=datetime.now)
 
 
+class JobPosting(Base):
+    """취업/인턴/대외활동 공고"""
+    __tablename__ = "job_postings"
+
+    id           = Column(Integer, primary_key=True, index=True)
+    title        = Column(String(500), default="")
+    company      = Column(String(200), default="")
+    job_type     = Column(String(50), default="")   # 인턴/채용/서포터즈/대외활동
+    location     = Column(String(200), default="")
+    deadline     = Column(Date, nullable=True)
+    link         = Column(String(1000), default="")
+    source       = Column(String(50), default="")
+    source_label = Column(String(100), default="")
+    view_count   = Column(Integer, default=0)
+    created_at   = Column(DateTime, default=datetime.now)
+
+
 class CrawlSession(Base):
     """크롤링 세션 이력 (날짜별 영속 보관)"""
     __tablename__ = "crawl_sessions"

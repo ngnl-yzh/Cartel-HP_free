@@ -27,7 +27,7 @@ BASE_DIR = Path(__file__).resolve().parent
 load_dotenv(BASE_DIR / ".env")
 
 from ai_parser import parse_document_file, parse_image_file, parse_text
-from crawler import CRAWL_SOURCES, crawl_all as _do_crawl_all
+from crawler import CRAWL_SOURCES, JOB_SOURCES, crawl_all as _do_crawl_all, run_job_crawlers as _do_crawl_jobs
 from auth import create_token, verify_token
 from database import SessionLocal, get_db, init_db
 from member_auth import create_member_token, hash_password, verify_member_token, verify_password, verify_team_password
@@ -36,7 +36,7 @@ from models import (
     AppSetting,
     ChatMessage, ChatRoom, ChatRoomMember,
     Comment, CommentLike,
-    Competition, CompetitionScrap, CrawlSession, InviteCode, InviteCodeUseLog, Member,
+    Competition, CompetitionScrap, CrawlSession, InviteCode, InviteCodeUseLog, JobPosting, Member,
     DirectMessage, ExternalAchievement, Follow, Notification,
     Post, PostLike,
     GalleryPost, Team, TeamCompetitionEntry, TeamMember, TeamResult,
@@ -4500,3 +4500,170 @@ async def admin_settings_tags(
         db.add(AppSetting(key="tags", value=json.dumps(new_tags, ensure_ascii=False)))
     db.commit()
     return RedirectResponse(url="/admin/settings?saved=1", status_code=303)
+
+
+# ════════════════════════════════════════════════════════════════════════════
+#  취업 게시판
+# ════════════════════════════════════════════════════════════════════════════
+
+JOB_TYPES = ["인턴", "채용", "서포터즈", "대외활동"]
+
+
+@app.get("/jobs", response_class=HTMLResponse)
+async def jobs_page(
+    request: Request,
+    q: str = Query(""),
+    job_type: str = Query("all"),
+    sort: str = Query("deadline"),
+    db: Session = Depends(get_db),
+):
+    today = date.today()
+    query = db.query(JobPosting)
+
+    if q:
+        q_like = f"%{q}%"
+        query = query.filter(
+            or_(JobPosting.title.ilike(q_like), JobPosting.company.ilike(q_like))
+        )
+    if job_type != "all" and job_type in JOB_TYPES:
+        query = query.filter(JobPosting.job_type == job_type)
+
+    if sort == "views":
+        query = query.order_by(JobPosting.view_count.desc())
+    elif sort == "newest":
+        query = query.order_by(JobPosting.created_at.desc())
+    else:
+        # 마감일순: 마감 안 된 것 우선(오름차순), 마감된 것 나중(내림차순)
+        query = query.order_by(
+            case(
+                (JobPosting.deadline == None, 1),  # noqa: E711
+                else_=case(
+                    (JobPosting.deadline >= today, 0),
+                    else_=2,
+                )
+            ),
+            JobPosting.deadline.asc().nulls_last(),
+            JobPosting.created_at.desc(),
+        )
+
+    postings = query.all()
+    return _render(request, "jobs.html", _ctx(request, db,
+        postings=postings,
+        query=q,
+        current_job_type=job_type,
+        current_sort=sort,
+        job_types=JOB_TYPES,
+        today=today,
+    ))
+
+
+@app.get("/job/{job_id}")
+async def job_detail(job_id: int, db: Session = Depends(get_db)):
+    posting = db.query(JobPosting).filter(JobPosting.id == job_id).first()
+    if not posting:
+        raise HTTPException(status_code=404, detail="공고를 찾을 수 없습니다.")
+    posting.view_count = (posting.view_count or 0) + 1
+    db.commit()
+    return RedirectResponse(url=posting.link, status_code=302)
+
+
+# ── 관리자 취업 크롤링 ────────────────────────────────────────────────────────
+
+# 세션 내 임시 크롤 결과 저장 (메모리)
+_latest_job_crawl_items: list = []
+
+
+@app.get("/admin/jobs/crawl", response_class=HTMLResponse)
+async def admin_jobs_crawl_page(request: Request, db: Session = Depends(get_db)):
+    if r := _admin_redirect(request):
+        return r
+    return _render(request, "admin/jobs_crawl.html", _ctx(request, db,
+        job_sources=JOB_SOURCES,
+        crawl_items=_latest_job_crawl_items,
+        crawl_errors=[],
+        crawl_counts={},
+    ))
+
+
+@app.post("/admin/jobs/crawl/run")
+async def admin_jobs_crawl_run(
+    request: Request,
+    sources: List[str] = Form(default=[]),
+    db: Session = Depends(get_db),
+):
+    global _latest_job_crawl_items
+    if r := _admin_redirect(request):
+        return r
+    result = await _do_crawl_jobs(sources or list(JOB_SOURCES.keys()))
+    _latest_job_crawl_items = result.get("items", [])
+    return _render(request, "admin/jobs_crawl.html", _ctx(request, db,
+        job_sources=JOB_SOURCES,
+        crawl_items=_latest_job_crawl_items,
+        crawl_errors=result.get("errors", []),
+        crawl_counts=result.get("counts", {}),
+    ))
+
+
+@app.post("/admin/jobs/add-bulk")
+async def admin_jobs_add_bulk(
+    request: Request,
+    indices: List[int] = Form(default=[]),
+    db: Session = Depends(get_db),
+):
+    if r := _admin_redirect(request):
+        return r
+    added = 0
+    errors = 0
+    for idx in indices:
+        if idx < 0 or idx >= len(_latest_job_crawl_items):
+            errors += 1
+            continue
+        item = _latest_job_crawl_items[idx]
+        try:
+            deadline_val = None
+            if item.get("deadline"):
+                try:
+                    deadline_val = date.fromisoformat(item["deadline"])
+                except (ValueError, TypeError):
+                    pass
+            posting = JobPosting(
+                title=item.get("title", "")[:500],
+                company=item.get("company", "")[:200],
+                job_type=item.get("job_type", "인턴")[:50],
+                location=item.get("location", "")[:200],
+                deadline=deadline_val,
+                link=item.get("link", "")[:1000],
+                source=item.get("source", "")[:50],
+                source_label=item.get("source_label", "")[:100],
+            )
+            db.add(posting)
+            added += 1
+        except Exception:
+            errors += 1
+    db.commit()
+    return RedirectResponse(url=f"/admin/jobs/crawl?bulk_added={added}&bulk_errors={errors}", status_code=303)
+
+
+@app.post("/admin/jobs/delete/{job_id}")
+async def admin_jobs_delete(request: Request, job_id: int, db: Session = Depends(get_db)):
+    if r := _admin_redirect(request):
+        return r
+    posting = db.query(JobPosting).filter(JobPosting.id == job_id).first()
+    if posting:
+        db.delete(posting)
+        db.commit()
+    return RedirectResponse(url="/jobs", status_code=303)
+
+
+@app.post("/admin/jobs/delete-bulk")
+async def admin_jobs_delete_bulk(
+    request: Request,
+    job_ids: List[int] = Form(default=[]),
+    db: Session = Depends(get_db),
+):
+    if r := _admin_redirect(request):
+        return r
+    if job_ids:
+        db.query(JobPosting).filter(JobPosting.id.in_(job_ids)).delete(synchronize_session=False)
+        db.commit()
+    return RedirectResponse(url="/jobs", status_code=303)

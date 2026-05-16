@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+{% block title %}취업 크롤링 · 관리자{% endblock %}
+
+{% block content %}
+<main class="admin-page">
+  <div class="container">
+
+    {% if request.query_params.get('bulk_added') or request.query_params.get('bulk_errors') %}
+    <div style="margin-bottom:16px;padding:12px 18px;border-radius:12px;
+      background:{% if request.query_params.get('bulk_errors','0') != '0' %}rgba(234,179,8,.1){% else %}rgba(34,197,94,.1){% endif %};
+      border:1.5px solid {% if request.query_params.get('bulk_errors','0') != '0' %}rgba(234,179,8,.4){% else %}rgba(34,197,94,.35){% endif %};
+      display:flex;align-items:center;gap:10px">
+      <span style="font-size:1.2rem">{% if request.query_params.get('bulk_errors','0') != '0' %}⚠️{% else %}✅{% endif %}</span>
+      <div>
+        <strong>일괄 추가 완료</strong>
+        {% if request.query_params.get('bulk_added') %}
+          <span style="color:#16a34a"> · {{ request.query_params.get('bulk_added') }}개 등록됨</span>
+        {% endif %}
+        {% if request.query_params.get('bulk_errors','0') != '0' %}
+          <span style="color:#b45309"> · {{ request.query_params.get('bulk_errors') }}개 실패</span>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="page-heading">
+      <div>
+        <p class="eyebrow">Admin · Career</p>
+        <h1>취업 크롤링</h1>
+      </div>
+      <div style="display:flex;gap:8px">
+        <a href="/jobs" class="btn btn-outline">💼 취업 목록</a>
+        <a href="/admin" class="btn btn-outline">← 관리자 패널</a>
+      </div>
+    </div>
+
+    {# ── 크롤링 시작 폼 ── #}
+    <section class="card" style="padding:24px;margin-bottom:28px">
+      <h2 style="font-size:1rem;font-weight:600;margin-bottom:14px">크롤링 소스 선택</h2>
+      <form method="post" action="/admin/jobs/crawl/run">
+        <div style="display:flex;flex-wrap:wrap;gap:12px;margin-bottom:18px">
+          {% for src_id, src_info in job_sources.items() %}
+          <label style="display:flex;align-items:center;gap:7px;cursor:pointer;
+                        padding:8px 14px;border-radius:8px;border:1.5px solid var(--c-border);
+                        background:var(--c-surface);transition:border-color .2s">
+            <input type="checkbox" name="sources" value="{{ src_id }}" checked>
+            <span style="font-weight:500">{{ src_info[0] }}</span>
+          </label>
+          {% endfor %}
+        </div>
+        <button type="submit" class="btn btn-primary">🔍 크롤링 시작</button>
+      </form>
+    </section>
+
+    {# ── 오류 메시지 ── #}
+    {% if crawl_errors %}
+    <div style="margin-bottom:18px;padding:12px 18px;border-radius:10px;
+                background:rgba(239,68,68,.08);border:1.5px solid rgba(239,68,68,.25)">
+      <strong style="color:#ef4444">오류 발생</strong>
+      <ul style="margin:6px 0 0;padding-left:18px;font-size:.85rem;color:var(--c-muted)">
+        {% for err in crawl_errors %}
+        <li>{{ err }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
+    {# ── 수집 통계 ── #}
+    {% if crawl_counts %}
+    <div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:20px">
+      {% for label, cnt in crawl_counts.items() %}
+      <span style="padding:6px 14px;border-radius:20px;font-size:.83rem;font-weight:600;
+                   background:rgba(99,102,241,.12);color:#6366f1">{{ label }} {{ cnt }}개</span>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    {# ── 결과 테이블 ── #}
+    {% if crawl_items %}
+    <form method="post" action="/admin/jobs/add-bulk" id="bulkForm">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+          <input type="checkbox" id="checkAll" onchange="toggleAll(this.checked)">
+          <span style="font-size:.85rem">전체 선택</span>
+        </label>
+        <span style="font-size:.83rem;color:var(--c-muted)">총 {{ crawl_items | length }}개</span>
+        <button type="submit" class="btn btn-primary btn-sm" style="margin-left:auto">선택 항목 일괄 추가</button>
+      </div>
+
+      <section class="table-wrap">
+        <table class="admin-table">
+          <thead>
+            <tr>
+              <th style="width:36px;text-align:center"></th>
+              <th style="width:80px">출처</th>
+              <th>제목</th>
+              <th style="width:120px">회사</th>
+              <th style="width:80px">유형</th>
+              <th style="width:90px">마감일</th>
+              <th style="width:60px"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in crawl_items %}
+            <tr>
+              <td style="text-align:center">
+                <input type="checkbox" name="indices" value="{{ loop.index0 }}" class="row-check">
+              </td>
+              <td>
+                <span class="tag tag-sm" style="background:rgba(255,255,255,.07)">{{ item.source_label }}</span>
+              </td>
+              <td>
+                <a href="{{ item.link }}" target="_blank" rel="noopener"
+                   style="color:var(--c-text);text-decoration:none;font-size:.88rem">
+                  {{ item.title[:80] }}{% if item.title|length > 80 %}…{% endif %}
+                </a>
+              </td>
+              <td style="font-size:.82rem;color:var(--c-muted)">{{ item.company or '-' }}</td>
+              <td>
+                <span class="tag tag-sm" style="
+                  background:{% if item.job_type == '인턴' %}rgba(99,102,241,.15)
+                  {% elif item.job_type == '채용' %}rgba(34,197,94,.15)
+                  {% elif item.job_type == '서포터즈' %}rgba(249,115,22,.15)
+                  {% else %}rgba(168,85,247,.15){% endif %};
+                  color:{% if item.job_type == '인턴' %}#6366f1
+                  {% elif item.job_type == '채용' %}#16a34a
+                  {% elif item.job_type == '서포터즈' %}#ea580c
+                  {% else %}#9333ea{% endif %}">{{ item.job_type or '-' }}</span>
+              </td>
+              <td style="font-size:.82rem;color:var(--c-muted)">{{ item.deadline or '상시' }}</td>
+              <td>
+                <button type="submit" name="indices" value="{{ loop.index0 }}"
+                        form="singleForms_{{ loop.index0 }}"
+                        class="btn btn-outline btn-sm">추가</button>
+              </td>
+            </tr>
+            {# 단건 추가용 숨겨진 폼 #}
+            <form id="singleForms_{{ loop.index0 }}" method="post" action="/admin/jobs/add-bulk" style="display:none">
+              <input type="hidden" name="indices" value="{{ loop.index0 }}">
+            </form>
+            {% endfor %}
+          </tbody>
+        </table>
+      </section>
+
+      <div style="margin-top:14px;display:flex;justify-content:flex-end">
+        <button type="submit" class="btn btn-primary">선택 항목 일괄 추가</button>
+      </div>
+    </form>
+    {% elif not crawl_errors %}
+    <div class="empty-state">
+      <p>위에서 소스를 선택하고 크롤링을 시작하세요.</p>
+    </div>
+    {% endif %}
+
+  </div>
+</main>
+
+<script>
+function toggleAll(checked) {
+  document.querySelectorAll('.row-check').forEach(cb => { cb.checked = checked; });
+}
+</script>
+{% endblock %}

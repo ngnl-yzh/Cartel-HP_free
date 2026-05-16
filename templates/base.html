@@ -263,19 +263,31 @@
     const menu = document.getElementById('cDropdownMenu');
     if (!btn || !menu) return;
 
-    function toggleDropdown(e) {
-      e.stopPropagation();
-      const open = menu.classList.toggle('is-open');
-      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    function positionMenu() {
+      const rect = btn.getBoundingClientRect();
+      menu.style.top  = (rect.bottom + 6) + 'px';
+      menu.style.right = (window.innerWidth - rect.right) + 'px';
+    }
+    function openDropdown() {
+      positionMenu();
+      menu.classList.add('is-open');
+      btn.setAttribute('aria-expanded', 'true');
     }
     function closeDropdown() {
       menu.classList.remove('is-open');
       btn.setAttribute('aria-expanded', 'false');
     }
+    function toggleDropdown(e) {
+      e.stopPropagation();
+      menu.classList.contains('is-open') ? closeDropdown() : openDropdown();
+    }
     btn.addEventListener('click', toggleDropdown);
     document.addEventListener('click', closeDropdown);
     document.addEventListener('keydown', function (e) {
       if (e.key === 'Escape') closeDropdown();
+    });
+    window.addEventListener('resize', function () {
+      if (menu.classList.contains('is-open')) positionMenu();
     });
   })();
   </script>

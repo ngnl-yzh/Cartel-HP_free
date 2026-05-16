@@ -49,10 +49,26 @@
     </div>
 
     {% if competitions %}
+
+    {# ── 일괄 삭제 액션 바 ── #}
+    <div class="bulk-del-bar" id="bulkDelBar" style="display:none">
+      <span class="bulk-del-count" id="bulkDelCount">0개 선택됨</span>
+      <div style="display:flex;gap:6px">
+        <button type="button" class="btn btn-outline btn-sm"
+                onclick="clearDelSelection()">선택 해제</button>
+        <button type="button" class="btn btn-danger btn-sm"
+                onclick="submitBulkDelete()">선택 항목 삭제</button>
+      </div>
+    </div>
+
     <section class="table-wrap">
-      <table class="admin-table">
+      <table class="admin-table" id="compTable">
         <thead>
           <tr>
+            <th style="width:32px;text-align:center">
+              <input type="checkbox" id="checkAllComp" title="전체 선택"
+                     onchange="toggleAllComp(this.checked)">
+            </th>
             <th>공모전명</th>
             <th>주최기관</th>
             <th>마감일</th>
@@ -65,6 +81,10 @@
         <tbody>
           {% for comp in competitions %}
           <tr>
+            <td style="text-align:center">
+              <input type="checkbox" class="comp-chk" value="{{ comp.id }}"
+                     onchange="updateDelBar()">
+            </td>
             <td>
               <a href="/competition/{{ comp.id }}" class="table-title">{{ comp.title }}</a>
             </td>
@@ -129,5 +149,59 @@
   border-color: #f59e0b;
   background: rgba(245,158,11,0.08);
 }
+.bulk-del-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  margin-bottom: 8px;
+  background: rgba(239,68,68,.07);
+  border: 1.5px solid rgba(239,68,68,.25);
+  border-radius: 10px;
+  flex-wrap: wrap;
+}
+.bulk-del-count { font-size: .85rem; font-weight: 700; color: #dc2626; }
 </style>
+
+<script>
+function updateDelBar() {
+  var checked = document.querySelectorAll('.comp-chk:checked');
+  var bar     = document.getElementById('bulkDelBar');
+  var count   = document.getElementById('bulkDelCount');
+  bar.style.display  = checked.length > 0 ? 'flex' : 'none';
+  count.textContent  = checked.length + '개 선택됨';
+  var all    = document.querySelectorAll('.comp-chk');
+  var allChk = document.getElementById('checkAllComp');
+  if (allChk) {
+    allChk.indeterminate = checked.length > 0 && checked.length < all.length;
+    allChk.checked       = all.length > 0 && checked.length === all.length;
+  }
+}
+function toggleAllComp(checked) {
+  document.querySelectorAll('.comp-chk').forEach(function(c){ c.checked = checked; });
+  updateDelBar();
+}
+function clearDelSelection() {
+  document.querySelectorAll('.comp-chk').forEach(function(c){ c.checked = false; });
+  var allChk = document.getElementById('checkAllComp');
+  if (allChk) { allChk.checked = false; allChk.indeterminate = false; }
+  updateDelBar();
+}
+function submitBulkDelete() {
+  var ids = Array.from(document.querySelectorAll('.comp-chk:checked')).map(function(c){ return c.value; });
+  if (!ids.length) return;
+  if (!confirm(ids.length + '개 공모전을 삭제합니다. 복구할 수 없습니다. 계속하시겠습니까?')) return;
+  var form = document.createElement('form');
+  form.method = 'post';
+  form.action = '/admin/delete-bulk';
+  ids.forEach(function(id) {
+    var inp = document.createElement('input');
+    inp.type = 'hidden'; inp.name = 'ids'; inp.value = id;
+    form.appendChild(inp);
+  });
+  document.body.appendChild(form);
+  form.submit();
+}
+</script>
 {% endblock %}

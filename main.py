@@ -1684,6 +1684,32 @@ async def admin_delete(request: Request, comp_id: int, db: Session = Depends(get
     return RedirectResponse(url="/admin", status_code=303)
 
 
+@app.post("/admin/delete-bulk")
+async def admin_delete_bulk(
+    request: Request,
+    ids: list[int] = Form(...),
+    db: Session = Depends(get_db),
+):
+    """여러 공모전 일괄 삭제"""
+    if r := _privileged_redirect(request, db):
+        return r
+    for comp_id in ids:
+        comp = db.query(Competition).filter(Competition.id == comp_id).first()
+        if not comp:
+            continue
+        for item in _from_json(comp.files):
+            fp = UPLOAD_DIR / item.get("saved_name", "")
+            if fp.exists():
+                fp.unlink(missing_ok=True)
+        if comp.image:
+            ip = UPLOAD_DIR / comp.image
+            if ip.exists():
+                ip.unlink(missing_ok=True)
+        db.delete(comp)
+    db.commit()
+    return RedirectResponse(url="/admin", status_code=303)
+
+
 @app.post("/admin/delete-file/{comp_id}")
 async def delete_file(request: Request, comp_id: int, filename: str = Form(...), db: Session = Depends(get_db)):
     if r := _privileged_redirect(request, db):
@@ -3853,8 +3879,17 @@ async def admin_crawl_run(
     except Exception as exc:
         result = {"items": [], "errors": [f"크롤링 전체 실패: {type(exc).__name__}: {exc}"], "counts": {}}
 
-    # 이미 등록된 항목 중복 제거
+    # ① 비공모전 항목 필터 (강의·할인·채용 등 제목 키워드 차단)
     raw_items = result.get("items", [])
+    from crawler import _is_contest_title as _ict
+    non_contest = [it for it in raw_items if not _ict(it.get("title", ""))]
+    raw_items   = [it for it in raw_items if     _ict(it.get("title", ""))]
+    if non_contest:
+        result.setdefault("errors", []).extend(
+            [f"비공모전 항목 제외: {it.get('title','?')}" for it in non_contest]
+        )
+
+    # ② 중복 제거 (URL·제목 정규화 + 유사도 퍼지 매칭)
     filtered_items, skipped = _dedup_crawl_items(raw_items, db)
 
     # 선택한 분야 외 항목 제외

@@ -158,6 +158,33 @@ def _is_current_year(deadline_str: Optional[str]) -> bool:
         return True
 
 
+# 공모전이 아닌 항목 제목에 포함될 수 있는 키워드 — 강의/할인/세미나 등 차단
+_NON_CONTEST_KEYWORDS = re.compile(
+    r'할인|리턴즈|강의|강좌|수업|클래스|세미나|워크숍|워크샵|리워드|쿠폰|프로모션'
+    r'|채용|구인|구직|취업|인턴|알바|아르바이트|모의면접|부트캠프|코딩캠프'
+    r'|사전예약|얼리버드|런칭|오픈베타|베타테스트|설문|리서치|서베이'
+    r'|데이스쿨|패스트캠퍼스|인프런|유데미|코드스테이츠'
+)
+
+# 공모전이라면 반드시 포함돼야 할 키워드 (하나라도 있으면 통과)
+_CONTEST_KEYWORDS = re.compile(
+    r'공모|콘테스트|어워드|어워즈|경진|해커톤|공모전|대회|챌린지|경쟁|선발|선정'
+    r'|아이디어|창업|스타트업|발명|디자인|사진|영상|글쓰기|에세이|논문|작품'
+    r'|수상|시상|상금|장학|장학금|우수상|대상|최우수|입선|특선'
+)
+
+
+def _is_contest_title(title: str) -> bool:
+    """공모전성 제목인지 판단 — 비공모전 항목(할인/강의/채용 등) 필터링"""
+    if not title:
+        return False
+    # 명백한 비공모전 키워드가 있으면 차단
+    if _NON_CONTEST_KEYWORDS.search(title):
+        return False
+    # 공모전 키워드가 하나라도 있으면 통과 (없어도 일단 통과 — 보수적 필터)
+    return True
+
+
 def _item(source: str, source_label: str, title: str, link: str,
           organizer: str = "", deadline: Optional[str] = None,
           prize: str = "", tags: Optional[list] = None) -> dict:

@@ -146,7 +146,8 @@ def _parse_expiry(valid_days: Optional[str], expires_at: Optional[str]) -> Optio
 templates.env.filters["fromjson"] = _from_json
 
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin1234")
-_DEFAULT_TAGS = ["IT/SW", "디자인", "기획·마케팅", "사회혁신", "예술·문화", "창업·스타트업", "논문·학술", "기타"]
+from crawler import CONTESTKOREA_CATS as _CONTESTKOREA_CATS
+_DEFAULT_TAGS = list(_CONTESTKOREA_CATS)
 TAGS = _DEFAULT_TAGS  # fallback (DB 접근 전 사용)
 ROLES = ["기획", "개발", "디자인", "마케팅", "기타"]
 
@@ -3358,7 +3359,10 @@ async def admin_settings_page(request: Request, db: Session = Depends(get_db)):
     tags = _get_tags(db)
     return _render(request,
         "admin/settings.html",
-        _ctx(request, db, tags=tags, tags_json=json.dumps(tags, ensure_ascii=False)),
+        _ctx(request, db,
+             tags=tags,
+             tags_json=json.dumps(tags, ensure_ascii=False),
+             all_cats=_CONTESTKOREA_CATS),
     )
 
 

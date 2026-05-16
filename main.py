@@ -2965,115 +2965,257 @@ async def admin_crawl_add_with_gpt(
     idx: int = Form(...),
     db: Session = Depends(get_db),
 ):
-    """크롤 결과의 링크를 GPT로 파싱한 뒤 추가 (공고 본문 자동 추출)"""
+    """크롤 결과를 GPT로 파싱해 공모전 등록 (텍스트+비전+첨부파일 3단계 전략)"""
     if r := _admin_redirect(request):
         return r
+
+    # ── 0. 사전 검증 ─────────────────────────────────────────────────────────
+    if not os.getenv("OPENAI_API_KEY"):
+        raise HTTPException(
+            status_code=400,
+            detail="OPENAI_API_KEY 환경변수가 설정되지 않았습니다. Railway 서비스 환경변수를 확인하세요.",
+        )
 
     items = _crawl_cache.get("items", [])
     if idx < 0 or idx >= len(items):
         raise HTTPException(status_code=400, detail="잘못된 인덱스입니다.")
 
-    item = items[idx]
-    link = item.get("link", "")
+    item  = items[idx]
+    link  = item.get("link", "")
+    if not link:
+        raise HTTPException(status_code=400, detail="URL이 없는 항목입니다.")
 
-    from urllib.parse import urljoin
+    from urllib.parse import urljoin as _urljoin
     from bs4 import BeautifulSoup as _BS
 
-    _fetch_headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-        ),
-        "Accept-Language": "ko-KR,ko;q=0.9",
-        "Accept": "text/html,application/xhtml+xml,*/*;q=0.8",
+    _UA = (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    )
+    _FETCH_HEADERS = {
+        "User-Agent": _UA,
+        "Accept-Language": "ko-KR,ko;q=0.9,en;q=0.8",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Referer": "https://www.contestkorea.com/",
     }
+    _FILE_EXTS = {"pdf", "hwp", "hwpx", "docx", "pptx", "xlsx", "zip"}
 
-    saved_image: Optional[str] = None
-    saved_files: list = []
-    page_text: str = ""
-    parsed: dict = {}
+    # ── 결과 변수 초기화 ──────────────────────────────────────────────────────
+    saved_image:      Optional[str] = None
+    saved_files:      list          = []
+    page_text:        str           = ""
+    og_image_bytes:   Optional[bytes] = None
+    og_image_ctype:   str           = "image/jpeg"
+    attach_texts:     list[str]     = []   # PDF/HWP에서 추출한 텍스트
+    parsed:           dict          = {}
+    fetch_error:      str           = ""
+    gpt_text_error:   str           = ""
+    gpt_vision_error: str           = ""
 
-    # ── 1. 페이지 fetch + 이미지·파일 수집 ──────────────────────────────────
+    # ── 1. 페이지 fetch ───────────────────────────────────────────────────────
     try:
-        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
-            resp = await client.get(link, headers=_fetch_headers)
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(connect=10, read=30, write=10, pool=5),
+            follow_redirects=True,
+            headers=_FETCH_HEADERS,
+        ) as _cli:
+            resp = await _cli.get(link)
+            if resp.status_code >= 400:
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"페이지 응답 오류: HTTP {resp.status_code} — {link}",
+                )
+
+            # ── 1-a. HTML 파싱 ───────────────────────────────────────────────
             try:
                 soup = _BS(resp.text, "lxml")
             except Exception:
                 soup = _BS(resp.text, "html.parser")
 
-            # og:image / twitter:image 추출
+            # ── 1-b. og:image URL 추출 ───────────────────────────────────────
             og_image_url = ""
-            for _attrs in [{"property": "og:image"}, {"name": "og:image"}, {"name": "twitter:image"}]:
-                _meta = soup.find("meta", attrs=_attrs)
-                if _meta and _meta.get("content", "").strip():
-                    og_image_url = _meta["content"].strip()
+            for _a in [
+                {"property": "og:image"},
+                {"name": "og:image"},
+                {"property": "twitter:image"},
+                {"name": "twitter:image"},
+            ]:
+                _m = soup.find("meta", attrs=_a)
+                if _m and str(_m.get("content", "")).strip():
+                    og_image_url = str(_m["content"]).strip()
                     break
+            # og:image가 없으면 가장 큰 img src를 후보로
+            if not og_image_url:
+                for _img in soup.find_all("img", src=True):
+                    _s = str(_img.get("src", "")).strip()
+                    if _s and not _s.endswith(".gif") and len(_s) > 10:
+                        og_image_url = _urljoin(link, _s)
+                        break
 
-            # 첨부파일 링크 수집 (PDF·HWP·DOCX·ZIP 등)
-            _seen_urls: set = set()
+            # ── 1-c. 첨부파일 링크 수집 ─────────────────────────────────────
+            _seen: set = set()
             attach_links: list = []
-            for a in soup.find_all("a", href=True):
-                _href = a.get("href", "").strip()
+            for _a in soup.find_all("a", href=True):
+                _href = str(_a.get("href", "")).strip()
                 if not _href or _href.startswith("javascript"):
                     continue
                 _ext = _href.lower().split("?")[0].rsplit(".", 1)[-1]
-                if _ext in ("pdf", "hwp", "hwpx", "docx", "pptx", "xlsx", "zip"):
-                    _full = urljoin(link, _href)
-                    if _full not in _seen_urls:
-                        _seen_urls.add(_full)
-                        _aname = a.get_text(strip=True) or _href.rsplit("/", 1)[-1]
-                        attach_links.append({"name": _aname, "url": _full, "ext": _ext})
+                if _ext in _FILE_EXTS:
+                    _full = _urljoin(link, _href)
+                    if _full not in _seen:
+                        _seen.add(_full)
+                        attach_links.append({
+                            "name": _a.get_text(strip=True) or _href.rsplit("/", 1)[-1],
+                            "url":  _full,
+                            "ext":  _ext,
+                        })
 
-            # 본문 텍스트 추출 — 노이즈 제거 후 메인 콘텐츠 우선
-            for _tag in soup(["script", "style", "nav", "footer", "header", "aside"]):
+            # ── 1-d. 본문 텍스트 추출 ────────────────────────────────────────
+            # 공모전코리아 전용 선택자 → 일반 선택자 순으로 시도
+            for _tag in soup(["script", "style", "noscript"]):
                 _tag.decompose()
-            _main = (
-                soup.find("article")
-                or soup.find("main")
-                or soup.find(id=re.compile(r"content|main|view", re.I))
-                or soup.find(class_=re.compile(r"view[-_]?cont|article|board[-_]?view|contest[-_]?view", re.I))
-                or soup.body
-            )
-            _raw = (_main or soup).get_text(separator="\n")
-            page_text = re.sub(r"\s{3,}", "\n\n", _raw).strip()[:10000]
 
-            # og:image 다운로드
+            _MAIN_SELECTORS = [
+                # 공모전코리아 뷰 페이지
+                ".view_area",
+                ".view_cont",
+                ".contest_view",
+                ".board_view_wrap",
+                ".sub_content",
+                "#content .inner",
+                # 일반
+                "article",
+                "main",
+                ".content",
+                "#content",
+                ".board_view",
+            ]
+            _main_el = None
+            for _sel in _MAIN_SELECTORS:
+                _main_el = soup.select_one(_sel)
+                if _main_el:
+                    break
+
+            if _main_el:
+                # nav/aside 같은 자식 제거
+                for _t in _main_el(["nav", "footer", "header", "aside"]):
+                    _t.decompose()
+                _raw = _main_el.get_text(separator="\n")
+            else:
+                for _t in soup(["nav", "footer", "header", "aside"]):
+                    _t.decompose()
+                _raw = (soup.body or soup).get_text(separator="\n")
+
+            page_text = re.sub(r"[ \t]+", " ", _raw)
+            page_text = re.sub(r"\n{3,}", "\n\n", page_text).strip()[:12000]
+
+            _log.info("GPT추가 page_text %d자, 첨부%d개, og_image=%s — %s",
+                      len(page_text), len(attach_links), bool(og_image_url), link)
+
+            # ── 1-e. og:image 다운로드 ───────────────────────────────────────
             if og_image_url:
                 try:
-                    _ir = await client.get(og_image_url, headers={"User-Agent": _fetch_headers["User-Agent"]})
-                    if _ir.status_code == 200 and _is_valid_image_bytes(_ir.content) and len(_ir.content) <= MAX_IMAGE_SIZE:
-                        _raw_ext = og_image_url.split("?")[0].rsplit(".", 1)[-1].lower()
-                        _img_ext = _raw_ext if _raw_ext in ("jpg", "jpeg", "png", "gif", "webp") else "jpg"
-                        _img_fname = f"{uuid.uuid4().hex}.{_img_ext}"
-                        (UPLOAD_DIR / _img_fname).write_bytes(_ir.content)
-                        saved_image = _img_fname
-                except Exception:
-                    pass
+                    _ir = await _cli.get(og_image_url, headers={"User-Agent": _UA})
+                    if _ir.status_code == 200 and _ir.content:
+                        _ct = _ir.headers.get("content-type", "image/jpeg").split(";")[0].strip()
+                        og_image_bytes  = _ir.content
+                        og_image_ctype  = _ct
+                        if _is_valid_image_bytes(_ir.content) and len(_ir.content) <= MAX_IMAGE_SIZE:
+                            _ie = og_image_url.split("?")[0].rsplit(".", 1)[-1].lower()
+                            _ie = _ie if _ie in ("jpg", "jpeg", "png", "gif", "webp") else "jpg"
+                            _ifn = f"{uuid.uuid4().hex}.{_ie}"
+                            (UPLOAD_DIR / _ifn).write_bytes(_ir.content)
+                            saved_image = _ifn
+                except Exception as _e:
+                    _log.warning("og:image 다운로드 실패: %s", _e)
 
-            # 첨부파일 다운로드 (최대 5개)
+            # ── 1-f. 첨부파일 다운로드 + 텍스트 추출 ────────────────────────
             for _att in attach_links[:5]:
                 try:
-                    _fr = await client.get(_att["url"], headers={"User-Agent": _fetch_headers["User-Agent"]})
-                    if _fr.status_code == 200 and _fr.content and len(_fr.content) <= MAX_FILE_SIZE:
-                        _f_fname = f"{uuid.uuid4().hex}.{_att['ext']}"
-                        (UPLOAD_DIR / _f_fname).write_bytes(_fr.content)
-                        saved_files.append({"name": _att["name"], "path": _f_fname})
-                except Exception:
+                    _fr = await _cli.get(_att["url"], headers={"User-Agent": _UA})
+                    if _fr.status_code != 200 or not _fr.content:
+                        continue
+                    if len(_fr.content) > MAX_FILE_SIZE:
+                        continue
+                    _ffn = f"{uuid.uuid4().hex}.{_att['ext']}"
+                    (UPLOAD_DIR / _ffn).write_bytes(_fr.content)
+                    saved_files.append({"name": _att["name"], "path": _ffn})
+
+                    # PDF·HWP 텍스트 추출
+                    if _att["ext"] in ("pdf", "hwp", "hwpx"):
+                        try:
+                            from ai_parser import (
+                                _extract_pdf_text, _extract_hwp_text, _extract_hwpx_text,
+                            )
+                            _ft = {
+                                "pdf":  lambda b: _extract_pdf_text(b),
+                                "hwp":  lambda b: _extract_hwp_text(b),
+                                "hwpx": lambda b: _extract_hwpx_text(b),
+                            }[_att["ext"]](_fr.content)
+                            if _ft.strip():
+                                attach_texts.append(
+                                    f"[첨부: {_att['name']}]\n{_ft.strip()[:4000]}"
+                                )
+                        except Exception as _e:
+                            _log.warning("첨부파일 텍스트 추출 실패(%s): %s", _att["name"], _e)
+                except Exception as _e:
+                    _log.warning("첨부파일 다운로드 실패(%s): %s", _att["url"], _e)
                     continue
-    except Exception as _fetch_err:
-        _log.warning("GPT 추가 - 페이지 fetch 실패: %s %s", type(_fetch_err).__name__, _fetch_err)
 
-    # ── 2. GPT 파싱 (페이지 텍스트가 있을 때만) ──────────────────────────────
-    if page_text:
+    except HTTPException:
+        raise
+    except Exception as _e:
+        fetch_error = f"{type(_e).__name__}: {_e}"
+        _log.error("GPT추가 fetch 실패: %s — %s", fetch_error, link)
+
+    # ── 2. GPT 텍스트 파싱 ────────────────────────────────────────────────────
+    # 페이지 텍스트 + 첨부파일 텍스트 합산 (최대 14000자)
+    _combined = page_text
+    if attach_texts:
+        _combined = page_text + "\n\n" + "\n\n".join(attach_texts)
+    _combined = _combined[:14000].strip()
+
+    if _combined:
         try:
-            parsed = await parse_text(page_text)
-        except Exception as _gpt_err:
-            _log.warning("GPT 추가 - 파싱 실패: %s %s", type(_gpt_err).__name__, _gpt_err)
+            parsed = await parse_text(_combined)
+            _log.info("GPT텍스트 파싱 성공: title=%s deadline=%s",
+                      parsed.get("title", "?"), parsed.get("deadline", "?"))
+        except Exception as _e:
+            gpt_text_error = f"{type(_e).__name__}: {_e}"
+            _log.warning("GPT텍스트 파싱 실패: %s", gpt_text_error)
     else:
-        _log.warning("GPT 추가 - page_text 비어있음 (페이지 fetch 실패 또는 내용 없음): %s", link)
+        gpt_text_error = f"추출된 텍스트 없음 (fetch 오류: {fetch_error})"
+        _log.warning("GPT추가 - 텍스트 없음, 비전으로 fallback: %s", link)
 
-    # 크롤 캐시 기본값으로 보완
+    # ── 3. GPT 비전 파싱 (텍스트 파싱 불완전 시 og:image로 보완) ─────────────
+    _needs_vision = og_image_bytes and _is_valid_image_bytes(og_image_bytes) and (
+        not parsed.get("title")
+        or not parsed.get("deadline")
+        or not parsed.get("description")
+    )
+    if _needs_vision:
+        try:
+            _vp = await parse_image_file(og_image_bytes, og_image_ctype)
+            _log.info("GPT비전 파싱 성공: title=%s deadline=%s",
+                      _vp.get("title", "?"), _vp.get("deadline", "?"))
+            # 텍스트 파싱 결과를 비전으로 보완 (누락된 필드만)
+            for _k in ["title", "organizer", "deadline", "start_date", "announcement_date",
+                       "review_dates", "prize", "tags", "description", "link"]:
+                if not parsed.get(_k) and _vp.get(_k):
+                    parsed[_k] = _vp[_k]
+        except Exception as _e:
+            gpt_vision_error = f"{type(_e).__name__}: {_e}"
+            _log.warning("GPT비전 파싱 실패: %s", gpt_vision_error)
+
+    # ── 4. 파싱 완전 실패 시 오류 표시 ───────────────────────────────────────
+    if not parsed.get("title") and not parsed.get("deadline"):
+        _errs = " / ".join(filter(None, [fetch_error, gpt_text_error, gpt_vision_error]))
+        raise HTTPException(
+            status_code=502,
+            detail=f"GPT 파싱 실패 — {_errs or '원인 불명'}\n\n링크: {link}",
+        )
+
+    # ── 5. 크롤 캐시 기본값으로 보완 ─────────────────────────────────────────
     if not parsed.get("title"):
         parsed["title"] = item.get("title", "")
     if not parsed.get("organizer"):
@@ -3083,24 +3225,32 @@ async def admin_crawl_add_with_gpt(
     if not parsed.get("tags"):
         parsed["tags"] = item.get("tags", [])
 
+    # ── 6. Competition 생성 ───────────────────────────────────────────────────
     deadline_str = parsed.get("deadline") or (date.today() + timedelta(days=30)).isoformat()
 
     _rd = parsed.get("review_dates") or []
     if not isinstance(_rd, list):
         _rd = []
+
+    def _safe_date(val) -> Optional[date]:
+        try:
+            return date.fromisoformat(str(val)) if val else None
+        except (ValueError, TypeError):
+            return None
+
     comp = Competition(
-        title=parsed.get("title", ""),
-        organizer=parsed.get("organizer", ""),
-        tags=json.dumps(parsed.get("tags", []), ensure_ascii=False),
-        start_date=date.fromisoformat(parsed["start_date"]) if parsed.get("start_date") else None,
-        deadline=date.fromisoformat(deadline_str),
-        announcement_date=date.fromisoformat(parsed["announcement_date"]) if parsed.get("announcement_date") else None,
-        review_dates=json.dumps(_rd, ensure_ascii=False),
-        prize=parsed.get("prize", "") or item.get("prize", ""),
-        link=link,
-        description=parsed.get("description", ""),
-        image=saved_image,
-        files=json.dumps(saved_files, ensure_ascii=False),
+        title        = parsed.get("title", ""),
+        organizer    = parsed.get("organizer", ""),
+        tags         = json.dumps(parsed.get("tags", []), ensure_ascii=False),
+        start_date   = _safe_date(parsed.get("start_date")),
+        deadline     = date.fromisoformat(deadline_str),
+        announcement_date = _safe_date(parsed.get("announcement_date")),
+        review_dates = json.dumps(_rd, ensure_ascii=False),
+        prize        = parsed.get("prize", "") or item.get("prize", ""),
+        link         = link,
+        description  = parsed.get("description", ""),
+        image        = saved_image,
+        files        = json.dumps(saved_files, ensure_ascii=False),
     )
     db.add(comp)
     db.commit()

@@ -33,6 +33,7 @@ from database import SessionLocal, get_db, init_db
 from member_auth import create_member_token, hash_password, verify_member_token, verify_password, verify_team_password
 from models import (
     BOARDS,
+    AppSetting,
     ChatMessage, ChatRoom, ChatRoomMember,
     Comment, CommentLike,
     Competition, CompetitionScrap, InviteCode, InviteCodeUseLog, Member,
@@ -145,8 +146,22 @@ def _parse_expiry(valid_days: Optional[str], expires_at: Optional[str]) -> Optio
 templates.env.filters["fromjson"] = _from_json
 
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin1234")
-TAGS = ["IT/SW", "디자인", "기획·마케팅", "사회혁신", "예술·문화", "창업·스타트업", "논문·학술", "기타"]
+_DEFAULT_TAGS = ["IT/SW", "디자인", "기획·마케팅", "사회혁신", "예술·문화", "창업·스타트업", "논문·학술", "기타"]
+TAGS = _DEFAULT_TAGS  # fallback (DB 접근 전 사용)
 ROLES = ["기획", "개발", "디자인", "마케팅", "기타"]
+
+
+def _get_tags(db: Session) -> list[str]:
+    """AppSetting에서 분야 태그 목록을 로드. 설정 없으면 기본값 반환."""
+    try:
+        row = db.query(AppSetting).filter(AppSetting.key == "tags").first()
+        if row and row.value:
+            parsed = json.loads(row.value)
+            if isinstance(parsed, list) and parsed:
+                return parsed
+    except Exception:
+        pass
+    return list(_DEFAULT_TAGS)
 AWARD_RANKS = ["대상", "최우수상", "우수상", "장려상", "입선"]
 
 # ── 프로덕션 분기 ──────────────────────────────────────────────────────────────
@@ -607,7 +622,7 @@ async def index(
         "index.html",
         _ctx(request, db,
              featured=featured, competitions=competitions,
-             tags=TAGS, current_tag=tag or "all",
+             tags=_get_tags(db), current_tag=tag or "all",
              current_sort=sort, query=q, today=today),
     )
 
@@ -981,7 +996,7 @@ async def admin_add_page(request: Request, db: Session = Depends(get_db)):
         return r
     return _render(request,
         "admin/form.html",
-        _ctx(request, db, comp=None, tags=TAGS, action="/admin/add", title="공모전 추가",
+        _ctx(request, db, comp=None, tags=_get_tags(db), action="/admin/add", title="공모전 추가",
              review_dates_json="[]"),
     )
 
@@ -1054,7 +1069,7 @@ async def admin_edit_page(request: Request, comp_id: int, db: Session = Depends(
     comp.review_dates_json = json.dumps(review_dates_list, ensure_ascii=False)
     return _render(request,
         "admin/form.html",
-        _ctx(request, db, comp=comp, tags=TAGS, action=f"/admin/edit/{comp_id}", title="공모전 수정"),
+        _ctx(request, db, comp=comp, tags=_get_tags(db), action=f"/admin/edit/{comp_id}", title="공모전 수정"),
     )
 
 
@@ -2889,7 +2904,7 @@ async def admin_crawl_page(request: Request, db: Session = Depends(get_db)):
         return r
     return _render(request,
         "admin/crawl.html",
-        _ctx(request, db, cache=_crawl_cache),
+        _ctx(request, db, cache=_crawl_cache, all_tags=_get_tags(db)),
     )
 
 
@@ -3001,3 +3016,46 @@ async def admin_crawl_add_with_gpt(
     db.add(comp)
     db.commit()
     return RedirectResponse(url=f"/admin/edit/{comp.id}", status_code=303)
+
+
+# ── 관리자 설정 ──────────────────────────────────────────────────────────────
+
+@app.get("/admin/settings", response_class=HTMLResponse)
+async def admin_settings_page(request: Request, db: Session = Depends(get_db)):
+    if r := _admin_redirect(request):
+        return r
+    tags = _get_tags(db)
+    return _render(request,
+        "admin/settings.html",
+        _ctx(request, db, tags=tags),
+    )
+
+
+@app.post("/admin/settings/tags")
+async def admin_settings_tags(
+    request: Request,
+    tags_json: str = Form("[]"),
+    db: Session = Depends(get_db),
+):
+    """분야 태그 목록 저장"""
+    if r := _admin_redirect(request):
+        return r
+    try:
+        new_tags = json.loads(tags_json)
+        if not isinstance(new_tags, list):
+            raise ValueError
+        new_tags = [str(t).strip() for t in new_tags if str(t).strip()]
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail="태그 형식이 올바르지 않습니다.")
+
+    if not new_tags:
+        raise HTTPException(status_code=400, detail="태그를 최소 1개 이상 입력하세요.")
+
+    row = db.query(AppSetting).filter(AppSetting.key == "tags").first()
+    if row:
+        row.value = json.dumps(new_tags, ensure_ascii=False)
+        row.updated_at = datetime.now()
+    else:
+        db.add(AppSetting(key="tags", value=json.dumps(new_tags, ensure_ascii=False)))
+    db.commit()
+    return RedirectResponse(url="/admin/settings", status_code=303)

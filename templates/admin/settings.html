@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+{% block title %}앱 설정 · 공모전 보드{% endblock %}
+
+{% block content %}
+<main class="admin-page">
+  <div class="container" style="max-width:700px">
+
+    <div class="page-heading">
+      <div>
+        <p class="eyebrow">Admin</p>
+        <h1>앱 설정</h1>
+      </div>
+      <a href="/admin" class="btn btn-outline">관리자 홈</a>
+    </div>
+
+    {# ── 분야 태그 관리 ──────────────────────────────────────────── #}
+    <section class="card" style="padding:24px 28px;margin-bottom:24px">
+      <h2 style="font-size:1.05rem;font-weight:700;margin-bottom:4px">분야 태그 관리</h2>
+      <p class="muted" style="font-size:.85rem;margin-bottom:18px">
+        공모전 분류에 사용할 분야 태그를 설정합니다. 크롤링 결과 필터와 공모전 등록 폼에 반영됩니다.
+      </p>
+
+      <div id="tagList" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px">
+        {% for tag in tags %}
+        <span class="settings-tag-item">
+          <span>{{ tag }}</span>
+          <button type="button" class="settings-tag-del" data-tag="{{ tag }}" title="삭제">×</button>
+        </span>
+        {% endfor %}
+      </div>
+
+      <div style="display:flex;gap:8px;margin-bottom:20px">
+        <input type="text" id="newTagInput" class="form-input" placeholder="새 분야 입력 (예: 공학·기술)"
+               style="max-width:240px" maxlength="30">
+        <button type="button" id="addTagBtn" class="btn btn-outline">추가</button>
+      </div>
+
+      <form method="post" action="/admin/settings/tags" id="saveTagsForm">
+        <input type="hidden" name="tags_json" id="tagsJsonField" value="{{ tags | tojson }}">
+        <button type="submit" class="btn btn-primary">저장</button>
+        <button type="button" class="btn btn-outline" id="resetTagsBtn"
+                style="margin-left:8px">기본값으로 초기화</button>
+      </form>
+    </section>
+
+  </div>
+</main>
+
+<style>
+.settings-tag-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px 4px 12px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: var(--surface-soft);
+  font-size: .85rem;
+  font-weight: 500;
+}
+.settings-tag-del {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 50%;
+  transition: background .15s, color .15s;
+  padding: 0;
+}
+.settings-tag-del:hover { background: #fee2e2; color: #dc2626; }
+</style>
+
+<script>
+(function () {
+  const DEFAULT_TAGS = ["IT/SW", "디자인", "기획·마케팅", "사회혁신", "예술·문화", "창업·스타트업", "논문·학술", "기타"];
+  const listEl   = document.getElementById('tagList');
+  const input    = document.getElementById('newTagInput');
+  const addBtn   = document.getElementById('addTagBtn');
+  const hidden   = document.getElementById('tagsJsonField');
+  const resetBtn = document.getElementById('resetTagsBtn');
+
+  function getTags() {
+    try { return JSON.parse(hidden.value) || []; } catch { return []; }
+  }
+
+  function setTags(tags) {
+    hidden.value = JSON.stringify(tags);
+  }
+
+  function renderTags(tags) {
+    listEl.innerHTML = '';
+    tags.forEach(function (tag) {
+      const span = document.createElement('span');
+      span.className = 'settings-tag-item';
+      span.innerHTML =
+        '<span>' + tag + '</span>' +
+        '<button type="button" class="settings-tag-del" data-tag="' + tag + '" title="삭제">×</button>';
+      listEl.appendChild(span);
+    });
+    setTags(tags);
+  }
+
+  listEl.addEventListener('click', function (e) {
+    const btn = e.target.closest('.settings-tag-del');
+    if (!btn) return;
+    const tag = btn.getAttribute('data-tag');
+    const tags = getTags().filter(function (t) { return t !== tag; });
+    renderTags(tags);
+  });
+
+  function addTag() {
+    const val = input.value.trim();
+    if (!val) return;
+    const tags = getTags();
+    if (tags.includes(val)) { input.value = ''; return; }
+    tags.push(val);
+    renderTags(tags);
+    input.value = '';
+    input.focus();
+  }
+
+  addBtn.addEventListener('click', addTag);
+  input.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); addTag(); }
+  });
+
+  resetBtn.addEventListener('click', function () {
+    if (confirm('기본 분야 태그로 초기화하시겠습니까?')) {
+      renderTags(DEFAULT_TAGS);
+    }
+  });
+})();
+</script>
+{% endblock %}

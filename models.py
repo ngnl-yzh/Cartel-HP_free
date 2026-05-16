@@ -265,6 +265,16 @@ class Notification(Base):
     created_at = Column(DateTime, default=datetime.now)
 
 
+class AppSetting(Base):
+    """앱 전역 설정 (key-value)"""
+    __tablename__ = "app_settings"
+
+    id         = Column(Integer, primary_key=True, index=True)
+    key        = Column(String(100), unique=True, nullable=False, index=True)
+    value      = Column(Text, default="")
+    updated_at = Column(DateTime, default=datetime.now)
+
+
 class ExternalAchievement(Base):
     """자기 기재 외부 이력 (증빙 없음)"""
     __tablename__ = "external_achievements"

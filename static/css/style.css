@@ -2539,6 +2539,59 @@ select {
   align-items: center;
 }
 
+/* 분야 필터 바 */
+.crawl-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.crawl-filter-btn {
+  padding: 4px 14px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: .82rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background .15s, color .15s, border-color .15s;
+}
+
+.crawl-filter-btn:hover {
+  background: var(--surface);
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.crawl-filter-btn.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+  font-weight: 700;
+}
+
+.crawl-filter-count {
+  margin-left: 6px;
+  font-size: .82rem;
+}
+
+/* 작은 태그 칩 */
+.tag-chip-sm {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border: 1px solid #b7d6d1;
+  border-radius: 999px;
+  background: #edf7f4;
+  color: #115e59;
+  font-size: .72rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
 /* ── 수상/포트폴리오 공통 ─────────────────────────────────────────────────────── */
 
 /* 신청 여부 배지 */

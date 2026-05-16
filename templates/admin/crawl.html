@@ -14,6 +14,7 @@
         {% endif %}
       </div>
       <div style="display:flex;gap:8px;align-items:flex-start">
+        <a href="/admin/settings" class="btn btn-outline">분야 설정</a>
         <a href="/admin" class="btn btn-outline">관리자 홈</a>
         <form method="post" action="/admin/crawl/run">
           <button type="submit" class="btn btn-primary" id="crawlRunBtn"
@@ -55,20 +56,35 @@
 
     {# ── 결과 목록 ──────────────────────────────────────────────── #}
     {% elif cache['items'] %}
+
+    {# 분야 필터 바 #}
+    <div class="crawl-filter-bar" id="crawlFilterBar">
+      <button class="crawl-filter-btn active" data-tag="all">전체</button>
+      {% if all_tags %}
+        {% for tag in all_tags %}
+        <button class="crawl-filter-btn" data-tag="{{ tag }}">{{ tag }}</button>
+        {% endfor %}
+      {% endif %}
+      <button class="crawl-filter-btn" data-tag="기타">기타</button>
+      <span class="crawl-filter-count muted" id="crawlFilterCount"></span>
+    </div>
+
     <section class="table-wrap">
-      <table class="admin-table crawl-table">
+      <table class="admin-table crawl-table" id="crawlTable">
         <thead>
           <tr>
             <th style="width:80px">출처</th>
             <th>공모전명</th>
-            <th style="width:140px">주최기관</th>
-            <th style="width:110px">마감일</th>
-            <th style="width:200px">액션</th>
+            <th style="width:120px">분야</th>
+            <th style="width:130px">주최기관</th>
+            <th style="width:100px">마감일</th>
+            <th style="width:190px">액션</th>
           </tr>
         </thead>
         <tbody>
           {% for item in cache['items'] %}
-          <tr>
+          {% set item_tags = item.tags if item.tags else [] %}
+          <tr data-tags="{{ item_tags | join(',') }}">
             <td>
               <span class="source-badge source-{{ item.source }}">{{ item.source_label }}</span>
             </td>
@@ -76,6 +92,15 @@
               <a href="{{ item.link }}" target="_blank" rel="noopener" class="crawl-title">
                 {{ item.title }}
               </a>
+            </td>
+            <td>
+              {% if item_tags %}
+                {% for t in item_tags %}
+                <span class="tag-chip tag-chip-sm">{{ t }}</span>
+                {% endfor %}
+              {% else %}
+                <span class="muted">-</span>
+              {% endif %}
             </td>
             <td class="muted">{{ item.organizer or "-" }}</td>
             <td class="muted">{{ item.deadline or "-" }}</td>
@@ -87,7 +112,7 @@
               <form method="post" action="/admin/crawl/add-with-gpt" style="display:inline"
                     onsubmit="this.querySelector('button').disabled=true;this.querySelector('button').textContent='GPT…';">
                 <input type="hidden" name="idx" value="{{ loop.index0 }}">
-                <button type="submit" class="btn btn-primary btn-sm">GPT 파싱 후 추가</button>
+                <button type="submit" class="btn btn-primary btn-sm">GPT 추가</button>
               </form>
             </td>
           </tr>
@@ -99,4 +124,37 @@
 
   </div>
 </main>
+
+<script>
+(function () {
+  const bar = document.getElementById('crawlFilterBar');
+  const table = document.getElementById('crawlTable');
+  const countEl = document.getElementById('crawlFilterCount');
+  if (!bar || !table) return;
+
+  let activeTag = 'all';
+
+  function applyFilter() {
+    const rows = table.querySelectorAll('tbody tr');
+    let visible = 0;
+    rows.forEach(function (row) {
+      const tags = (row.getAttribute('data-tags') || '').split(',').map(t => t.trim()).filter(Boolean);
+      const show = activeTag === 'all' || tags.includes(activeTag);
+      row.style.display = show ? '' : 'none';
+      if (show) visible++;
+    });
+    if (countEl) countEl.textContent = activeTag === 'all' ? '' : visible + '건';
+  }
+
+  bar.addEventListener('click', function (e) {
+    const btn = e.target.closest('.crawl-filter-btn');
+    if (!btn) return;
+    activeTag = btn.getAttribute('data-tag') || 'all';
+    bar.querySelectorAll('.crawl-filter-btn').forEach(function (b) {
+      b.classList.toggle('active', b === btn);
+    });
+    applyFilter();
+  });
+})();
+</script>
 {% endblock %}

@@ -39,7 +39,7 @@ from models import (
     Competition, CompetitionScrap, InviteCode, InviteCodeUseLog, Member,
     DirectMessage, ExternalAchievement, Follow, Notification,
     Post, PostLike,
-    Team, TeamCompetitionEntry, TeamMember, TeamResult,
+    GalleryPost, Team, TeamCompetitionEntry, TeamMember, TeamResult,
 )
 
 app = FastAPI(title="공모전 보드")
@@ -144,6 +144,17 @@ def _parse_expiry(valid_days: Optional[str], expires_at: Optional[str]) -> Optio
 
 
 templates.env.filters["fromjson"] = _from_json
+
+
+def _unique_filter(iterable):
+    seen = []
+    for x in iterable:
+        if x not in seen:
+            seen.append(x)
+    return seen
+
+
+templates.env.filters["unique"] = _unique_filter
 
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin1234")
 from crawler import CONTESTKOREA_CATS as _CONTESTKOREA_CATS
@@ -1021,6 +1032,134 @@ async def admin_reject_proof(
     )
 
 
+# ── 멤버 목록 (기수별) ───────────────────────────────────────────────────────────
+
+@app.get("/members", response_class=HTMLResponse)
+async def members_page(request: Request, db: Session = Depends(get_db)):
+    all_members = db.query(Member).order_by(
+        Member.generation.asc().nullslast(),
+        Member.created_at.asc(),
+    ).all()
+    # 기수별 그룹핑 {기수: [Member, ...]}
+    from collections import OrderedDict
+    groups: dict = OrderedDict()
+    for m in all_members:
+        key = m.generation if m.generation else 0
+        groups.setdefault(key, []).append(m)
+    return _render(request, "members.html", _ctx(request, db,
+        groups=groups,
+    ))
+
+
+# ── 수상 실적 ────────────────────────────────────────────────────────────────────
+
+@app.get("/awards", response_class=HTMLResponse)
+async def awards_page(request: Request, db: Session = Depends(get_db)):
+    cm = _current_member(request, db)
+    is_admin_ = _is_admin(request)
+
+    # 공개된 수상 실적 (+ 관리자면 비공개도 포함)
+    q = db.query(TeamCompetitionEntry).filter(TeamCompetitionEntry.is_awarded.is_(True))
+    if not is_admin_:
+        q = q.filter(TeamCompetitionEntry.is_public.is_(True))
+    entries = q.order_by(TeamCompetitionEntry.updated_at.desc()).all()
+
+    # 관련 Competition / Team 정보 사전 로드
+    comp_ids = list({e.competition_id for e in entries})
+    team_ids = list({e.team_id for e in entries})
+    comps_map = {c.id: c for c in db.query(Competition).filter(Competition.id.in_(comp_ids)).all()} if comp_ids else {}
+    teams_map = {t.id: t for t in db.query(Team).filter(Team.id.in_(team_ids)).all()} if team_ids else {}
+    members_map: dict = {}
+    if team_ids:
+        tms = db.query(TeamMember).filter(TeamMember.team_id.in_(team_ids)).all()
+        for tm in tms:
+            members_map.setdefault(tm.team_id, []).append(tm)
+
+    return _render(request, "awards.html", _ctx(request, db,
+        entries=entries,
+        comps_map=comps_map,
+        teams_map=teams_map,
+        members_map=members_map,
+    ))
+
+
+# ── 갤러리 ───────────────────────────────────────────────────────────────────────
+
+@app.get("/gallery", response_class=HTMLResponse)
+async def gallery_page(request: Request, db: Session = Depends(get_db)):
+    cm = _current_member(request, db)
+    is_admin_ = _is_admin(request)
+    q = db.query(GalleryPost)
+    if not is_admin_:
+        q = q.filter(GalleryPost.is_public.is_(True))
+    posts = q.order_by(GalleryPost.event_date.desc().nullslast(), GalleryPost.created_at.desc()).all()
+    return _render(request, "gallery.html", _ctx(request, db,
+        posts=posts,
+    ))
+
+
+@app.post("/gallery/new")
+async def gallery_new(
+    request: Request,
+    title: str = Form(...),
+    description: str = Form(""),
+    event_type: str = Form("기타"),
+    event_date: Optional[str] = Form(None),
+    is_public: Optional[str] = Form(None),
+    images: List[UploadFile] = File(default=[]),
+    db: Session = Depends(get_db),
+):
+    cm = _current_member(request, db)
+    if not cm:
+        raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
+    if not _is_admin(request) and cm.role not in ("sub_admin",):
+        raise HTTPException(status_code=403, detail="관리자만 갤러리를 작성할 수 있습니다.")
+
+    saved_images = []
+    for img in images:
+        if img and img.filename:
+            ext = Path(img.filename).suffix.lower()
+            if ext not in {".jpg", ".jpeg", ".png", ".webp", ".gif"}:
+                continue
+            data = await img.read()
+            if len(data) > 20 * 1024 * 1024:
+                continue
+            fname = f"{uuid.uuid4().hex}{ext}"
+            (UPLOAD_DIR / fname).write_bytes(data)
+            saved_images.append(fname)
+
+    parsed_date = None
+    if event_date:
+        try:
+            parsed_date = date.fromisoformat(event_date)
+        except ValueError:
+            pass
+
+    post = GalleryPost(
+        title=title.strip(),
+        description=description.strip(),
+        event_type=event_type,
+        event_date=parsed_date,
+        images=json.dumps(saved_images, ensure_ascii=False),
+        created_by_id=cm.id,
+        is_public=is_public == "true",
+    )
+    db.add(post)
+    db.commit()
+    return RedirectResponse(url="/gallery", status_code=303)
+
+
+@app.post("/gallery/{post_id}/delete")
+async def gallery_delete(request: Request, post_id: int, db: Session = Depends(get_db)):
+    if not _is_admin(request):
+        raise HTTPException(status_code=403, detail="관리자만 삭제할 수 있습니다.")
+    post = db.query(GalleryPost).filter(GalleryPost.id == post_id).first()
+    if post:
+        db.delete(post)
+        db.commit()
+    return RedirectResponse(url="/gallery", status_code=303)
+
+
 @app.get("/my", response_class=HTMLResponse)
 async def mypage(request: Request, db: Session = Depends(get_db)):
     cm = _current_member(request, db)
@@ -1493,6 +1632,22 @@ async def admin_members(request: Request, q: str = Query(default=""), db: Sessio
     return _render(request, "admin/members.html", _ctx(request, db,
         members=members, code_groups=code_groups, query=q, now=datetime.now()
     ))
+
+
+@app.post("/admin/members/set-generation")
+async def admin_set_generation(
+    request: Request,
+    activity_name: str = Form(...),
+    generation: Optional[int] = Form(None),
+    db: Session = Depends(get_db),
+):
+    if r := _admin_redirect(request):
+        return r
+    m = db.query(Member).filter(Member.activity_name == activity_name.strip()).first()
+    if m:
+        m.generation = generation
+        db.commit()
+    return RedirectResponse(url="/members", status_code=303)
 
 
 @app.post("/admin/members/{member_id}/set-role")

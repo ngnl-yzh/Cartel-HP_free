@@ -1,0 +1,200 @@
+{% extends "base.html" %}
+{% block title %}Gallery · CARTEL{% endblock %}
+
+{% block content %}
+{# ── 히어로 ────────────────────────────────────────────────── #}
+<div class="c-hero">
+  <div class="c-hero-inner" style="display:flex;align-items:flex-end;justify-content:space-between;gap:20px;flex-wrap:wrap">
+    <div>
+      <p class="c-hero-eyebrow">CARTEL</p>
+      <h1 class="c-hero-title">📷 Gallery</h1>
+      <p class="c-hero-sub">MT, 개강총회, 종강파티 등 카르텔의 순간들을 담았습니다.</p>
+    </div>
+    {% if is_admin or (current_member and current_member.role == 'sub_admin') %}
+    <button class="btn btn-primary" id="newGalleryBtn"
+            style="white-space:nowrap;background:rgba(255,255,255,0.15);border:1.5px solid rgba(255,255,255,0.3);color:#fff;backdrop-filter:blur(4px)">
+      + 갤러리 추가
+    </button>
+    {% endif %}
+  </div>
+</div>
+
+{# ── 갤러리 추가 폼 (관리자) ─────────────────────────────────── #}
+{% if is_admin or (current_member and current_member.role == 'sub_admin') %}
+<div id="newGalleryForm" style="display:none;background:#f8faff;border-bottom:1px solid var(--line);padding:28px 0">
+  <div class="container" style="max-width:700px">
+    <h2 style="font-size:1.05rem;font-weight:700;margin-bottom:20px">새 갤러리 등록</h2>
+    <form method="post" action="/gallery/new" enctype="multipart/form-data">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+        <div style="grid-column:1/-1">
+          <label class="form-label">제목 <span style="color:var(--danger)">*</span></label>
+          <input type="text" name="title" class="form-control" placeholder="예: 2026 개강총회" required>
+        </div>
+        <div>
+          <label class="form-label">행사 유형</label>
+          <select name="event_type" class="form-control">
+            <option>MT</option>
+            <option>개강총회</option>
+            <option>종강파티</option>
+            <option>수상</option>
+            <option>세미나</option>
+            <option>기타</option>
+          </select>
+        </div>
+        <div>
+          <label class="form-label">행사 날짜</label>
+          <input type="date" name="event_date" class="form-control">
+        </div>
+        <div style="grid-column:1/-1">
+          <label class="form-label">설명 (선택)</label>
+          <textarea name="description" class="form-control" rows="2" placeholder="행사 소개를 간단히 적어주세요"></textarea>
+        </div>
+        <div style="grid-column:1/-1">
+          <label class="form-label">사진 업로드 (여러 장 가능, 각 20MB 이하)</label>
+          <input type="file" name="images" class="form-control" multiple accept="image/*">
+        </div>
+        <div style="grid-column:1/-1">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="checkbox" name="is_public" value="true" checked style="width:16px;height:16px;accent-color:var(--primary)">
+            <span style="font-size:.88rem;font-weight:500">공개 (체크 해제 시 관리자만 볼 수 있음)</span>
+          </label>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button type="submit" class="btn btn-primary">등록</button>
+        <button type="button" class="btn btn-outline" id="cancelGalleryBtn">취소</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
+
+<main style="padding-bottom:60px">
+  <div class="container">
+
+    {# 행사 유형 필터 #}
+    {% if posts %}
+    {% set types = posts | map(attribute='event_type') | list | unique | list %}
+    <div style="display:flex;gap:8px;flex-wrap:wrap;padding-top:32px;margin-bottom:-10px">
+      <button class="filter-btn active" data-type="all" onclick="filterGallery('all',this)">전체</button>
+      {% for t in types %}
+        <button class="filter-btn" data-type="{{ t }}" onclick="filterGallery('{{ t }}',this)">{{ t }}</button>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if posts %}
+    <div class="gallery-grid" id="galleryGrid">
+      {% for post in posts %}
+      {% set imgs = post.images | fromjson %}
+      <div class="gallery-card" data-type="{{ post.event_type }}" onclick="openLightbox({{ imgs | tojson }}, 0)">
+        <div class="gallery-thumb">
+          {% if imgs %}
+            <img src="/uploads/{{ imgs[0] }}" alt="{{ post.title }}" loading="lazy">
+            {% if imgs | length > 1 %}
+              <span class="gallery-thumb-count">+{{ imgs | length }}장</span>
+            {% endif %}
+          {% else %}
+            <div class="gallery-thumb-empty">📷</div>
+          {% endif %}
+        </div>
+        <div class="gallery-info">
+          <span class="gallery-type-badge">{{ post.event_type }}</span>
+          <h3 class="gallery-card-title">{{ post.title }}</h3>
+          {% if post.event_date %}
+            <p class="gallery-card-date">{{ post.event_date.strftime('%Y년 %m월 %d일') }}</p>
+          {% endif %}
+          {% if post.description %}
+            <p style="font-size:.8rem;color:var(--muted);margin-top:6px;line-height:1.5;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">{{ post.description }}</p>
+          {% endif %}
+          {% if is_admin %}
+          <form method="post" action="/gallery/{{ post.id }}/delete"
+                style="margin-top:8px" onsubmit="return confirm('삭제하시겠습니까?')">
+            <button type="submit" class="btn btn-ghost btn-xs" style="color:var(--danger)" onclick="event.stopPropagation()">삭제</button>
+          </form>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+
+    {% else %}
+    <div class="empty-state" style="padding:80px 0">
+      <p style="font-size:3rem;margin-bottom:12px">📷</p>
+      <p class="empty-text">아직 갤러리가 없습니다.</p>
+      {% if is_admin %}
+        <p class="muted" style="font-size:.88rem">위 '갤러리 추가' 버튼으로 첫 게시물을 등록해보세요.</p>
+      {% endif %}
+    </div>
+    {% endif %}
+
+  </div>
+</main>
+
+{# ── 라이트박스 ─────────────────────────────────────────────── #}
+<div class="c-lightbox" id="lightbox" onclick="closeLightboxIfBg(event)">
+  <button class="c-lightbox-close" onclick="closeLightbox()">✕</button>
+  <button class="c-lightbox-prev" onclick="lightboxNav(-1)">‹</button>
+  <img id="lightboxImg" src="" alt="">
+  <button class="c-lightbox-next" onclick="lightboxNav(1)">›</button>
+</div>
+
+<script>
+// ── 갤러리 추가 폼 토글 ─────────────────────────────────────────
+(function () {
+  const btn = document.getElementById('newGalleryBtn');
+  const form = document.getElementById('newGalleryForm');
+  const cancel = document.getElementById('cancelGalleryBtn');
+  if (btn) btn.addEventListener('click', function () {
+    form.style.display = form.style.display === 'none' ? 'block' : 'none';
+    if (form.style.display === 'block') {
+      form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  });
+  if (cancel) cancel.addEventListener('click', function () { form.style.display = 'none'; });
+})();
+
+// ── 필터 ───────────────────────────────────────────────────────
+function filterGallery(type, btn) {
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.querySelectorAll('#galleryGrid .gallery-card').forEach(function (card) {
+    card.style.display = (type === 'all' || card.dataset.type === type) ? '' : 'none';
+  });
+}
+
+// ── 라이트박스 ─────────────────────────────────────────────────
+var _lbImages = [];
+var _lbIdx = 0;
+function openLightbox(images, idx) {
+  _lbImages = images;
+  _lbIdx = idx;
+  showLbImage();
+  document.getElementById('lightbox').classList.add('is-open');
+  document.body.style.overflow = 'hidden';
+}
+function showLbImage() {
+  var img = document.getElementById('lightboxImg');
+  img.src = '/uploads/' + _lbImages[_lbIdx];
+  document.querySelector('.c-lightbox-prev').style.display = _lbImages.length > 1 ? '' : 'none';
+  document.querySelector('.c-lightbox-next').style.display = _lbImages.length > 1 ? '' : 'none';
+}
+function lightboxNav(dir) {
+  _lbIdx = (_lbIdx + dir + _lbImages.length) % _lbImages.length;
+  showLbImage();
+}
+function closeLightbox() {
+  document.getElementById('lightbox').classList.remove('is-open');
+  document.body.style.overflow = '';
+}
+function closeLightboxIfBg(e) {
+  if (e.target === document.getElementById('lightbox')) closeLightbox();
+}
+document.addEventListener('keydown', function (e) {
+  if (!document.getElementById('lightbox').classList.contains('is-open')) return;
+  if (e.key === 'Escape') closeLightbox();
+  if (e.key === 'ArrowLeft')  lightboxNav(-1);
+  if (e.key === 'ArrowRight') lightboxNav(1);
+});
+</script>
+{% endblock %}

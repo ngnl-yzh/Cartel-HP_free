@@ -88,6 +88,7 @@ class Member(Base):
     skills     = Column(Text, default="[]")       # JSON: [{"skill":"Python","category":"개발"}]
     links      = Column(Text, default="[]")       # JSON: [{"label":"GitHub","url":"https://..."}]
     comment_muted_until = Column(DateTime, nullable=True)
+    generation = Column(Integer, nullable=True)  # 기수 (1기, 2기, ...)
     created_at = Column(DateTime, default=datetime.now)
 
 
@@ -308,6 +309,21 @@ class TeamCompetitionEntry(Base):
     recorded_by_id = Column(Integer, nullable=True)     # 기록한 팀장 member_id
     created_at     = Column(DateTime, default=datetime.now)
     updated_at     = Column(DateTime, default=datetime.now)
+
+
+class GalleryPost(Base):
+    """갤러리 — 행사 사진 기록"""
+    __tablename__ = "gallery_posts"
+
+    id          = Column(Integer, primary_key=True, index=True)
+    title       = Column(String(200), nullable=False)
+    description = Column(Text, default="")
+    event_type  = Column(String(50), default="기타")   # MT / 개강총회 / 종강파티 / 수상 / 기타
+    event_date  = Column(Date, nullable=True)
+    images      = Column(Text, default="[]")            # JSON list of filenames
+    created_by_id = Column(Integer, nullable=False)
+    is_public   = Column(Boolean, default=True)
+    created_at  = Column(DateTime, default=datetime.now)
 
 
 class ExternalAchievement(Base):

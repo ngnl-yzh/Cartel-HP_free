@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block title %}Awards · CARTEL{% endblock %}
+
+{% block content %}
+{# ── 히어로 ─────────────────────────────────────────────────── #}
+<div class="c-hero">
+  <div class="c-hero-inner">
+    <p class="c-hero-eyebrow">CARTEL</p>
+    <h1 class="c-hero-title">🏅 Awards</h1>
+    <p class="c-hero-sub">우리 팀이 함께 이뤄낸 수상 실적들을 확인해보세요.</p>
+  </div>
+</div>
+
+<main style="padding-bottom:60px">
+  <div class="container">
+
+    {% if entries %}
+    <div class="award-grid">
+      {% for entry in entries %}
+        {% set comp = comps_map.get(entry.competition_id) %}
+        {% set team = teams_map.get(entry.team_id) %}
+        {% set mbs  = members_map.get(entry.team_id, []) %}
+        <div class="award-card">
+          <div class="award-trophy">🏆</div>
+
+          {# 상명 #}
+          {% if entry.award_name %}
+            <span class="award-rank">{{ entry.award_name }}</span>
+          {% endif %}
+
+          {# 공모전명 #}
+          {% if comp %}
+            <p class="award-comp">
+              <a href="/competition/{{ comp.id }}" style="color:inherit;text-decoration:underline;text-underline-offset:3px">{{ comp.title }}</a>
+            </p>
+          {% endif %}
+
+          {# 팀명 #}
+          {% if team %}
+            <p class="award-team">{{ team.name }}</p>
+          {% endif %}
+
+          {# 팀원 목록 #}
+          {% if mbs %}
+          <p class="award-members">
+            {% for m in mbs %}
+              {{ m.nickname }}{% if not loop.last %}, {% endif %}
+            {% endfor %}
+          </p>
+          {% endif %}
+
+          {# 상금 #}
+          {% if entry.prize_amount %}
+            <div class="award-prize-badge">💰 {{ entry.prize_amount }}</div>
+          {% endif %}
+
+          {# 단계별 통과 결과 #}
+          {% set sr_list = entry.stage_results | fromjson %}
+          {% if sr_list %}
+          <div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:12px">
+            {% for sr in sr_list %}
+              {% if sr.get('passed') == true %}
+                <span style="font-size:.74rem;padding:2px 8px;border-radius:999px;background:#dcfce7;color:#166534;font-weight:600">✅ {{ sr.label }}</span>
+              {% elif sr.get('passed') == false and sr.get('passed') is not none %}
+                <span style="font-size:.74rem;padding:2px 8px;border-radius:999px;background:#fee2e2;color:#991b1b;font-weight:600">❌ {{ sr.label }}</span>
+              {% endif %}
+            {% endfor %}
+          </div>
+          {% endif %}
+
+          {# 증빙 사진 #}
+          {% if entry.proof_image and entry.proof_approved %}
+            <img src="/uploads/{{ entry.proof_image }}" class="award-proof-img" alt="수상 증빙">
+          {% elif is_admin and entry.proof_image and not entry.proof_approved %}
+            <div style="margin-top:10px;padding:8px 12px;background:#fef9c3;border-radius:8px;font-size:.8rem;color:#92400e">
+              ⏳ 증빙 사진 승인 대기 중
+            </div>
+            <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
+              <form method="post" action="/admin/achievement/{{ entry.id }}/approve-proof" style="display:inline">
+                <button type="submit" class="btn btn-sm" style="background:var(--success);color:#fff;border:none;font-size:.78rem">✅ 승인</button>
+              </form>
+              <form method="post" action="/admin/achievement/{{ entry.id }}/reject-proof" style="display:inline">
+                <input type="text" name="reason" placeholder="반려 사유" style="font-size:.78rem;padding:4px 8px;border:1px solid var(--line);border-radius:6px;width:120px">
+                <button type="submit" class="btn btn-sm btn-danger" style="font-size:.78rem">반려</button>
+              </form>
+            </div>
+          {% endif %}
+
+          {# 비공개 표시 (관리자용) #}
+          {% if is_admin and not entry.is_public %}
+            <p style="font-size:.75rem;color:var(--muted);margin-top:8px">🔒 비공개</p>
+          {% endif %}
+        </div>
+      {% endfor %}
+    </div>
+
+    {% else %}
+    <div class="empty-state" style="padding:80px 0">
+      <p style="font-size:3rem;margin-bottom:12px">🏆</p>
+      <p class="empty-text">아직 등록된 수상 실적이 없습니다.</p>
+      <p class="muted" style="font-size:.88rem">공모전에 참가하여 결과를 입력하면 여기에 표시됩니다.</p>
+    </div>
+    {% endif %}
+
+  </div>
+</main>
+{% endblock %}

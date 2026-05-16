@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+{% block title %}Member · CARTEL{% endblock %}
+
+{% block content %}
+{# ── 히어로 ────────────────────────────────────────────────── #}
+<div class="c-hero">
+  <div class="c-hero-inner">
+    <p class="c-hero-eyebrow">CARTEL</p>
+    <h1 class="c-hero-title">👥 Member</h1>
+    <p class="c-hero-sub">카르텔의 모든 멤버를 기수별로 만나보세요.</p>
+  </div>
+</div>
+
+<main style="padding:40px 0 80px">
+  <div class="container">
+
+    {% if groups %}
+      {# 기수 탭 네비게이션 #}
+      {% if groups | length > 1 %}
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:36px;border-bottom:2px solid var(--line);padding-bottom:12px">
+        <button class="gen-tab-btn is-active" onclick="showGen('all', this)">전체</button>
+        {% for gen, _ in groups.items() %}
+          <button class="gen-tab-btn" onclick="showGen('{{ gen }}', this)">
+            {{ gen ~ '기' if gen != 0 else '기수 미분류' }}
+          </button>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      {% for gen, members in groups.items() %}
+      <div class="gen-section" data-gen="{{ gen }}" id="gen-{{ gen }}">
+        <h2 class="gen-label">
+          {% if gen != 0 %}
+            <span class="gen-badge">{{ gen }}기</span>
+            <span style="color:var(--muted);font-size:.85rem;font-weight:400">{{ members | length }}명</span>
+          {% else %}
+            <span class="gen-badge" style="background:var(--muted)">미분류</span>
+            <span style="color:var(--muted);font-size:.85rem;font-weight:400">{{ members | length }}명</span>
+          {% endif %}
+        </h2>
+
+        <div class="member-cards-grid">
+          {% for m in members %}
+          <a href="/profile/{{ m.activity_name }}" class="member-profile-card">
+            {% if m.profile_image %}
+              <img src="/uploads/{{ m.profile_image }}" class="mp-avatar" alt="{{ m.activity_name }}">
+            {% else %}
+              <span class="mp-avatar-letter">{{ m.activity_name[0] | upper }}</span>
+            {% endif %}
+            <span class="mp-name">{{ m.activity_name }}</span>
+            {% if m.role == 'sub_admin' %}
+              <span class="mp-role" style="background:#fef3c7;color:#92400e">중간관리자</span>
+            {% endif %}
+            {% if m.bio %}
+              <p class="mp-bio">{{ m.bio }}</p>
+            {% elif m.intro_text %}
+              <p class="mp-bio">{{ m.intro_text }}</p>
+            {% endif %}
+            {# 스킬 태그 (최대 3개) #}
+            {% set skill_list = m.skills | fromjson %}
+            {% if skill_list %}
+            <div style="display:flex;flex-wrap:wrap;gap:4px;justify-content:center;margin-top:4px">
+              {% for sk in skill_list[:3] %}
+                <span style="font-size:.68rem;padding:2px 7px;border-radius:999px;background:rgba(59,130,246,0.08);color:var(--cartel-blue);font-weight:600">{{ sk.skill }}</span>
+              {% endfor %}
+              {% if skill_list | length > 3 %}
+                <span style="font-size:.68rem;color:var(--muted)">+{{ skill_list | length - 3 }}</span>
+              {% endif %}
+            </div>
+            {% endif %}
+          </a>
+          {% endfor %}
+        </div>
+      </div>
+      {% endfor %}
+
+    {% else %}
+    <div class="empty-state" style="padding:80px 0">
+      <p style="font-size:3rem;margin-bottom:12px">👥</p>
+      <p class="empty-text">아직 등록된 멤버가 없습니다.</p>
+    </div>
+    {% endif %}
+
+  </div>
+</main>
+
+<style>
+.gen-tab-btn {
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 7px 16px;
+  border: 1.5px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+  transition: border-color .15s, color .15s, background .15s;
+}
+.gen-tab-btn.is-active {
+  border-color: var(--cartel-blue);
+  color: var(--cartel-blue);
+  background: rgba(59,130,246,0.07);
+}
+.gen-tab-btn:hover { border-color: var(--cartel-blue); color: var(--cartel-blue); }
+</style>
+
+<script>
+function showGen(target, btn) {
+  document.querySelectorAll('.gen-tab-btn').forEach(b => b.classList.remove('is-active'));
+  btn.classList.add('is-active');
+  document.querySelectorAll('.gen-section').forEach(function (sec) {
+    sec.style.display = (target === 'all' || sec.dataset.gen === target) ? '' : 'none';
+  });
+}
+</script>
+
+{# 관리자: 기수 지정 패널 #}
+{% if is_admin %}
+<div style="position:fixed;bottom:24px;right:24px;z-index:50">
+  <button onclick="document.getElementById('genAdminPanel').classList.toggle('is-open')"
+          class="btn btn-primary" style="border-radius:999px;box-shadow:0 4px 20px rgba(37,99,235,0.4)">
+    ⚙️ 기수 관리
+  </button>
+</div>
+<div id="genAdminPanel" style="display:none" class="{% if false %}is-open{% endif %}">
+  <div style="position:fixed;bottom:80px;right:24px;z-index:50;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:20px;min-width:280px;box-shadow:var(--shadow-lg)">
+    <h3 style="font-size:1rem;font-weight:700;margin-bottom:14px">기수 지정</h3>
+    <p class="muted" style="font-size:.82rem;margin-bottom:14px">각 멤버 프로필에서 편집하거나, 여기서 일괄 지정하세요.</p>
+    <form method="post" action="/admin/members/set-generation">
+      <div style="margin-bottom:10px">
+        <label class="form-label">멤버 활동명</label>
+        <input type="text" name="activity_name" class="form-control" placeholder="활동명 입력">
+      </div>
+      <div style="margin-bottom:14px">
+        <label class="form-label">기수</label>
+        <input type="number" name="generation" class="form-control" placeholder="예: 1" min="1">
+      </div>
+      <button type="submit" class="btn btn-primary btn-full">저장</button>
+    </form>
+  </div>
+</div>
+<script>
+(function () {
+  var panel = document.getElementById('genAdminPanel');
+  if (panel) {
+    // CSS display toggle 대신 class toggle 사용
+    var panelInner = panel.querySelector('div');
+    document.querySelector('[onclick*="genAdminPanel"]').addEventListener('click', function () {
+      var d = panelInner.style.display;
+      panelInner.style.display = d === 'none' || d === '' ? 'block' : 'none';
+    });
+    panelInner.style.display = 'none';
+  }
+})();
+</script>
+{% endif %}
+
+{% endblock %}

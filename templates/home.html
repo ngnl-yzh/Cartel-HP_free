@@ -24,7 +24,7 @@
 
     {# ── 로고 마크 ── #}
     <div class="hero-emblem">
-      <img src="/static/images/cartel-logo-mono.png" class="hero-logo-img" alt="">
+      <img src="/static/images/cartel-logo-transparent.png" class="hero-logo-img" alt="">
     </div>
 
     {# ── 브랜드 타이틀 ── #}
@@ -329,25 +329,20 @@
   z-index: -1;
 }
 
-/* 흑백 로고 → invert(1)로 흰 별자리, mix-blend-mode:screen으로 배경 흡수 */
+/* 투명 PNG — 배경 박스 없이 흰 별자리만 */
 .hero-logo-img {
-  width: clamp(100px, 18vw, 160px);
+  width: clamp(110px, 20vw, 175px);
   height: auto;
   display: block;
-  /* 검정→흰색, 흰색→검정(어두운 bg에 녹아듦) */
-  filter: invert(1)
-          drop-shadow(0 0 28px rgba(59,130,246,0.55))
-          drop-shadow(0 0 8px rgba(180,210,255,0.4));
-  mix-blend-mode: screen;
+  filter: drop-shadow(0 0 28px rgba(59, 130, 246, 0.55))
+          drop-shadow(0 0 8px rgba(180, 210, 255, 0.45));
   animation: heroGlow 3.5s ease-in-out infinite alternate;
 }
 @keyframes heroGlow {
-  from { filter: invert(1)
-                 drop-shadow(0 0 16px rgba(59,130,246,0.4))
+  from { filter: drop-shadow(0 0 14px rgba(59,130,246,0.38))
                  drop-shadow(0 0 5px rgba(180,210,255,0.25)); }
-  to   { filter: invert(1)
-                 drop-shadow(0 0 42px rgba(59,130,246,0.8))
-                 drop-shadow(0 0 14px rgba(180,210,255,0.6)); }
+  to   { filter: drop-shadow(0 0 44px rgba(59,130,246,0.78))
+                 drop-shadow(0 0 15px rgba(180,210,255,0.6)); }
 }
 
 /* ── CARTEL 타이틀 ── */

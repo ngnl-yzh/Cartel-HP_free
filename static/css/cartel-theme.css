@@ -62,21 +62,17 @@ body {
   padding: 4px 0;
 }
 
-/* 실제 이미지 로고 — 흑백 버전을 invert(1)+screen으로 흰 별자리로 표시 */
+/* 로고 이미지 — 투명 PNG (흰 별자리, 배경 없음) */
 .c-logo-img {
   height: 40px;
   width: auto;
   object-fit: contain;
-  /* invert: 검정→흰색(별자리 흰색으로), 흰배경→검정(어두운 nav에 녹아듦) */
-  filter: invert(1)
-          drop-shadow(0 0 8px rgba(180,210,255,0.45));
-  mix-blend-mode: screen;
+  filter: drop-shadow(0 0 7px rgba(180, 210, 255, 0.5));
   transition: filter 0.28s, transform 0.22s;
 }
 .c-logo:hover .c-logo-img {
-  filter: invert(1)
-          drop-shadow(0 0 20px rgba(59,130,246,0.9))
-          brightness(1.2);
+  filter: drop-shadow(0 0 18px rgba(100, 170, 255, 0.9))
+          brightness(1.15);
   transform: scale(1.06);
 }
 
@@ -106,9 +102,8 @@ body {
   height: 44px;
   width: auto;
   object-fit: contain;
-  filter: invert(1) drop-shadow(0 0 6px rgba(180,210,255,0.3));
-  mix-blend-mode: screen;
-  opacity: 0.75;
+  filter: drop-shadow(0 0 5px rgba(180, 210, 255, 0.3));
+  opacity: 0.7;
 }
 
 /* ── 데스크탑 링크 ───────────────────────────────────────────── */

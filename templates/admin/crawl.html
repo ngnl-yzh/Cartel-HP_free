@@ -86,10 +86,32 @@
             <span class="crawl-filter-count muted" id="filterCount{{ sess_idx }}"></span>
           </div>
 
+          {# ── 일괄 액션 바 (최신 세션만) ── #}
+          {% if sess_idx == 0 %}
+          <div class="bulk-bar" id="bulkBar{{ sess_idx }}" style="display:none">
+            <span class="bulk-count" id="bulkCount{{ sess_idx }}">0개 선택됨</span>
+            <div style="display:flex;gap:6px">
+              <button type="button" class="btn btn-outline btn-sm"
+                      onclick="bulkAdd({{ sess_idx }}, false)">선택 추가</button>
+              <button type="button" class="btn btn-primary btn-sm"
+                      onclick="bulkAdd({{ sess_idx }}, true)">GPT로 선택 추가</button>
+              <button type="button" class="btn btn-outline btn-sm"
+                      onclick="clearSelection({{ sess_idx }})">선택 해제</button>
+            </div>
+          </div>
+          {% endif %}
+
           <section class="table-wrap">
             <table class="admin-table crawl-table" id="crawlTable{{ sess_idx }}">
               <thead>
                 <tr>
+                  {% if sess_idx == 0 %}
+                  <th style="width:32px;text-align:center">
+                    <input type="checkbox" id="checkAll{{ sess_idx }}"
+                           title="전체 선택"
+                           onchange="toggleAll({{ sess_idx }}, this.checked)">
+                  </th>
+                  {% endif %}
                   <th style="width:80px">출처</th>
                   <th>공모전명</th>
                   <th style="width:140px">분야</th>
@@ -101,7 +123,13 @@
               <tbody>
                 {% for item in session['items'] %}
                 {% set item_tags = item.tags if item.tags else [] %}
-                <tr data-tags="{{ item_tags | join(',') }}" data-sess="{{ sess_idx }}">
+                <tr data-tags="{{ item_tags | join(',') }}" data-sess="{{ sess_idx }}" data-idx="{{ loop.index0 }}">
+                  {% if sess_idx == 0 %}
+                  <td style="text-align:center">
+                    <input type="checkbox" class="row-check-{{ sess_idx }}" value="{{ loop.index0 }}"
+                           onchange="updateBulkBar({{ sess_idx }})">
+                  </td>
+                  {% endif %}
                   <td>
                     <span class="source-badge source-{{ item.source }}">{{ item.source_label }}</span>
                   </td>
@@ -291,6 +319,25 @@
 .crawl-actions { display:flex; gap:4px; }
 .source-badge { font-size:.72rem; padding:2px 8px; border-radius:4px;
   background:rgba(59,130,246,0.1); color:var(--cartel-blue); font-weight:600; white-space:nowrap; }
+
+/* ── 일괄 액션 바 ── */
+.bulk-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  margin-bottom: 8px;
+  background: rgba(37,99,235,.07);
+  border: 1.5px solid rgba(37,99,235,.2);
+  border-radius: 10px;
+  flex-wrap: wrap;
+}
+.bulk-count {
+  font-size: .85rem;
+  font-weight: 700;
+  color: var(--cartel-blue);
+}
 </style>
 
 <script>
@@ -298,6 +345,87 @@
 document.querySelectorAll('.crawl-delete-btn').forEach(function(btn) {
   btn.addEventListener('click', function(e) { e.stopPropagation(); });
 });
+
+// ── 일괄 선택 관련 ────────────────────────────────────────────────
+function getChecked(sessIdx) {
+  // 숨겨진 행(필터로 display:none) 제외하고 체크된 것만
+  return Array.from(
+    document.querySelectorAll('.row-check-' + sessIdx + ':checked')
+  ).filter(function(chk) {
+    return chk.closest('tr').style.display !== 'none';
+  });
+}
+
+function updateBulkBar(sessIdx) {
+  var checked = getChecked(sessIdx);
+  var bar   = document.getElementById('bulkBar'   + sessIdx);
+  var count = document.getElementById('bulkCount' + sessIdx);
+  if (!bar) return;
+  if (checked.length > 0) {
+    bar.style.display = 'flex';
+    count.textContent = checked.length + '개 선택됨';
+  } else {
+    bar.style.display = 'none';
+  }
+  // 전체선택 체크박스 상태 동기화
+  var allChk = document.getElementById('checkAll' + sessIdx);
+  if (!allChk) return;
+  var allVisible = Array.from(
+    document.querySelectorAll('.row-check-' + sessIdx)
+  ).filter(function(c){ return c.closest('tr').style.display !== 'none'; });
+  allChk.indeterminate = checked.length > 0 && checked.length < allVisible.length;
+  allChk.checked = allVisible.length > 0 && checked.length === allVisible.length;
+}
+
+function toggleAll(sessIdx, checked) {
+  Array.from(document.querySelectorAll('.row-check-' + sessIdx)).forEach(function(chk) {
+    if (chk.closest('tr').style.display !== 'none') chk.checked = checked;
+  });
+  updateBulkBar(sessIdx);
+}
+
+function clearSelection(sessIdx) {
+  Array.from(document.querySelectorAll('.row-check-' + sessIdx)).forEach(function(c){ c.checked = false; });
+  var allChk = document.getElementById('checkAll' + sessIdx);
+  if (allChk) { allChk.checked = false; allChk.indeterminate = false; }
+  updateBulkBar(sessIdx);
+}
+
+function bulkAdd(sessIdx, useGpt) {
+  var checked = getChecked(sessIdx);
+  if (checked.length === 0) { alert('항목을 선택해주세요.'); return; }
+
+  if (useGpt) {
+    var ok = confirm(
+      checked.length + '개 항목을 GPT로 추가합니다.\n' +
+      '항목당 약 10~20초 소요될 수 있습니다 (총 약 ' +
+      Math.round(checked.length * 15) + '초). 계속하시겠습니까?'
+    );
+    if (!ok) return;
+  }
+
+  var idxs = checked.map(function(c){ return c.value; });
+  var action = useGpt ? '/admin/crawl/add-bulk-gpt' : '/admin/crawl/add-bulk';
+
+  var form = document.createElement('form');
+  form.method = 'post';
+  form.action = action;
+  idxs.forEach(function(idx) {
+    var inp = document.createElement('input');
+    inp.type = 'hidden';
+    inp.name = 'idxs';
+    inp.value = idx;
+    form.appendChild(inp);
+  });
+  document.body.appendChild(form);
+
+  if (useGpt) {
+    // GPT 처리 중 버튼 비활성화 표현
+    var bar = document.getElementById('bulkBar' + sessIdx);
+    if (bar) bar.innerHTML = '<span style="color:var(--cartel-blue);font-weight:700">⏳ GPT 처리 중… 페이지를 닫지 마세요.</span>';
+  }
+  form.submit();
+}
 
 // ── 소스 선택 최소 1개 보장 ──────────────────────────────────────
 function onCrawlSubmit(e) {

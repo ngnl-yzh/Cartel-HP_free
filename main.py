@@ -1479,13 +1479,22 @@ async def admin_debug_storage(request: Request, db: Session = Depends(get_db)):
 
 
 @app.get("/admin", response_class=HTMLResponse)
-async def admin_dashboard(request: Request, db: Session = Depends(get_db)):
+async def admin_dashboard(
+    request: Request,
+    db: Session = Depends(get_db),
+    bulk_added: int = 0,
+    bulk_errors: int = 0,
+):
     if r := _privileged_redirect(request, db):
         return r
     competitions = _annotate(db.query(Competition).order_by(Competition.deadline.asc()).all())
     return _render(request,
         "admin/dashboard.html",
-        _ctx(request, db, competitions=competitions, today=date.today()),
+        _ctx(request, db,
+             competitions=competitions,
+             today=date.today(),
+             bulk_added=bulk_added,
+             bulk_errors=bulk_errors),
     )
 
 
@@ -3858,31 +3867,84 @@ async def admin_crawl_add(
     return RedirectResponse(url=f"/admin/edit/{comp.id}", status_code=303)
 
 
-@app.post("/admin/crawl/add-with-gpt")
-async def admin_crawl_add_with_gpt(
+@app.post("/admin/crawl/add-bulk")
+async def admin_crawl_add_bulk(
     request: Request,
-    idx: int = Form(...),
+    idxs: list[int] = Form(...),
     db: Session = Depends(get_db),
 ):
-    """크롤 결과를 GPT로 파싱해 공모전 등록 (텍스트+비전+첨부파일 3단계 전략)"""
+    """체크된 크롤 항목들을 기본 정보로 일괄 등록"""
     if r := _admin_redirect(request):
         return r
 
-    # ── 0. 사전 검증 ─────────────────────────────────────────────────────────
-    if not os.getenv("OPENAI_API_KEY"):
-        raise HTTPException(
-            status_code=400,
-            detail="OPENAI_API_KEY 환경변수가 설정되지 않았습니다. Railway 서비스 환경변수를 확인하세요.",
+    items = _latest_crawl_items(db)
+    added = 0
+    for idx in idxs:
+        if idx < 0 or idx >= len(items):
+            continue
+        item = items[idx]
+        deadline_str = item.get("deadline") or (date.today() + timedelta(days=30)).isoformat()
+        try:
+            dl = date.fromisoformat(deadline_str)
+        except (ValueError, TypeError):
+            dl = date.today() + timedelta(days=30)
+        comp = Competition(
+            title=item.get("title", ""),
+            organizer=item.get("organizer", ""),
+            tags=json.dumps(item.get("tags", []), ensure_ascii=False),
+            deadline=dl,
+            prize=item.get("prize", ""),
+            link=item.get("link", ""),
+            description=f"[{item.get('source_label', '')}에서 자동 수집]\n\n원문 링크: {item.get('link', '')}",
         )
+        db.add(comp)
+        added += 1
+    db.commit()
+    return RedirectResponse(url=f"/admin?bulk_added={added}", status_code=303)
+
+
+@app.post("/admin/crawl/add-bulk-gpt")
+async def admin_crawl_add_bulk_gpt(
+    request: Request,
+    idxs: list[int] = Form(...),
+    db: Session = Depends(get_db),
+):
+    """체크된 크롤 항목들을 GPT로 파싱해 일괄 등록"""
+    if r := _admin_redirect(request):
+        return r
+    if not os.getenv("OPENAI_API_KEY"):
+        raise HTTPException(status_code=400, detail="OPENAI_API_KEY 환경변수가 설정되지 않았습니다.")
 
     items = _latest_crawl_items(db)
-    if idx < 0 or idx >= len(items):
-        raise HTTPException(status_code=400, detail="잘못된 인덱스입니다. 페이지를 새로고침하거나 다시 크롤링해주세요.")
+    added = 0
+    errors = []
 
-    item  = items[idx]
-    link  = item.get("link", "").strip()
+    for idx in idxs:
+        if idx < 0 or idx >= len(items):
+            continue
+        item = items[idx]
+        try:
+            await _gpt_process_item(item, db)
+            added += 1
+        except Exception as e:
+            errors.append(f"{item.get('title','?')} — {str(e)[:80]}")
+
+    return RedirectResponse(
+        url=f"/admin?bulk_added={added}&bulk_errors={len(errors)}",
+        status_code=303,
+    )
+
+
+async def _gpt_process_item(item: dict, db: Session) -> int:
+    """
+    크롤 항목 하나를 GPT로 파싱해 Competition을 생성하고 comp.id를 반환.
+    단일 추가·일괄 추가 모두 이 함수를 공유한다.
+    """
+    link = item.get("link", "").strip()
     if not link:
-        raise HTTPException(status_code=400, detail="URL이 없는 항목입니다.")
+        raise ValueError("URL이 없는 항목입니다.")
+
+    # contestkorea 상대경로 복원
 
     # contestkorea 상대경로 복원: /sub/ 없이 저장된 캐시 URL 교정
     # 예) https://www.contestkorea.com/view.php?... → https://www.contestkorea.com/sub/view.php?...
@@ -4259,7 +4321,25 @@ async def admin_crawl_add_with_gpt(
     )
     db.add(comp)
     db.commit()
-    return RedirectResponse(url=f"/admin/edit/{comp.id}", status_code=303)
+    return comp.id   # ← 라우트에서 redirect 처리
+
+
+@app.post("/admin/crawl/add-with-gpt")
+async def admin_crawl_add_with_gpt(
+    request: Request,
+    idx: int = Form(...),
+    db: Session = Depends(get_db),
+):
+    """크롤 결과를 GPT로 파싱해 공모전 등록 (단일)"""
+    if r := _admin_redirect(request):
+        return r
+    if not os.getenv("OPENAI_API_KEY"):
+        raise HTTPException(status_code=400, detail="OPENAI_API_KEY 환경변수가 설정되지 않았습니다.")
+    items = _latest_crawl_items(db)
+    if idx < 0 or idx >= len(items):
+        raise HTTPException(status_code=400, detail="잘못된 인덱스입니다. 페이지를 새로고침하거나 다시 크롤링해주세요.")
+    comp_id = await _gpt_process_item(items[idx], db)
+    return RedirectResponse(url=f"/admin/edit/{comp_id}", status_code=303)
 
 
 # ── 관리자 설정 ──────────────────────────────────────────────────────────────

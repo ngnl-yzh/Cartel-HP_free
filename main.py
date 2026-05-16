@@ -3095,7 +3095,9 @@ async def admin_crawl_add_with_gpt(
                 _tag.decompose()
 
             # 공모전코리아 정보 테이블 구조화 추출 (접수기간·시상내역 등 라벨:값 형식)
+            # 공모전코리아 정보 테이블 구조화 추출 (접수기간·시상내역 등 라벨:값)
             _info_lines: list[str] = []
+            _SKIP_KEYS = {"SNS", "오류", "특전", "접수하기", "홈페이지", "콘코"}
             _info_tbl = soup.select_one(".txt_area table") or soup.select_one(".view_top_area table")
             if _info_tbl:
                 for _tr in _info_tbl.select("tr"):
@@ -3104,13 +3106,34 @@ async def admin_crawl_add_with_gpt(
                     if _th and _td:
                         _k = re.sub(r"\s+", " ", _th.get_text()).strip()
                         _v = re.sub(r"\s+", " ", _td.get_text()).strip()
-                        # SNS·오류제보 행 제외
-                        if _k and _v and "SNS" not in _k and "오류" not in _k and len(_v) < 200:
-                            _info_lines.append(f"{_k}: {_v}")
+                        # 불필요한 행 제외
+                        if not _k or not _v or len(_v) > 300:
+                            continue
+                        if any(skip in _k for skip in _SKIP_KEYS):
+                            continue
+                        # 날짜 범위 레이블 명확화 (GPT 오독 방지)
+                        if "접수기간" in _k:
+                            # "2026.05.18 ~ 2026.07.13" → deadline 명시
+                            _parts = _v.split("~")
+                            if len(_parts) == 2:
+                                _info_lines.append(f"접수 시작일: {_parts[0].strip()}")
+                                _info_lines.append(f"접수 마감일(deadline): {_parts[1].strip()}")
+                                continue
+                        elif "심사기간" in _k:
+                            _parts = _v.split("~")
+                            if len(_parts) == 2:
+                                _info_lines.append(f"심사 시작일: {_parts[0].strip()}")
+                                _info_lines.append(f"심사 종료일: {_parts[1].strip()}")
+                                continue
+                        _info_lines.append(f"{_k}: {_v}")
 
             _info_text = ""
             if _info_lines:
-                _info_text = "【공모전 정보】\n" + "\n".join(_info_lines) + "\n\n"
+                _info_text = (
+                    "【공모전 정보 - 아래 데이터를 최우선으로 사용하세요】\n"
+                    + "\n".join(_info_lines)
+                    + "\n\n"
+                )
 
             # 메인 본문: 공모전코리아 전용 선택자 → 일반 선택자 순
             _MAIN_SELECTORS = [

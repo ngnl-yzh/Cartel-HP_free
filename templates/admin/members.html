@@ -26,6 +26,30 @@
       {% endif %}
     </form>
 
+    {# ── 기수 일괄 지정 바 (항상 표시, 체크 시 활성화) ── #}
+    <form method="post" action="/admin/members/set-generation" id="genBulkForm">
+      <div class="gen-bulk-bar" id="genBulkBar">
+        <div class="gen-bulk-left">
+          <label class="gen-bulk-check-all">
+            <input type="checkbox" id="checkAll" onchange="toggleAll(this)">
+            <span>전체 선택</span>
+          </label>
+          <span class="gen-bulk-count" id="selectedCount">0명 선택됨</span>
+        </div>
+        <div class="gen-bulk-right">
+          <label style="font-size:.85rem;font-weight:600;color:var(--text)">기수 지정</label>
+          <input type="number" name="generation" id="genInput"
+                 class="form-control" style="width:90px;height:36px;font-size:.9rem"
+                 placeholder="예: 6" min="1">
+          <button type="submit" class="btn btn-primary btn-sm" id="genSubmitBtn" disabled
+                  onclick="return validateGenBulk()">
+            일괄 적용
+          </button>
+          <button type="button" class="btn btn-ghost btn-sm" onclick="clearAll()">선택 해제</button>
+        </div>
+      </div>
+    </form>
+
     {% if not members %}
     <div class="empty-state">
       {% if query %}
@@ -63,37 +87,42 @@
         <table class="admin-table">
           <thead>
             <tr>
+              <th style="width:36px"></th>
               <th>활동명</th>
               <th>실명</th>
+              <th>기수</th>
               <th>학번</th>
-              <th>전화번호</th>
               <th>역할</th>
-              <th>댓글 제한</th>
               <th>가입일</th>
               <th></th>
             </tr>
           </thead>
           <tbody>
             {% for m in group.members %}
-            <tr>
+            <tr class="member-row" data-id="{{ m.id }}">
+              <td style="text-align:center">
+                <input type="checkbox" form="genBulkForm" name="member_ids"
+                       value="{{ m.id }}" class="member-check"
+                       onchange="updateSelection()"
+                       style="width:16px;height:16px;accent-color:var(--primary);cursor:pointer">
+              </td>
               <td>
                 <a href="/profile/{{ m.activity_name }}" class="table-title">{{ m.activity_name }}</a>
               </td>
               <td>{{ m.real_name }}</td>
+              <td>
+                {% if m.generation %}
+                  <span class="deadline-badge open" style="font-size:.75rem">{{ m.generation }}기</span>
+                {% else %}
+                  <span class="muted" style="font-size:.8rem">미지정</span>
+                {% endif %}
+              </td>
               <td>{{ m.student_id or "-" }}</td>
-              <td>{{ m.phone or "-" }}</td>
               <td>
                 {% if m.role == 'sub_admin' %}
                   <span class="deadline-badge soon">중간관리자</span>
                 {% else %}
                   <span class="deadline-badge open">일반회원</span>
-                {% endif %}
-              </td>
-              <td>
-                {% if m.comment_muted_until and m.comment_muted_until > now %}
-                  <span class="deadline-badge urgent">{{ m.comment_muted_until.strftime('%m/%d %H:%M') }}까지</span>
-                {% else %}
-                  <span class="muted">없음</span>
                 {% endif %}
               </td>
               <td>{{ m.created_at.strftime('%Y.%m.%d') }}</td>
@@ -133,4 +162,108 @@
 
   </div>
 </main>
+
+<style>
+/* ── 기수 일괄 지정 바 ── */
+.gen-bulk-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 16px;
+  background: var(--surface);
+  border: 1.5px solid var(--line);
+  border-radius: 12px;
+  margin-bottom: 20px;
+  transition: border-color .2s, box-shadow .2s;
+}
+.gen-bulk-bar.has-selection {
+  border-color: var(--cartel-blue);
+  box-shadow: 0 0 0 3px rgba(59,130,246,0.1);
+  background: rgba(59,130,246,0.03);
+}
+.gen-bulk-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.gen-bulk-check-all {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: .88rem;
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+}
+.gen-bulk-check-all input { width:16px;height:16px;accent-color:var(--primary); }
+.gen-bulk-count {
+  font-size: .82rem;
+  color: var(--muted);
+  font-weight: 500;
+}
+.gen-bulk-count.has-selection { color: var(--cartel-blue); font-weight: 700; }
+.gen-bulk-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* 체크된 행 하이라이트 */
+.member-row.is-checked {
+  background: rgba(59,130,246,0.04);
+}
+</style>
+
+<script>
+function updateSelection() {
+  const checks  = document.querySelectorAll('.member-check');
+  const checked = [...checks].filter(c => c.checked);
+  const count   = checked.length;
+  const bar     = document.getElementById('genBulkBar');
+  const countEl = document.getElementById('selectedCount');
+  const submitBtn = document.getElementById('genSubmitBtn');
+  const allChk  = document.getElementById('checkAll');
+
+  countEl.textContent = count + '명 선택됨';
+  countEl.classList.toggle('has-selection', count > 0);
+  bar.classList.toggle('has-selection', count > 0);
+  submitBtn.disabled = count === 0;
+
+  // 전체선택 체크박스 상태 동기화
+  allChk.indeterminate = count > 0 && count < checks.length;
+  allChk.checked = count === checks.length && checks.length > 0;
+
+  // 행 하이라이트
+  checks.forEach(function(c) {
+    c.closest('tr').classList.toggle('is-checked', c.checked);
+  });
+}
+
+function toggleAll(masterChk) {
+  document.querySelectorAll('.member-check').forEach(function(c) {
+    c.checked = masterChk.checked;
+  });
+  updateSelection();
+}
+
+function clearAll() {
+  document.querySelectorAll('.member-check').forEach(function(c) { c.checked = false; });
+  document.getElementById('checkAll').checked = false;
+  updateSelection();
+}
+
+function validateGenBulk() {
+  const gen = document.getElementById('genInput').value.trim();
+  if (!gen) {
+    alert('기수 번호를 입력해주세요.');
+    document.getElementById('genInput').focus();
+    return false;
+  }
+  const count = [...document.querySelectorAll('.member-check')].filter(c => c.checked).length;
+  return confirm(count + '명의 기수를 ' + gen + '기로 지정하시겠습니까?');
+}
+</script>
 {% endblock %}

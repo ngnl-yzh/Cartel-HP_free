@@ -107,29 +107,9 @@
   </div>
 </main>
 
-{# ── 관리자: 기수 지정 패널 ── #}
+{# ── 관리자: 기수 관리 버튼 → 관리자 페이지로 이동 ── #}
 {% if is_privileged %}
-<button class="gen-admin-fab" id="genAdminBtn">⚙️ 기수 관리</button>
-<div class="gen-admin-panel" id="genAdminPanel">
-  <div class="gen-admin-inner">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
-      <h3 style="font-size:1rem;font-weight:700;margin:0">기수 지정</h3>
-      <button id="genAdminClose" style="background:none;border:none;cursor:pointer;font-size:1.1rem;color:var(--muted)">✕</button>
-    </div>
-    <p style="font-size:.82rem;color:var(--muted);margin:0 0 14px">활동명으로 기수를 일괄 지정합니다.</p>
-    <form method="post" action="/admin/members/set-generation">
-      <div style="margin-bottom:10px">
-        <label class="form-label">멤버 활동명</label>
-        <input type="text" name="activity_name" class="form-control" placeholder="활동명 정확히 입력" required>
-      </div>
-      <div style="margin-bottom:14px">
-        <label class="form-label">기수 번호</label>
-        <input type="number" name="generation" class="form-control" placeholder="예: 6" min="1" required>
-      </div>
-      <button type="submit" class="btn btn-primary" style="width:100%">저장</button>
-    </form>
-  </div>
-</div>
+<a href="/admin/members" class="gen-admin-fab">⚙️ 기수 관리</a>
 {% endif %}
 
 <style>
@@ -343,26 +323,13 @@
   font-family: var(--font-display);
   font-size: .88rem;
   font-weight: 700;
-  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
   box-shadow: 0 4px 20px rgba(37,99,235,0.4);
   transition: box-shadow .2s, transform .15s;
 }
-.gen-admin-fab:hover { box-shadow: 0 8px 32px rgba(37,99,235,0.55); transform: translateY(-2px); }
-
-/* ── 기수 관리 패널 ── */
-.gen-admin-panel {
-  position: fixed;
-  bottom: 80px; right: 24px;
-  z-index: 200;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 16px;
-  padding: 20px;
-  width: 280px;
-  box-shadow: 0 8px 40px rgba(0,0,0,0.15);
-  display: none;
-}
-.gen-admin-panel.is-open { display: block; }
+.gen-admin-fab:hover { box-shadow: 0 8px 32px rgba(37,99,235,0.55); transform: translateY(-2px); color: #fff; }
 </style>
 
 <script>
@@ -373,29 +340,6 @@ function showGen(target, btn) {
     sec.style.display = (target === 'all' || sec.dataset.gen === target) ? '' : 'none';
   });
 }
-
-// 기수 관리 패널 토글 (버그 수정)
-(function () {
-  var fab   = document.getElementById('genAdminBtn');
-  var panel = document.getElementById('genAdminPanel');
-  var close = document.getElementById('genAdminClose');
-  if (!fab || !panel) return;
-
-  fab.addEventListener('click', function (e) {
-    e.stopPropagation();
-    panel.classList.toggle('is-open');
-  });
-  if (close) {
-    close.addEventListener('click', function () {
-      panel.classList.remove('is-open');
-    });
-  }
-  document.addEventListener('click', function (e) {
-    if (!panel.contains(e.target) && e.target !== fab) {
-      panel.classList.remove('is-open');
-    }
-  });
-})();
 </script>
 
 {% endblock %}

@@ -1764,17 +1764,19 @@ async def admin_members(request: Request, q: str = Query(default=""), db: Sessio
 @app.post("/admin/members/set-generation")
 async def admin_set_generation(
     request: Request,
-    activity_name: str = Form(...),
+    member_ids: List[int] = Form(default=[]),
     generation: Optional[int] = Form(None),
     db: Session = Depends(get_db),
 ):
+    """선택된 멤버 ID 목록에 기수를 일괄 지정"""
     if not _is_privileged(request, db):
         raise HTTPException(status_code=403, detail="권한이 없습니다.")
-    m = db.query(Member).filter(Member.activity_name == activity_name.strip()).first()
-    if m:
-        m.generation = generation
+    if member_ids:
+        db.query(Member).filter(Member.id.in_(member_ids)).update(
+            {Member.generation: generation}, synchronize_session=False
+        )
         db.commit()
-    return RedirectResponse(url="/members", status_code=303)
+    return RedirectResponse(url="/admin/members", status_code=303)
 
 
 @app.post("/admin/members/{member_id}/set-role")

@@ -3722,39 +3722,75 @@ async def admin_crawl_page(request: Request, db: Session = Depends(get_db)):
     )
 
 
+def _norm_url(url: str) -> str:
+    """URL 정규화 — http/https·www·끝슬래시·쿼리파라미터 순서 차이 무시"""
+    if not url:
+        return ""
+    url = url.strip().lower()
+    url = re.sub(r'^https?://', '', url)   # 스킴 제거
+    url = re.sub(r'^www\.', '', url)       # www 제거
+    url = url.rstrip('/')                  # 끝 슬래시 제거
+    # 쿼리스트링 파라미터 정렬 (순서 차이 무시)
+    if '?' in url:
+        from urllib.parse import parse_qsl, urlencode as _enc
+        path, qs = url.split('?', 1)
+        try:
+            params = sorted(parse_qsl(qs, keep_blank_values=True))
+            url = path + ('?' + _enc(params) if params else '')
+        except Exception:
+            pass
+    # 프래그먼트(#) 제거
+    url = url.split('#')[0]
+    return url
+
+
+def _norm_title(title: str) -> str:
+    """제목 정규화 — 공백·특수문자·대소문자 차이 무시"""
+    if not title:
+        return ""
+    title = re.sub(r'\s+', ' ', title).strip()  # 공백 통일
+    title = re.sub(r'[^\w가-힣]', '', title)     # 특수문자 제거
+    return title.lower()
+
+
 def _dedup_crawl_items(items: list, db: Session) -> tuple[list, int]:
     """크롤링 결과에서 이미 등록됐거나 이전 크롤 세션에 있던 항목 제거.
-    link URL이 동일하거나, 제목이 완전히 일치하는 경우 중복으로 간주.
+    URL과 제목 모두 정규화 후 비교 — http/https·www·공백·특수문자 차이 무시.
     반환: (중복 제거된 items, 제거된 개수)
     """
-    # ① 공모전 DB 기존 항목
-    existing = db.query(Competition.link, Competition.title).all()
-    seen_links  = {row.link.strip()  for row in existing if row.link  and row.link.strip()}
-    seen_titles = {row.title.strip() for row in existing if row.title and row.title.strip()}
+    seen_urls:   set[str] = set()
+    seen_titles: set[str] = set()
 
-    # ② 이전 크롤 세션 항목 (링크/제목만 추출)
-    prev_sessions = db.query(CrawlSession.items).all()
-    for (raw_items,) in prev_sessions:
+    def _add(link: str, title: str):
+        nu = _norm_url(link)
+        nt = _norm_title(title)
+        if nu:  seen_urls.add(nu)
+        if nt:  seen_titles.add(nt)
+
+    # ① 공모전 DB 기존 항목
+    for row in db.query(Competition.link, Competition.title).all():
+        _add(row.link or "", row.title or "")
+
+    # ② 이전 크롤 세션 항목
+    for (raw_items,) in db.query(CrawlSession.items).all():
         try:
             for it in json.loads(raw_items or "[]"):
-                lnk = (it.get("link")  or "").strip()
-                ttl = (it.get("title") or "").strip()
-                if lnk:  seen_links.add(lnk)
-                if ttl:  seen_titles.add(ttl)
+                _add(it.get("link") or "", it.get("title") or "")
         except Exception:
             continue
 
     filtered, skipped = [], 0
     for item in items:
-        link  = (item.get("link")  or "").strip()
-        title = (item.get("title") or "").strip()
-        if (link and link in seen_links) or (title and title in seen_titles):
+        nu = _norm_url(item.get("link") or "")
+        nt = _norm_title(item.get("title") or "")
+        is_dup = (nu and nu in seen_urls) or (nt and nt in seen_titles)
+        if is_dup:
             skipped += 1
         else:
             filtered.append(item)
             # 현재 배치 내 중복 방지
-            if link:  seen_links.add(link)
-            if title: seen_titles.add(title)
+            if nu: seen_urls.add(nu)
+            if nt: seen_titles.add(nt)
     return filtered, skipped
 
 

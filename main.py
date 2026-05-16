@@ -2991,7 +2991,7 @@ async def admin_crawl_add_with_gpt(
             "organizer": item.get("organizer", ""),
             "deadline": item.get("deadline"),
             "link": link,
-            "description": f"GPT 파싱 실패: {exc}\n\n원문: {link}",
+            "description": "",
         }
 
     deadline_str = parsed.get("deadline") or item.get("deadline")

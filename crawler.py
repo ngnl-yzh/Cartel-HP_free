@@ -256,6 +256,9 @@ def _parse_contestkorea_items(soup: BeautifulSoup) -> list:
                 host_text = re.sub(r"^주최\s*[·.\s]*", "", host_text).strip()
                 organizer = host_text
 
+            # 카테고리 매칭 실패 시 제목 키워드로 재시도
+            if not tags:
+                tags = _classify_tags(title)
             if title and href and _is_current_year(deadline):
                 parsed.append(_item("contestkorea", "공모전코리아", title, href, organizer, deadline, tags=tags))
         except Exception:
@@ -339,7 +342,7 @@ async def _crawl_wevity(client: httpx.AsyncClient) -> list:
                 # 분야 분류 (카테고리 뱃지 또는 제목 키워드로)
                 cate_el = item.select_one(".cate") or item.select_one(".category") or item.select_one(".field")
                 category = _norm(cate_el.get_text()) if cate_el else ""
-                tags = _classify_tags(category or title)
+                tags = _classify_tags(category) or _classify_tags(title)
 
                 if title and href:
                     results.append(_item("wevity", "위비티", title, href, organizer, deadline, tags=tags))
@@ -418,7 +421,7 @@ async def _crawl_thinkcontest(client: httpx.AsyncClient) -> list:
 
                 # 분야 분류 (cate_nm / category_nm 필드 활용)
                 category = str(row.get("cate_nm", row.get("category_nm", row.get("field_nm", ""))))
-                tags = _classify_tags(category or title)
+                tags = _classify_tags(category) or _classify_tags(title)
 
                 if title and _is_current_year(deadline):
                     results.append(_item("thinkcontest", "씽크공모전", title, href, organizer, deadline, tags=tags))

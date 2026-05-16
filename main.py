@@ -626,16 +626,20 @@ async def index(
     today = date.today()
     active_priority = case((Competition.deadline < today, 1), else_=0)
 
+    _FEATURED_MAX = 18  # 캐러셀 최대 표시 개수
+
     # 관리자가 ⭐ 주목 지정한 공모전 우선, 없으면 마감임박+조회수 자동 선택
     featured_manual = (
         db.query(Competition)
         .filter(Competition.is_featured.is_(True), Competition.deadline >= today)
         .order_by(Competition.deadline.asc())
+        .limit(_FEATURED_MAX)
         .all()
     )
     if featured_manual:
         featured = featured_manual
     else:
+        # 1순위: 마감 임박 (14일 이내), 2순위: 조회수, 3순위: 마감일 빠른 순
         featured = (
             db.query(Competition)
             .filter(Competition.deadline >= today)
@@ -644,7 +648,7 @@ async def index(
                 Competition.view_count.desc(),
                 Competition.deadline.asc(),
             )
-            .limit(6)
+            .limit(_FEATURED_MAX)
             .all()
         )
     _annotate(featured)

@@ -36,7 +36,7 @@
       </div>
 
       <form method="post" action="/admin/settings/tags" id="saveTagsForm">
-        <input type="hidden" name="tags_json" id="tagsJsonField" value="{{ tags | tojson }}">
+        <input type="hidden" name="tags_json" id="tagsJsonField" value="{{ tags_json }}">
         <button type="submit" class="btn btn-primary">저장</button>
         <button type="button" class="btn btn-outline" id="resetTagsBtn"
                 style="margin-left:8px">기본값으로 초기화</button>

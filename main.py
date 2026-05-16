@@ -3027,7 +3027,7 @@ async def admin_settings_page(request: Request, db: Session = Depends(get_db)):
     tags = _get_tags(db)
     return _render(request,
         "admin/settings.html",
-        _ctx(request, db, tags=tags),
+        _ctx(request, db, tags=tags, tags_json=json.dumps(tags, ensure_ascii=False)),
     )
 
 

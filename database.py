@@ -60,6 +60,7 @@ def init_db():
             _add_col(conn, inspector, "invite_codes", "max_uses", "max_uses INTEGER")
             _add_col(conn, inspector, "invite_codes", "use_count", "use_count INTEGER DEFAULT 0")
             _add_col(conn, inspector, "invite_codes", "is_active", "is_active BOOLEAN DEFAULT TRUE")
+            _add_col(conn, inspector, "invite_codes", "generation", "generation INTEGER")
 
         if "chat_room_members" in tables:
             _add_col(conn, inspector, "chat_room_members", "role", "role VARCHAR(20) DEFAULT 'member'")

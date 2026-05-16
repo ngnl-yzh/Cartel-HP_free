@@ -28,13 +28,17 @@
             <input type="number" name="max_uses" id="maxUses" min="1" max="500" placeholder="단체 코드일 때 입력">
           </label>
         </div>
-        <div class="form-grid three-col">
+        <div class="form-grid four-col">
           <label class="field">
             <span>메모</span>
             <input type="text" name="note" placeholder="예: 26기 신입 부원" maxlength="100">
           </label>
           <label class="field">
-            <span>유효 기간</span>
+            <span>기수 자동 배정</span>
+            <input type="number" name="generation" min="1" max="99" placeholder="예: 6">
+          </label>
+          <label class="field">
+            <span>유효 기간 (일)</span>
             <input type="number" name="valid_days" min="1" max="365" placeholder="예: 7">
           </label>
           <label class="field">
@@ -63,7 +67,12 @@
                 <span class="deadline-badge open">개인</span>
               {% endif %}
             </div>
-            <p class="muted">{{ c.note or "메모 없음" }}</p>
+            <p class="muted">
+              {{ c.note or "메모 없음" }}
+              {% if c.generation %}
+                <span class="deadline-badge open" style="margin-left:6px;font-size:.72rem">{{ c.generation }}기 자동배정</span>
+              {% endif %}
+            </p>
           </div>
           <div class="invite-code-status">
             {% if expired %}
@@ -138,6 +147,19 @@
 {% endblock %}
 
 {% block scripts %}
+<style>
+.form-grid.four-col {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+@media (max-width: 800px) {
+  .form-grid.four-col { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 480px) {
+  .form-grid.four-col { grid-template-columns: 1fr; }
+}
+</style>
 <script>
 const inviteType = document.getElementById("inviteType");
 const maxUses = document.getElementById("maxUses");

@@ -1855,6 +1855,7 @@ async def admin_create_invite_code(
     max_uses: Optional[str] = Form(None),
     valid_days: Optional[str] = Form(None),
     expires_at: Optional[str] = Form(None),
+    generation: Optional[str] = Form(None),
     db: Session = Depends(get_db),
 ):
     if r := _admin_redirect(request):
@@ -1863,6 +1864,7 @@ async def admin_create_invite_code(
     parsed_max_uses = 1 if code_type == "personal" else _optional_int(max_uses, "최대 사용 인원")
     if code_type == "group" and (not parsed_max_uses or parsed_max_uses < 1):
         raise HTTPException(status_code=400, detail="단체 초대 코드는 최대 사용 인원을 1명 이상으로 입력해야 합니다.")
+    parsed_gen = _optional_int(generation, "기수") if generation and generation.strip() else None
     db.add(InviteCode(
         code=secrets.token_urlsafe(12),
         note=note.strip(),
@@ -1871,6 +1873,7 @@ async def admin_create_invite_code(
         expires_at=_parse_expiry(valid_days, expires_at),
         use_count=0,
         is_active=True,
+        generation=parsed_gen,
     ))
     db.commit()
     return RedirectResponse(url="/admin/invite-codes", status_code=303)
@@ -1951,6 +1954,7 @@ async def register(
         student_id=student_id.strip(), phone=phone.strip(),
         password_hash=hash_password(password), bio=bio.strip(),
         invite_code_used=invite_code.strip(),
+        generation=code_obj.generation if code_obj.generation else None,
     )
     db.add(member)
     db.flush()

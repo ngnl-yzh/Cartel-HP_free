@@ -105,6 +105,7 @@ class InviteCode(Base):
     created_at = Column(DateTime, default=datetime.now)
     expires_at = Column(DateTime, nullable=True)
     used_by_member_id = Column(Integer, nullable=True)
+    generation = Column(Integer, nullable=True)  # 이 코드로 가입 시 자동 배정 기수
 
 
 class InviteCodeUseLog(Base):

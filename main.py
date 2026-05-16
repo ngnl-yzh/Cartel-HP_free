@@ -3499,24 +3499,38 @@ async def admin_crawl_page(request: Request, db: Session = Depends(get_db)):
 
 
 def _dedup_crawl_items(items: list, db: Session) -> tuple[list, int]:
-    """크롤링 결과에서 이미 DB에 등록된 항목 제거.
+    """크롤링 결과에서 이미 등록됐거나 이전 크롤 세션에 있던 항목 제거.
     link URL이 동일하거나, 제목이 완전히 일치하는 경우 중복으로 간주.
     반환: (중복 제거된 items, 제거된 개수)
     """
-    # DB의 기존 공모전 link·title 수집
+    # ① 공모전 DB 기존 항목
     existing = db.query(Competition.link, Competition.title).all()
-    existing_links = {row.link.strip() for row in existing if row.link and row.link.strip()}
-    existing_titles = {row.title.strip() for row in existing if row.title and row.title.strip()}
+    seen_links  = {row.link.strip()  for row in existing if row.link  and row.link.strip()}
+    seen_titles = {row.title.strip() for row in existing if row.title and row.title.strip()}
+
+    # ② 이전 크롤 세션 항목 (링크/제목만 추출)
+    prev_sessions = db.query(CrawlSession.items).all()
+    for (raw_items,) in prev_sessions:
+        try:
+            for it in json.loads(raw_items or "[]"):
+                lnk = (it.get("link")  or "").strip()
+                ttl = (it.get("title") or "").strip()
+                if lnk:  seen_links.add(lnk)
+                if ttl:  seen_titles.add(ttl)
+        except Exception:
+            continue
 
     filtered, skipped = [], 0
     for item in items:
         link  = (item.get("link")  or "").strip()
         title = (item.get("title") or "").strip()
-        # URL 중복 또는 제목 완전 일치 → 제외
-        if (link and link in existing_links) or (title and title in existing_titles):
+        if (link and link in seen_links) or (title and title in seen_titles):
             skipped += 1
         else:
             filtered.append(item)
+            # 현재 배치 내 중복 방지
+            if link:  seen_links.add(link)
+            if title: seen_titles.add(title)
     return filtered, skipped
 
 

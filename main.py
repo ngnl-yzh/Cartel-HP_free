@@ -625,19 +625,28 @@ async def index(
 ):
     today = date.today()
     active_priority = case((Competition.deadline < today, 1), else_=0)
-    featured_priority = case(
-        (Competition.is_featured.is_(True), 0),
-        (Competition.deadline <= today + timedelta(days=14), 1),
-        else_=2,
-    )
 
-    featured = (
+    # 관리자가 ⭐ 주목 지정한 공모전 우선, 없으면 마감임박+조회수 자동 선택
+    featured_manual = (
         db.query(Competition)
-        .filter(Competition.deadline >= today)
-        .order_by(featured_priority.asc(), Competition.view_count.desc(), Competition.deadline.asc())
-        .limit(4)
+        .filter(Competition.is_featured.is_(True), Competition.deadline >= today)
+        .order_by(Competition.deadline.asc())
         .all()
     )
+    if featured_manual:
+        featured = featured_manual
+    else:
+        featured = (
+            db.query(Competition)
+            .filter(Competition.deadline >= today)
+            .order_by(
+                case((Competition.deadline <= today + timedelta(days=14), 0), else_=1).asc(),
+                Competition.view_count.desc(),
+                Competition.deadline.asc(),
+            )
+            .limit(6)
+            .all()
+        )
     _annotate(featured)
 
     query = db.query(Competition)
@@ -685,7 +694,8 @@ async def index(
         "index.html",
         _ctx(request, db,
              featured=featured, competitions=competitions,
-             tags=_get_tags(db), current_tag=tag or "all",
+             tags=list(_CONTESTKOREA_CATS),  # 항상 전체 카테고리 표시
+             current_tag=tag or "all",
              current_sort=sort, query=q, today=today),
     )
 
@@ -1472,6 +1482,22 @@ async def admin_dashboard(request: Request, db: Session = Depends(get_db)):
         "admin/dashboard.html",
         _ctx(request, db, competitions=competitions, today=date.today()),
     )
+
+
+@app.post("/admin/competition/{comp_id}/toggle-featured")
+async def admin_toggle_featured(
+    comp_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """공모전 주목(⭐) 토글 — 관리자 대시보드에서 캐러셀 노출 여부 제어"""
+    if r := _privileged_redirect(request, db):
+        return r
+    comp = db.query(Competition).filter(Competition.id == comp_id).first()
+    if comp:
+        comp.is_featured = not bool(comp.is_featured)
+        db.commit()
+    return RedirectResponse(url="/admin", status_code=303)
 
 
 # ── 공모전 CRUD ───────────────────────────────────────────────────────────────

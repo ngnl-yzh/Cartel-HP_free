@@ -22,42 +22,82 @@
 </div>
 
 {% if featured %}
-<section class="featured-section" style="background:linear-gradient(180deg,#eef3ff 0%,var(--bg) 100%)">
+<section class="featured-section">
   <div class="container">
     <div class="featured-header">
       <div>
-        <h2 class="featured-title" style="font-family:var(--font-display)">마감 임박 · 인기 공모전</h2>
-        <p class="featured-sub">마감일, 조회수, 주목 표시 기준으로 먼저 보여줍니다.</p>
+        <h2 class="featured-title">
+          {% if featured | selectattr('is_featured') | list %}⭐ 주목 공모전
+          {% else %}마감 임박 · 인기 공모전{% endif %}
+        </h2>
+        <p class="featured-sub">
+          {% if featured | selectattr('is_featured') | list %}관리자가 선정한 공모전입니다.
+          {% else %}마감일, 조회수 기준으로 자동 선정됩니다.{% endif %}
+        </p>
       </div>
+      {# 3개 초과 시 prev/next 버튼 #}
+      {% if featured | length > 1 %}
+      <div class="carousel-nav">
+        <button class="carousel-btn" id="carouselPrev" aria-label="이전">‹</button>
+        <button class="carousel-btn" id="carouselNext" aria-label="다음">›</button>
+      </div>
+      {% endif %}
     </div>
-    <div class="featured-grid">
+
+    {# ── 캐러셀 트랙 ── #}
+    <div class="carousel-wrap" id="featuredCarousel">
       {% for comp in featured %}
-      <a href="/competition/{{ comp.id }}" class="featured-card status-{{ comp.status }}">
-        <div class="featured-tags">
-          {% for tag in comp.tags | fromjson %}
-            <span class="tag-chip">{{ tag }}</span>
-          {% endfor %}
-        </div>
-        <h3 class="featured-card-title">{{ comp.title }}</h3>
-        <p class="featured-card-org">{{ comp.organizer }}</p>
-        {% if comp.prize %}
-          <p class="featured-card-prize">시상 {{ comp.prize }}</p>
-        {% endif %}
-        <div class="featured-card-footer">
-          {% if comp.status == 'urgent' %}
-            <span class="deadline-badge urgent">D-{{ comp.days_left }}</span>
-          {% elif comp.status == 'soon' %}
-            <span class="deadline-badge soon">D-{{ comp.days_left }}</span>
-          {% elif comp.status == 'upcoming' %}
-            <span class="deadline-badge open">📅 이벤트 진행 중</span>
+      <a href="/competition/{{ comp.id }}" class="fcard status-{{ comp.status }}">
+        {# 대표 이미지 #}
+        <div class="fcard-img"
+          {% if comp.image %}
+            style="background-image:url('/uploads/{{ comp.image }}')"
           {% else %}
-            <span class="deadline-badge open">D-{{ comp.days_left }}</span>
+            style="background: linear-gradient(135deg,
+              {{ ['#1e3a5f','#1a2e4a','#0f2340','#1b3a6b','#162d50'] | random }} 0%,
+              {{ ['#2563eb','#1d4ed8','#3b82f6','#1e40af','#2952c8'] | random }} 100%)"
           {% endif %}
-          <span class="view-count">조회 {{ comp.view_count }}</span>
+        >
+          <div class="fcard-img-overlay"></div>
+          <div class="fcard-img-content">
+            <div class="fcard-tags">
+              {% for tag in comp.tags | fromjson %}
+                <span class="fcard-tag">{{ tag }}</span>
+              {% endfor %}
+              {% if comp.is_featured %}<span class="fcard-tag fcard-tag-star">⭐ 주목</span>{% endif %}
+            </div>
+            <h3 class="fcard-title">{{ comp.title }}</h3>
+            <p class="fcard-org">{{ comp.organizer }}</p>
+          </div>
+        </div>
+        {# 카드 하단 정보 #}
+        <div class="fcard-body">
+          {% if comp.prize %}<p class="fcard-prize">🏆 {{ comp.prize | truncate(40, true, '…') }}</p>{% endif %}
+          <div class="fcard-footer">
+            {% if comp.status == 'urgent' %}
+              <span class="deadline-badge urgent">D-{{ comp.days_left }}</span>
+            {% elif comp.status == 'soon' %}
+              <span class="deadline-badge soon">D-{{ comp.days_left }}</span>
+            {% elif comp.status == 'upcoming' %}
+              <span class="deadline-badge open">📅 이벤트</span>
+            {% else %}
+              <span class="deadline-badge open">D-{{ comp.days_left }}</span>
+            {% endif %}
+            <span class="fcard-views">조회 {{ comp.view_count }}</span>
+          </div>
         </div>
       </a>
       {% endfor %}
     </div>
+
+    {# 도트 인디케이터 #}
+    {% if featured | length > 1 %}
+    <div class="carousel-dots" id="carouselDots">
+      {% for comp in featured %}
+      <button class="cdot {% if loop.first %}is-active{% endif %}" data-idx="{{ loop.index0 }}"></button>
+      {% endfor %}
+    </div>
+    {% endif %}
   </div>
 </section>
 {% endif %}
@@ -153,4 +193,211 @@
 {% if is_admin %}
 <a href="/admin/add" class="fab" title="공모전 추가">+</a>
 {% endif %}
+
+<style>
+/* ── Featured 섹션 ── */
+.featured-section {
+  background: linear-gradient(180deg, #eef3ff 0%, var(--bg) 100%);
+  padding: 40px 0 32px;
+}
+.featured-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 20px;
+  gap: 12px;
+}
+.featured-title {
+  font-family: var(--font-display);
+  font-size: clamp(1.2rem, 2.5vw, 1.6rem);
+  font-weight: 800;
+  margin: 0 0 4px;
+  color: var(--text);
+}
+.featured-sub { font-size: .85rem; color: var(--muted); margin: 0; }
+
+/* ── Prev/Next 버튼 ── */
+.carousel-nav { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
+.carousel-btn {
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  border: 1.5px solid var(--line);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 1.3rem;
+  line-height: 1;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background .15s, border-color .15s;
+}
+.carousel-btn:hover { background: var(--hover); border-color: var(--cartel-blue); }
+
+/* ── 캐러셀 트랙 ── */
+.carousel-wrap {
+  display: flex;
+  gap: 16px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 4px;
+  cursor: grab;
+}
+.carousel-wrap:active { cursor: grabbing; }
+.carousel-wrap::-webkit-scrollbar { display: none; }
+
+/* ── 카드 ── */
+.fcard {
+  flex: 0 0 calc(25% - 12px);
+  min-width: 240px;
+  max-width: 320px;
+  scroll-snap-align: start;
+  border-radius: 16px;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  text-decoration: none;
+  color: var(--text);
+  transition: transform .2s, box-shadow .2s;
+  display: flex;
+  flex-direction: column;
+}
+.fcard:hover { transform: translateY(-4px); box-shadow: 0 8px 32px rgba(37,99,235,.15); }
+
+@media (max-width: 900px)  { .fcard { flex: 0 0 calc(50% - 8px); } }
+@media (max-width: 560px)  { .fcard { flex: 0 0 85vw; } }
+
+/* ── 카드 이미지 영역 ── */
+.fcard-img {
+  position: relative;
+  height: 160px;
+  background-size: cover;
+  background-position: center;
+  flex-shrink: 0;
+}
+.fcard-img-overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(0deg, rgba(0,0,0,.6) 0%, rgba(0,0,0,.15) 60%, transparent 100%);
+}
+.fcard-img-content {
+  position: absolute;
+  inset: 0;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+.fcard-tags { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 6px; }
+.fcard-tag {
+  font-size: .68rem;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.18);
+  color: #fff;
+  backdrop-filter: blur(4px);
+}
+.fcard-tag-star { background: rgba(245,158,11,.5); }
+.fcard-title {
+  font-family: var(--font-display);
+  font-size: .92rem;
+  font-weight: 700;
+  color: #fff;
+  margin: 0 0 2px;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.fcard-org { font-size: .75rem; color: rgba(255,255,255,.75); margin: 0; }
+
+/* ── 카드 하단 ── */
+.fcard-body { padding: 12px 14px; flex: 1; display: flex; flex-direction: column; justify-content: space-between; }
+.fcard-prize { font-size: .78rem; color: var(--muted); margin: 0 0 8px; }
+.fcard-footer { display: flex; align-items: center; justify-content: space-between; }
+.fcard-views { font-size: .75rem; color: var(--muted); }
+
+/* ── 도트 인디케이터 ── */
+.carousel-dots {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 16px;
+}
+.cdot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  border: none;
+  background: var(--line);
+  cursor: pointer;
+  padding: 0;
+  transition: background .2s, width .2s;
+}
+.cdot.is-active { background: var(--cartel-blue); width: 20px; border-radius: 4px; }
+
+/* ── 필터바 스크롤 ── */
+.filter-bar {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  flex-wrap: nowrap;
+}
+.filter-bar::-webkit-scrollbar { height: 3px; }
+.filter-bar::-webkit-scrollbar-thumb { background: var(--line); border-radius: 2px; }
+</style>
+
+{% block scripts %}
+<script>
+(function () {
+  const carousel = document.getElementById('featuredCarousel');
+  const dots     = document.querySelectorAll('.cdot');
+  const prevBtn  = document.getElementById('carouselPrev');
+  const nextBtn  = document.getElementById('carouselNext');
+  if (!carousel) return;
+
+  const cards = carousel.querySelectorAll('.fcard');
+  const cardW = () => cards[0] ? cards[0].offsetWidth + 16 : 260;
+
+  function scrollTo(idx) {
+    carousel.scrollTo({ left: idx * cardW(), behavior: 'smooth' });
+  }
+
+  // prev/next
+  if (prevBtn) prevBtn.addEventListener('click', () => {
+    const cur = Math.round(carousel.scrollLeft / cardW());
+    scrollTo(Math.max(0, cur - 1));
+  });
+  if (nextBtn) nextBtn.addEventListener('click', () => {
+    const cur = Math.round(carousel.scrollLeft / cardW());
+    scrollTo(Math.min(cards.length - 1, cur + 1));
+  });
+
+  // 도트 동기화
+  carousel.addEventListener('scroll', () => {
+    const idx = Math.round(carousel.scrollLeft / cardW());
+    dots.forEach((d, i) => d.classList.toggle('is-active', i === idx));
+  }, { passive: true });
+
+  // 도트 클릭
+  dots.forEach((d, i) => d.addEventListener('click', () => scrollTo(i)));
+
+  // 드래그 스크롤 (마우스)
+  let isDown = false, startX, scrollL;
+  carousel.addEventListener('mousedown', e => {
+    isDown = true; startX = e.pageX - carousel.offsetLeft; scrollL = carousel.scrollLeft;
+    carousel.style.cursor = 'grabbing';
+  });
+  carousel.addEventListener('mouseleave', () => { isDown = false; carousel.style.cursor = 'grab'; });
+  carousel.addEventListener('mouseup',    () => { isDown = false; carousel.style.cursor = 'grab'; });
+  carousel.addEventListener('mousemove',  e => {
+    if (!isDown) return;
+    e.preventDefault();
+    carousel.scrollLeft = scrollL - (e.pageX - carousel.offsetLeft - startX);
+  });
+})();
+</script>
+{% endblock %}
 {% endblock %}

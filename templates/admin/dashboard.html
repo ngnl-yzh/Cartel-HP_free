@@ -43,6 +43,7 @@
             <th>마감일</th>
             <th>조회수</th>
             <th>상태</th>
+            <th style="width:36px" title="캐러셀 주목 표시">⭐</th>
             <th></th>
           </tr>
         </thead>
@@ -51,7 +52,6 @@
           <tr>
             <td>
               <a href="/competition/{{ comp.id }}" class="table-title">{{ comp.title }}</a>
-              {% if comp.is_featured %}<span class="mini-badge">주목</span>{% endif %}
             </td>
             <td>{{ comp.organizer or "-" }}</td>
             <td>{{ comp.deadline.strftime('%Y.%m.%d') }}</td>
@@ -66,6 +66,14 @@
               {% else %}
                 <span class="deadline-badge open">D-{{ comp.days_left }}</span>
               {% endif %}
+            </td>
+            <td style="text-align:center">
+              <form method="post" action="/admin/competition/{{ comp.id }}/toggle-featured" style="margin:0">
+                <button type="submit" class="featured-toggle-btn {% if comp.is_featured %}is-on{% endif %}"
+                        title="{{ '주목 해제' if comp.is_featured else '캐러셀에 주목 표시' }}">
+                  ⭐
+                </button>
+              </form>
             </td>
             <td class="table-actions">
               <a href="/admin/competition/{{ comp.id }}/members" class="btn btn-outline btn-sm">참여자</a>
@@ -87,4 +95,24 @@
     {% endif %}
   </div>
 </main>
+
+<style>
+.featured-toggle-btn {
+  background: none;
+  border: 1.5px solid var(--line);
+  border-radius: 6px;
+  padding: 2px 6px;
+  font-size: 1rem;
+  cursor: pointer;
+  opacity: .3;
+  transition: opacity .15s, border-color .15s;
+  line-height: 1;
+}
+.featured-toggle-btn:hover { opacity: .7; }
+.featured-toggle-btn.is-on {
+  opacity: 1;
+  border-color: #f59e0b;
+  background: rgba(245,158,11,0.08);
+}
+</style>
 {% endblock %}

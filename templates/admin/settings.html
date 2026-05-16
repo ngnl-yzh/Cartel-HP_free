@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}앱 설정 · 공모전 보드{% endblock %}
+{% block title %}분야 설정 · 공모전 보드{% endblock %}
 
 {% block content %}
 <main class="admin-page">
@@ -80,8 +80,27 @@
 }
 </style>
 
+<div id="savedToast" style="
+  display:none;position:fixed;bottom:28px;left:50%;transform:translateX(-50%);
+  background:#18181b;color:#fff;padding:12px 24px;border-radius:10px;
+  font-size:.92rem;font-weight:500;z-index:9999;box-shadow:0 4px 20px rgba(0,0,0,.25);
+  animation:toastIn .25s ease;">
+  ✅ 분야 설정이 저장되었습니다.
+</div>
+<style>
+@keyframes toastIn { from { opacity:0; transform:translateX(-50%) translateY(12px); } to { opacity:1; transform:translateX(-50%) translateY(0); } }
+</style>
+
 <script>
 (function () {
+  // 저장 완료 토스트
+  if (new URLSearchParams(location.search).get('saved') === '1') {
+    const toast = document.getElementById('savedToast');
+    toast.style.display = 'block';
+    setTimeout(function () { toast.style.display = 'none'; }, 3000);
+    history.replaceState(null, '', location.pathname);
+  }
+
   const form    = document.getElementById('saveTagsForm');
   const hidden  = document.getElementById('tagsJsonField');
   const items   = document.querySelectorAll('.cat-check-item');

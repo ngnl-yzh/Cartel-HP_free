@@ -184,7 +184,7 @@ function _addReviewRow(label = "", dt = "") {
     </label>
     <label class="field" style="margin:0">
       <span>일자</span>
-      <input type="date" class="review-date" value="${escapeHtml(dt)}">
+      <input type="text" class="review-date" placeholder="예: 2026-07-14 또는 7월 말" value="${escapeHtml(dt)}">
     </label>
     <button type="button" class="btn btn-danger btn-sm remove-review-btn" style="margin-bottom:0">삭제</button>
   `;

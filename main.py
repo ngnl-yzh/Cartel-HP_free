@@ -3393,4 +3393,4 @@ async def admin_settings_tags(
     else:
         db.add(AppSetting(key="tags", value=json.dumps(new_tags, ensure_ascii=False)))
     db.commit()
-    return RedirectResponse(url="/admin/settings", status_code=303)
+    return RedirectResponse(url="/admin/settings?saved=1", status_code=303)

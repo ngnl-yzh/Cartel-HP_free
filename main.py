@@ -1102,7 +1102,7 @@ async def members_page(request: Request, db: Session = Depends(get_db)):
 # ── 수상 실적 ────────────────────────────────────────────────────────────────────
 
 @app.get("/awards", response_class=HTMLResponse)
-async def awards_page(request: Request, db: Session = Depends(get_db)):
+async def awards_page(request: Request, year: Optional[int] = None, db: Session = Depends(get_db)):
     cm = _current_member(request, db)
     is_admin_ = _is_admin(request)
 
@@ -1112,7 +1112,7 @@ async def awards_page(request: Request, db: Session = Depends(get_db)):
         q = q.filter(TeamCompetitionEntry.is_public.is_(True))
     entries = q.order_by(TeamCompetitionEntry.updated_at.desc()).all()
 
-    # 관련 Competition / Team 정보 사전 로드
+    # 관련 Competition / Team / Member 정보 사전 로드
     comp_ids = list({e.competition_id for e in entries})
     team_ids = list({e.team_id for e in entries})
     comps_map = {c.id: c for c in db.query(Competition).filter(Competition.id.in_(comp_ids)).all()} if comp_ids else {}
@@ -1123,11 +1123,28 @@ async def awards_page(request: Request, db: Session = Depends(get_db)):
         for tm in tms:
             members_map.setdefault(tm.team_id, []).append(tm)
 
+    # 연도별 그룹핑 (competition.deadline.year 기준, 없으면 updated_at.year)
+    from collections import OrderedDict
+    year_groups: dict = OrderedDict()
+    for e in entries:
+        comp = comps_map.get(e.competition_id)
+        y = comp.deadline.year if comp and comp.deadline else e.updated_at.year
+        year_groups.setdefault(y, []).append(e)
+    # 최신 연도 먼저
+    year_groups = OrderedDict(sorted(year_groups.items(), reverse=True))
+
+    # 연도 필터
+    current_year = year
+    all_years = list(year_groups.keys())
+
     return _render(request, "awards.html", _ctx(request, db,
         entries=entries,
         comps_map=comps_map,
         teams_map=teams_map,
         members_map=members_map,
+        year_groups=year_groups,
+        all_years=all_years,
+        current_year=current_year,
     ))
 
 

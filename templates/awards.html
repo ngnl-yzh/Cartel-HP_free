@@ -2,106 +2,285 @@
 {% block title %}Awards · CARTEL{% endblock %}
 
 {% block content %}
-{# ── 히어로 ─────────────────────────────────────────────────── #}
-<div class="c-hero">
+<div class="c-hero" style="padding:36px 0 28px">
   <div class="c-hero-inner">
     <p class="c-hero-eyebrow">CARTEL</p>
-    <h1 class="c-hero-title">🏅 Awards</h1>
-    <p class="c-hero-sub">우리 팀이 함께 이뤄낸 수상 실적들을 확인해보세요.</p>
+    <h1 class="c-hero-title">🏆 Awards</h1>
+    <p class="c-hero-sub">카르텔이 함께 일궈낸 수상 실적들입니다.</p>
   </div>
 </div>
 
-<main style="padding-bottom:60px">
+<main style="padding-bottom:80px">
   <div class="container">
 
-    {% if entries %}
-    <div class="award-grid">
-      {% for entry in entries %}
-        {% set comp = comps_map.get(entry.competition_id) %}
-        {% set team = teams_map.get(entry.team_id) %}
-        {% set mbs  = members_map.get(entry.team_id, []) %}
-        <div class="award-card">
-          <div class="award-trophy">🏆</div>
+    {% if year_groups %}
 
-          {# 상명 #}
-          {% if entry.award_name %}
-            <span class="award-rank">{{ entry.award_name }}</span>
-          {% endif %}
-
-          {# 공모전명 #}
-          {% if comp %}
-            <p class="award-comp">
-              <a href="/competition/{{ comp.id }}" style="color:inherit;text-decoration:underline;text-underline-offset:3px">{{ comp.title }}</a>
-            </p>
-          {% endif %}
-
-          {# 팀명 #}
-          {% if team %}
-            <p class="award-team">{{ team.name }}</p>
-          {% endif %}
-
-          {# 팀원 목록 #}
-          {% if mbs %}
-          <p class="award-members">
-            {% for m in mbs %}
-              {{ m.nickname }}{% if not loop.last %}, {% endif %}
-            {% endfor %}
-          </p>
-          {% endif %}
-
-          {# 상금 #}
-          {% if entry.prize_amount %}
-            <div class="award-prize-badge">💰 {{ entry.prize_amount }}</div>
-          {% endif %}
-
-          {# 단계별 통과 결과 #}
-          {% set sr_list = entry.stage_results | fromjson %}
-          {% if sr_list %}
-          <div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:12px">
-            {% for sr in sr_list %}
-              {% if sr.get('passed') == true %}
-                <span style="font-size:.74rem;padding:2px 8px;border-radius:999px;background:#dcfce7;color:#166534;font-weight:600">✅ {{ sr.label }}</span>
-              {% elif sr.get('passed') == false and sr.get('passed') is not none %}
-                <span style="font-size:.74rem;padding:2px 8px;border-radius:999px;background:#fee2e2;color:#991b1b;font-weight:600">❌ {{ sr.label }}</span>
-              {% endif %}
-            {% endfor %}
-          </div>
-          {% endif %}
-
-          {# 증빙 사진 #}
-          {% if entry.proof_image and entry.proof_approved %}
-            <img src="/uploads/{{ entry.proof_image }}" class="award-proof-img" alt="수상 증빙">
-          {% elif is_privileged and entry.proof_image and not entry.proof_approved %}
-            <div style="margin-top:10px;padding:8px 12px;background:#fef9c3;border-radius:8px;font-size:.8rem;color:#92400e">
-              ⏳ 증빙 사진 승인 대기 중
-            </div>
-            <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
-              <form method="post" action="/admin/achievement/{{ entry.id }}/approve-proof" style="display:inline">
-                <button type="submit" class="btn btn-sm" style="background:var(--success);color:#fff;border:none;font-size:.78rem">✅ 승인</button>
-              </form>
-              <form method="post" action="/admin/achievement/{{ entry.id }}/reject-proof" style="display:inline">
-                <input type="text" name="reason" placeholder="반려 사유" style="font-size:.78rem;padding:4px 8px;border:1px solid var(--line);border-radius:6px;width:120px">
-                <button type="submit" class="btn btn-sm btn-danger" style="font-size:.78rem">반려</button>
-              </form>
-            </div>
-          {% endif %}
-
-          {# 비공개 표시 (관리자용) #}
-          {% if is_privileged and not entry.is_public %}
-            <p style="font-size:.75rem;color:var(--muted);margin-top:8px">🔒 비공개</p>
-          {% endif %}
-        </div>
+    {# ── 연도 탭 ── #}
+    {% if all_years | length > 1 %}
+    <div class="aw-year-tabs">
+      <a href="/awards" class="aw-year-tab {% if not current_year %}is-active{% endif %}">전체</a>
+      {% for y in all_years %}
+        <a href="/awards?year={{ y }}" class="aw-year-tab {% if current_year == y %}is-active{% endif %}">{{ y }}</a>
       {% endfor %}
     </div>
+    {% endif %}
+
+    {# ── 연도별 섹션 ── #}
+    {% for y, y_entries in year_groups.items() %}
+      {% if not current_year or current_year == y %}
+      <section class="aw-year-section">
+
+        {# 연도 헤더 #}
+        <div class="aw-year-heading">
+          <span class="aw-year-trophy">🏆</span>
+          <h2 class="aw-year-title">{{ y }} CARTEL AWARDS</h2>
+          <span class="aw-year-trophy">🏆</span>
+        </div>
+
+        {# 수상 카드 그리드 #}
+        <div class="aw-grid">
+          {% for entry in y_entries %}
+            {% set comp = comps_map.get(entry.competition_id) %}
+            {% set team = teams_map.get(entry.team_id) %}
+            {% set mbs  = members_map.get(entry.team_id, []) %}
+
+            <div class="aw-card">
+
+              {# 증빙 사진 (승인된 것만 공개) #}
+              {% if entry.proof_image and entry.proof_approved %}
+                <div class="aw-photo">
+                  <img src="/uploads/{{ entry.proof_image }}" alt="수상 증빙" loading="lazy">
+                </div>
+              {% elif is_privileged and entry.proof_image and not entry.proof_approved %}
+                <div class="aw-photo aw-photo-pending">
+                  <img src="/uploads/{{ entry.proof_image }}" alt="수상 증빙" loading="lazy" style="opacity:.5">
+                  <span class="aw-pending-badge">⏳ 승인 대기</span>
+                </div>
+              {% else %}
+                <div class="aw-photo aw-photo-empty">
+                  <span style="font-size:2.5rem">🏆</span>
+                </div>
+              {% endif %}
+
+              {# 카드 본문 #}
+              <div class="aw-body">
+
+                {# 공모전명 (링크) #}
+                {% if comp %}
+                  <p class="aw-comp-name">
+                    <a href="/competition/{{ comp.id }}">{{ comp.title }}</a>
+                  </p>
+                {% endif %}
+
+                {# 수상명 #}
+                {% if entry.award_name %}
+                  <p class="aw-award-name">[{{ entry.award_name }}]</p>
+                {% endif %}
+
+                {# 팀명 / 팀원 #}
+                {% if team %}
+                  <p class="aw-team-name">팀 {{ team.name }}</p>
+                {% endif %}
+                {% if mbs %}
+                  <p class="aw-members">
+                    {% for m in mbs %}{{ m.nickname }}{% if not loop.last %}, {% endif %}{% endfor %}
+                  </p>
+                {% endif %}
+
+                {# 상금 #}
+                {% if entry.prize_amount %}
+                  <p class="aw-prize">상금 {{ entry.prize_amount }}</p>
+                {% endif %}
+
+                {# 주최 (organizer) #}
+                {% if comp and comp.organizer %}
+                  <p class="aw-organizer">주관 — {{ comp.organizer }}</p>
+                {% endif %}
+
+                {# 관리자: 승인 버튼 #}
+                {% if is_privileged and entry.proof_image and not entry.proof_approved %}
+                <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap">
+                  <form method="post" action="/admin/achievement/{{ entry.id }}/approve-proof" style="display:inline">
+                    <button type="submit" class="btn btn-sm" style="background:#16a34a;color:#fff;border:none;font-size:.78rem">✅ 승인</button>
+                  </form>
+                  <form method="post" action="/admin/achievement/{{ entry.id }}/reject-proof" style="display:inline;display:flex;gap:4px">
+                    <input type="text" name="reason" placeholder="반려 사유" style="font-size:.78rem;padding:4px 8px;border:1px solid var(--line);border-radius:6px;width:110px">
+                    <button type="submit" class="btn btn-sm btn-danger" style="font-size:.78rem">반려</button>
+                  </form>
+                </div>
+                {% endif %}
+
+                {% if is_privileged and not entry.is_public %}
+                  <p style="font-size:.72rem;color:var(--muted);margin-top:8px">🔒 비공개</p>
+                {% endif %}
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+
+      </section>
+      {% endif %}
+    {% endfor %}
 
     {% else %}
-    <div class="empty-state" style="padding:80px 0">
-      <p style="font-size:3rem;margin-bottom:12px">🏆</p>
+    <div class="empty-state" style="padding:100px 0;text-align:center">
+      <p style="font-size:3.5rem;margin-bottom:12px">🏆</p>
       <p class="empty-text">아직 등록된 수상 실적이 없습니다.</p>
-      <p class="muted" style="font-size:.88rem">공모전에 참가하여 결과를 입력하면 여기에 표시됩니다.</p>
+      <p class="muted" style="font-size:.88rem;margin-top:6px">공모전 참가 후 결과를 입력하면 여기에 표시됩니다.</p>
     </div>
     {% endif %}
 
   </div>
 </main>
+
+<style>
+/* ── 연도 탭 ── */
+.aw-year-tabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 28px 0 0;
+  border-bottom: 2px solid var(--line);
+  padding-bottom: 12px;
+}
+.aw-year-tab {
+  font-family: var(--font-display);
+  font-size: .88rem;
+  font-weight: 600;
+  padding: 7px 18px;
+  border: 1.5px solid var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  text-decoration: none;
+  transition: border-color .15s, color .15s, background .15s;
+}
+.aw-year-tab:hover,
+.aw-year-tab.is-active {
+  border-color: var(--cartel-blue);
+  color: var(--cartel-blue);
+  background: rgba(59,130,246,0.07);
+}
+
+/* ── 연도 섹션 ── */
+.aw-year-section {
+  margin-top: 48px;
+}
+.aw-year-heading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-bottom: 28px;
+}
+.aw-year-trophy { font-size: 1.6rem; }
+.aw-year-title {
+  font-family: var(--font-display);
+  font-size: clamp(1.3rem, 3vw, 1.9rem);
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: var(--text);
+  margin: 0;
+}
+
+/* ── 수상 카드 그리드 ── */
+.aw-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 28px;
+}
+@media (max-width: 640px) {
+  .aw-grid { grid-template-columns: 1fr; gap: 20px; }
+}
+
+/* ── 수상 카드 ── */
+.aw-card {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  overflow: hidden;
+  background: var(--surface);
+  box-shadow: 0 2px 12px rgba(0,0,0,0.05);
+  transition: box-shadow .2s, transform .2s;
+}
+.aw-card:hover {
+  box-shadow: 0 8px 32px rgba(59,130,246,0.12);
+  transform: translateY(-3px);
+}
+
+/* 증빙 사진 영역 */
+.aw-photo {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16/10;
+  overflow: hidden;
+  background: #f1f5f9;
+}
+.aw-photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.aw-photo-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #eef3ff, #f8f9ff);
+}
+.aw-photo-pending { position: relative; }
+.aw-pending-badge {
+  position: absolute;
+  top: 10px; left: 10px;
+  background: rgba(254,243,199,.95);
+  color: #92400e;
+  font-size: .75rem;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 999px;
+}
+
+/* 카드 본문 */
+.aw-body {
+  padding: 18px 20px 20px;
+}
+.aw-comp-name {
+  font-size: .82rem;
+  color: var(--muted);
+  margin: 0 0 6px;
+}
+.aw-comp-name a { color: inherit; text-decoration: none; }
+.aw-comp-name a:hover { text-decoration: underline; color: var(--cartel-blue); }
+
+.aw-award-name {
+  font-family: var(--font-display);
+  font-size: clamp(1rem, 2.2vw, 1.25rem);
+  font-weight: 800;
+  color: var(--text);
+  margin: 0 0 8px;
+  line-height: 1.3;
+}
+.aw-team-name {
+  font-size: .88rem;
+  font-weight: 600;
+  color: var(--cartel-blue);
+  margin: 0 0 3px;
+}
+.aw-members {
+  font-size: .82rem;
+  color: var(--muted);
+  margin: 0 0 6px;
+}
+.aw-prize {
+  font-size: .82rem;
+  font-weight: 700;
+  color: #d97706;
+  margin: 0 0 4px;
+}
+.aw-organizer {
+  font-size: .78rem;
+  color: var(--muted);
+  margin: 6px 0 0;
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+}
+</style>
 {% endblock %}

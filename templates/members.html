@@ -2,8 +2,7 @@
 {% block title %}Member · CARTEL{% endblock %}
 
 {% block content %}
-{# ── 히어로 ────────────────────────────────────────────────── #}
-<div class="c-hero">
+<div class="c-hero" style="padding:36px 0 28px">
   <div class="c-hero-inner">
     <p class="c-hero-eyebrow">CARTEL</p>
     <h1 class="c-hero-title">👥 Member</h1>
@@ -11,71 +10,72 @@
   </div>
 </div>
 
-<main style="padding:40px 0 80px">
+<main style="padding-bottom:100px">
   <div class="container">
 
     {% if groups %}
-      {# 기수 탭 네비게이션 #}
+
+      {# ── 기수 탭 ── #}
       {% if groups | length > 1 %}
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:36px;border-bottom:2px solid var(--line);padding-bottom:12px">
-        <button class="gen-tab-btn is-active" onclick="showGen('all', this)">전체</button>
+      <div class="gen-tabs">
+        <button class="gen-tab is-active" onclick="showGen('all', this)">전체</button>
         {% for gen, _ in groups.items() %}
-          <button class="gen-tab-btn" onclick="showGen('{{ gen }}', this)">
-            {{ gen ~ '기' if gen != 0 else '기수 미분류' }}
+          <button class="gen-tab" onclick="showGen('{{ gen }}', this)">
+            {{ gen ~ '기' if gen != 0 else '미분류' }}
           </button>
         {% endfor %}
       </div>
       {% endif %}
 
+      {# ── 기수별 섹션 ── #}
       {% for gen, members in groups.items() %}
-      <div class="gen-section" data-gen="{{ gen }}" id="gen-{{ gen }}">
-        <h2 class="gen-label">
-          {% if gen != 0 %}
-            <span class="gen-badge">{{ gen }}기</span>
-            <span style="color:var(--muted);font-size:.85rem;font-weight:400">{{ members | length }}명</span>
-          {% else %}
-            <span class="gen-badge" style="background:var(--muted)">미분류</span>
-            <span style="color:var(--muted);font-size:.85rem;font-weight:400">{{ members | length }}명</span>
-          {% endif %}
-        </h2>
+      <div class="gen-section" data-gen="{{ gen }}">
 
-        <div class="member-cards-grid">
+        {# 섹션 헤더 #}
+        <div class="gen-heading">
+          <span class="gen-marker">■</span>
+          <h2 class="gen-title">
+            {% if gen != 0 %}{{ gen }}기 멤버{% else %}기수 미분류{% endif %}
+          </h2>
+          <span class="gen-count">{{ members | length }}명</span>
+        </div>
+
+        {# 멤버 그리드 #}
+        <div class="mem-grid">
           {% for m in members %}
-          <a href="/profile/{{ m.activity_name }}" class="member-profile-card">
-            {% if m.profile_image %}
-              <img src="/uploads/{{ m.profile_image }}" class="mp-avatar" alt="{{ m.activity_name }}">
-            {% else %}
-              <span class="mp-avatar-letter">{{ m.activity_name[0] | upper }}</span>
-            {% endif %}
-            <span class="mp-name">{{ m.activity_name }}</span>
-            {% if m.role == 'sub_admin' %}
-              <span class="mp-role" style="background:#fef3c7;color:#92400e">중간관리자</span>
-            {% endif %}
-            {% if m.bio %}
-              <p class="mp-bio">{{ m.bio }}</p>
-            {% elif m.intro_text %}
-              <p class="mp-bio">{{ m.intro_text }}</p>
-            {% endif %}
-            {# 스킬 태그 (최대 3개) #}
-            {% set skill_list = m.skills | fromjson %}
-            {% if skill_list %}
-            <div style="display:flex;flex-wrap:wrap;gap:4px;justify-content:center;margin-top:4px">
-              {% for sk in skill_list[:3] %}
-                <span style="font-size:.68rem;padding:2px 7px;border-radius:999px;background:rgba(59,130,246,0.08);color:var(--cartel-blue);font-weight:600">{{ sk.skill }}</span>
-              {% endfor %}
-              {% if skill_list | length > 3 %}
-                <span style="font-size:.68rem;color:var(--muted)">+{{ skill_list | length - 3 }}</span>
+          <a href="/profile/{{ m.activity_name }}" class="mem-card">
+            {# 프로필 사진 #}
+            <div class="mem-photo">
+              {% if m.profile_image %}
+                <img src="/uploads/{{ m.profile_image }}" alt="{{ m.activity_name }}" loading="lazy">
+              {% else %}
+                <span class="mem-initial">{{ m.activity_name[0] | upper }}</span>
+              {% endif %}
+              {% if m.role == 'sub_admin' %}
+                <span class="mem-badge-role">중간관리자</span>
               {% endif %}
             </div>
-            {% endif %}
+
+            {# 이름 + 기수 #}
+            <div class="mem-info">
+              <p class="mem-name">{{ m.activity_name }}</p>
+              {% if gen != 0 %}
+                <p class="mem-gen">{{ gen }}기</p>
+              {% endif %}
+              {# 이메일 #}
+              {% if m.email %}
+                <p class="mem-email">{{ m.email }}</p>
+              {% endif %}
+            </div>
           </a>
           {% endfor %}
         </div>
+
       </div>
       {% endfor %}
 
     {% else %}
-    <div class="empty-state" style="padding:80px 0">
+    <div class="empty-state" style="padding:80px 0;text-align:center">
       <p style="font-size:3rem;margin-bottom:12px">👥</p>
       <p class="empty-text">아직 등록된 멤버가 없습니다.</p>
     </div>
@@ -84,10 +84,44 @@
   </div>
 </main>
 
+{# ── 관리자: 기수 지정 패널 ── #}
+{% if is_privileged %}
+<button class="gen-admin-fab" id="genAdminBtn">⚙️ 기수 관리</button>
+<div class="gen-admin-panel" id="genAdminPanel">
+  <div class="gen-admin-inner">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+      <h3 style="font-size:1rem;font-weight:700;margin:0">기수 지정</h3>
+      <button id="genAdminClose" style="background:none;border:none;cursor:pointer;font-size:1.1rem;color:var(--muted)">✕</button>
+    </div>
+    <p style="font-size:.82rem;color:var(--muted);margin:0 0 14px">활동명으로 기수를 일괄 지정합니다.</p>
+    <form method="post" action="/admin/members/set-generation">
+      <div style="margin-bottom:10px">
+        <label class="form-label">멤버 활동명</label>
+        <input type="text" name="activity_name" class="form-control" placeholder="활동명 정확히 입력" required>
+      </div>
+      <div style="margin-bottom:14px">
+        <label class="form-label">기수 번호</label>
+        <input type="number" name="generation" class="form-control" placeholder="예: 6" min="1" required>
+      </div>
+      <button type="submit" class="btn btn-primary" style="width:100%">저장</button>
+    </form>
+  </div>
+</div>
+{% endif %}
+
 <style>
-.gen-tab-btn {
+/* ── 기수 탭 ── */
+.gen-tabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 28px 0 36px;
+  border-bottom: 2px solid var(--line);
+  padding-bottom: 12px;
+}
+.gen-tab {
   font-family: var(--font-display);
-  font-size: 0.85rem;
+  font-size: .85rem;
   font-weight: 600;
   padding: 7px 16px;
   border: 1.5px solid var(--line);
@@ -97,63 +131,191 @@
   cursor: pointer;
   transition: border-color .15s, color .15s, background .15s;
 }
-.gen-tab-btn.is-active {
+.gen-tab.is-active,
+.gen-tab:hover {
   border-color: var(--cartel-blue);
   color: var(--cartel-blue);
   background: rgba(59,130,246,0.07);
 }
-.gen-tab-btn:hover { border-color: var(--cartel-blue); color: var(--cartel-blue); }
+
+/* ── 섹션 헤더 ── */
+.gen-section { margin-bottom: 52px; }
+.gen-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 20px;
+  padding-bottom: 10px;
+  border-bottom: 2px solid var(--line);
+}
+.gen-marker { font-size: 1rem; color: var(--cartel-blue); }
+.gen-title {
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  font-weight: 700;
+  margin: 0;
+  color: var(--text);
+}
+.gen-count {
+  font-size: .82rem;
+  color: var(--muted);
+  margin-left: auto;
+}
+
+/* ── 멤버 그리드 ── */
+.mem-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 20px 16px;
+}
+@media (max-width: 900px)  { .mem-grid { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 600px)  { .mem-grid { grid-template-columns: repeat(2, 1fr); gap: 14px 10px; } }
+
+/* ── 멤버 카드 ── */
+.mem-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-decoration: none;
+  gap: 0;
+  transition: transform .18s;
+}
+.mem-card:hover { transform: translateY(-4px); }
+
+.mem-photo {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 3/4;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #e8edf5;
+  margin-bottom: 10px;
+}
+.mem-photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top center;
+  display: block;
+  transition: transform .25s;
+}
+.mem-card:hover .mem-photo img { transform: scale(1.04); }
+
+.mem-initial {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-size: 2.5rem;
+  font-weight: 800;
+  color: var(--cartel-blue);
+  background: linear-gradient(135deg, #eef3ff, #dde8ff);
+}
+.mem-badge-role {
+  position: absolute;
+  bottom: 6px; left: 50%; transform: translateX(-50%);
+  background: rgba(254,243,199,0.95);
+  color: #92400e;
+  font-size: .65rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.mem-info { text-align: center; width: 100%; }
+.mem-name {
+  font-family: var(--font-display);
+  font-size: .92rem;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0 0 2px;
+}
+.mem-gen {
+  font-size: .75rem;
+  color: var(--cartel-blue);
+  font-weight: 600;
+  margin: 0 0 2px;
+  background: rgba(59,130,246,0.08);
+  padding: 1px 8px;
+  border-radius: 999px;
+  display: inline-block;
+}
+.mem-email {
+  font-size: .72rem;
+  color: var(--muted);
+  margin: 3px 0 0;
+  word-break: break-all;
+}
+
+/* ── 기수 관리 FAB ── */
+.gen-admin-fab {
+  position: fixed;
+  bottom: 24px; right: 24px;
+  z-index: 200;
+  background: var(--cartel-blue);
+  color: #fff;
+  border: none;
+  border-radius: 999px;
+  padding: 12px 22px;
+  font-family: var(--font-display);
+  font-size: .88rem;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 4px 20px rgba(37,99,235,0.4);
+  transition: box-shadow .2s, transform .15s;
+}
+.gen-admin-fab:hover { box-shadow: 0 8px 32px rgba(37,99,235,0.55); transform: translateY(-2px); }
+
+/* ── 기수 관리 패널 ── */
+.gen-admin-panel {
+  position: fixed;
+  bottom: 80px; right: 24px;
+  z-index: 200;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 20px;
+  width: 280px;
+  box-shadow: 0 8px 40px rgba(0,0,0,0.15);
+  display: none;
+}
+.gen-admin-panel.is-open { display: block; }
 </style>
 
 <script>
 function showGen(target, btn) {
-  document.querySelectorAll('.gen-tab-btn').forEach(b => b.classList.remove('is-active'));
+  document.querySelectorAll('.gen-tab').forEach(b => b.classList.remove('is-active'));
   btn.classList.add('is-active');
   document.querySelectorAll('.gen-section').forEach(function (sec) {
     sec.style.display = (target === 'all' || sec.dataset.gen === target) ? '' : 'none';
   });
 }
-</script>
 
-{# 관리자: 기수 지정 패널 #}
-{% if is_privileged %}
-<div style="position:fixed;bottom:24px;right:24px;z-index:50">
-  <button onclick="document.getElementById('genAdminPanel').classList.toggle('is-open')"
-          class="btn btn-primary" style="border-radius:999px;box-shadow:0 4px 20px rgba(37,99,235,0.4)">
-    ⚙️ 기수 관리
-  </button>
-</div>
-<div id="genAdminPanel" style="display:none" class="{% if false %}is-open{% endif %}">
-  <div style="position:fixed;bottom:80px;right:24px;z-index:50;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:20px;min-width:280px;box-shadow:var(--shadow-lg)">
-    <h3 style="font-size:1rem;font-weight:700;margin-bottom:14px">기수 지정</h3>
-    <p class="muted" style="font-size:.82rem;margin-bottom:14px">각 멤버 프로필에서 편집하거나, 여기서 일괄 지정하세요.</p>
-    <form method="post" action="/admin/members/set-generation">
-      <div style="margin-bottom:10px">
-        <label class="form-label">멤버 활동명</label>
-        <input type="text" name="activity_name" class="form-control" placeholder="활동명 입력">
-      </div>
-      <div style="margin-bottom:14px">
-        <label class="form-label">기수</label>
-        <input type="number" name="generation" class="form-control" placeholder="예: 1" min="1">
-      </div>
-      <button type="submit" class="btn btn-primary btn-full">저장</button>
-    </form>
-  </div>
-</div>
-<script>
+// 기수 관리 패널 토글 (버그 수정)
 (function () {
+  var fab   = document.getElementById('genAdminBtn');
   var panel = document.getElementById('genAdminPanel');
-  if (panel) {
-    // CSS display toggle 대신 class toggle 사용
-    var panelInner = panel.querySelector('div');
-    document.querySelector('[onclick*="genAdminPanel"]').addEventListener('click', function () {
-      var d = panelInner.style.display;
-      panelInner.style.display = d === 'none' || d === '' ? 'block' : 'none';
+  var close = document.getElementById('genAdminClose');
+  if (!fab || !panel) return;
+
+  fab.addEventListener('click', function (e) {
+    e.stopPropagation();
+    panel.classList.toggle('is-open');
+  });
+  if (close) {
+    close.addEventListener('click', function () {
+      panel.classList.remove('is-open');
     });
-    panelInner.style.display = 'none';
   }
+  document.addEventListener('click', function (e) {
+    if (!panel.contains(e.target) && e.target !== fab) {
+      panel.classList.remove('is-open');
+    }
+  });
 })();
 </script>
-{% endif %}
 
 {% endblock %}

@@ -215,11 +215,13 @@ def _record_fail(counter: dict, ip: str) -> None:
     _prune_fail_counter(counter)
 
 
+import logging as _logging
+_log = _logging.getLogger("uvicorn.error")
+
+
 @app.on_event("startup")
 def startup():
     # 보안 기본값 경고
-    import logging
-    _log = logging.getLogger("uvicorn.error")
     if os.getenv("SECRET_KEY", "change-me-in-production") == "change-me-in-production":
         _log.warning("[보안] SECRET_KEY가 기본값입니다. 환경변수로 강력한 랜덤 키를 설정하세요.")
     if os.getenv("ADMIN_PASSWORD", "admin1234") == "admin1234":
@@ -2995,7 +2997,10 @@ async def admin_crawl_add_with_gpt(
     try:
         async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
             resp = await client.get(link, headers=_fetch_headers)
-            soup = _BS(resp.text, "lxml")
+            try:
+                soup = _BS(resp.text, "lxml")
+            except Exception:
+                soup = _BS(resp.text, "html.parser")
 
             # og:image / twitter:image 추출
             og_image_url = ""
@@ -3056,15 +3061,17 @@ async def admin_crawl_add_with_gpt(
                         saved_files.append({"name": _att["name"], "path": _f_fname})
                 except Exception:
                     continue
-    except Exception:
-        pass  # 페이지 접근 실패 — GPT 파싱도 건너뜀
+    except Exception as _fetch_err:
+        _log.warning("GPT 추가 - 페이지 fetch 실패: %s %s", type(_fetch_err).__name__, _fetch_err)
 
     # ── 2. GPT 파싱 (페이지 텍스트가 있을 때만) ──────────────────────────────
     if page_text:
         try:
             parsed = await parse_text(page_text)
-        except Exception:
-            pass
+        except Exception as _gpt_err:
+            _log.warning("GPT 추가 - 파싱 실패: %s %s", type(_gpt_err).__name__, _gpt_err)
+    else:
+        _log.warning("GPT 추가 - page_text 비어있음 (페이지 fetch 실패 또는 내용 없음): %s", link)
 
     # 크롤 캐시 기본값으로 보완
     if not parsed.get("title"):

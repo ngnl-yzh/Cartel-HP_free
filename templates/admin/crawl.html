@@ -78,7 +78,7 @@
             <th style="width:140px">분야</th>
             <th style="width:160px">주최기관</th>
             <th style="width:90px;white-space:nowrap">마감일</th>
-            <th style="width:160px">액션</th>
+            <th style="width:130px">액션</th>
           </tr>
         </thead>
         <tbody>
@@ -106,12 +106,12 @@
                 title="{{ item.organizer or '' }}">{{ item.organizer or "-" }}</td>
             <td class="muted" style="white-space:nowrap">{{ item.deadline or "-" }}</td>
             <td class="crawl-actions">
-              <form method="post" action="/admin/crawl/add" style="display:inline">
+              <form method="post" action="/admin/crawl/add">
                 <input type="hidden" name="idx" value="{{ loop.index0 }}">
                 <button type="submit" class="btn btn-outline btn-sm">추가</button>
               </form>
-              <form method="post" action="/admin/crawl/add-with-gpt" style="display:inline"
-                    onsubmit="this.querySelector('button').disabled=true;this.querySelector('button').textContent='GPT…';">
+              <form method="post" action="/admin/crawl/add-with-gpt"
+                    onsubmit="this.querySelector('button').disabled=true;this.querySelector('button').textContent='처리 중…';">
                 <input type="hidden" name="idx" value="{{ loop.index0 }}">
                 <button type="submit" class="btn btn-primary btn-sm">GPT 추가</button>
               </form>

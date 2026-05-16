@@ -1,14 +1,33 @@
 {% extends "base.html" %}
-{% block title %}공모전 보드{% endblock %}
+{% block title %}Competition · CARTEL{% endblock %}
 
 {% block content %}
+<div class="c-hero" style="padding:40px 0 32px">
+  <div class="c-hero-inner" style="display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap">
+    <div>
+      <p class="c-hero-eyebrow">CARTEL</p>
+      <h1 class="c-hero-title" style="font-size:clamp(1.5rem,3vw,2rem)">🏆 Competition</h1>
+    </div>
+    <form class="comp-search-form" action="/competitions" method="get">
+      {% if current_tag is defined and current_tag and current_tag != 'all' %}
+        <input type="hidden" name="tag" value="{{ current_tag }}">
+      {% endif %}
+      <input type="search" name="q" class="form-control"
+             placeholder="공모전명, 주최기관 검색…"
+             value="{{ query if query is defined else '' }}"
+             style="min-width:240px">
+      <button type="submit" class="btn btn-primary" style="white-space:nowrap">검색</button>
+    </form>
+  </div>
+</div>
+
 {% if featured %}
-<section class="featured-section">
+<section class="featured-section" style="background:linear-gradient(180deg,#eef3ff 0%,var(--bg) 100%)">
   <div class="container">
     <div class="featured-header">
       <div>
-        <h1 class="featured-title">마감 임박 · 인기 공모전</h1>
-        <p class="featured-sub">마감일, 조회수, 주목 표시를 기준으로 먼저 보여줍니다.</p>
+        <h2 class="featured-title" style="font-family:var(--font-display)">마감 임박 · 인기 공모전</h2>
+        <p class="featured-sub">마감일, 조회수, 주목 표시 기준으로 먼저 보여줍니다.</p>
       </div>
     </div>
     <div class="featured-grid">
@@ -19,7 +38,7 @@
             <span class="tag-chip">{{ tag }}</span>
           {% endfor %}
         </div>
-        <h2 class="featured-card-title">{{ comp.title }}</h2>
+        <h3 class="featured-card-title">{{ comp.title }}</h3>
         <p class="featured-card-org">{{ comp.organizer }}</p>
         {% if comp.prize %}
           <p class="featured-card-prize">시상 {{ comp.prize }}</p>
@@ -47,20 +66,20 @@
   <div class="container">
     <div class="toolbar">
       <div class="filter-bar">
-        <a href="/?sort={{ current_sort | urlencode }}&q={{ query | urlencode }}"
+        <a href="/competitions?sort={{ current_sort | urlencode }}&q={{ query | urlencode }}"
            class="filter-btn {% if current_tag == 'all' %}active{% endif %}">전체</a>
         {% for t in tags %}
-        <a href="/?tag={{ t | urlencode }}&sort={{ current_sort | urlencode }}&q={{ query | urlencode }}"
+        <a href="/competitions?tag={{ t | urlencode }}&sort={{ current_sort | urlencode }}&q={{ query | urlencode }}"
            class="filter-btn {% if current_tag == t %}active{% endif %}">{{ t }}</a>
         {% endfor %}
       </div>
       <div class="sort-bar">
         <span class="sort-label">정렬</span>
-        <a href="/?tag={{ current_tag | urlencode }}&sort=deadline&q={{ query | urlencode }}"
+        <a href="/competitions?tag={{ current_tag | urlencode }}&sort=deadline&q={{ query | urlencode }}"
            class="sort-btn {% if current_sort == 'deadline' %}active{% endif %}">마감일순</a>
-        <a href="/?tag={{ current_tag | urlencode }}&sort=views&q={{ query | urlencode }}"
+        <a href="/competitions?tag={{ current_tag | urlencode }}&sort=views&q={{ query | urlencode }}"
            class="sort-btn {% if current_sort == 'views' %}active{% endif %}">조회순</a>
-        <a href="/?tag={{ current_tag | urlencode }}&sort=newest&q={{ query | urlencode }}"
+        <a href="/competitions?tag={{ current_tag | urlencode }}&sort=newest&q={{ query | urlencode }}"
            class="sort-btn {% if current_sort == 'newest' %}active{% endif %}">최신순</a>
       </div>
     </div>

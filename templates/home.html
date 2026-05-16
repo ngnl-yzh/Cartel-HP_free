@@ -1,0 +1,608 @@
+{% extends "base.html" %}
+{% block title %}CARTEL — AI · Competition · Together{% endblock %}
+
+{% block content %}
+
+{# ══════════════════════════════════════════════════════════════
+   HERO  — 풀스크린 히어로 배너
+   ══════════════════════════════════════════════════════════════ #}
+<section class="home-hero">
+  {# 별자리 파티클 (CSS only) #}
+  <div class="hero-particles" aria-hidden="true">
+    {% for i in range(28) %}
+    <span class="hero-particle" style="
+      --x:{{ (loop.index * 137 % 100) }}%;
+      --y:{{ (loop.index * 97  % 100) }}%;
+      --s:{{ 1 + (loop.index % 3) * 0.5 }}px;
+      --d:{{ loop.index * 0.4 }}s;
+      --dur:{{ 2.5 + (loop.index % 5) * 0.7 }}s;
+    "></span>
+    {% endfor %}
+  </div>
+
+  <div class="home-hero-inner">
+    <div class="hero-logo-wrap">
+      <span class="hero-c">C</span>
+    </div>
+    <h1 class="hero-title">CARTEL</h1>
+    <p class="hero-tagline">AI &nbsp;·&nbsp; Competition &nbsp;·&nbsp; Together</p>
+    <p class="hero-sub">공모전을 함께 도전하고, 성장을 함께 나누는 공간</p>
+    <div class="hero-cta">
+      <a href="/competitions" class="hero-btn hero-btn-primary">공모전 보기</a>
+      {% if current_member %}
+        <a href="/my" class="hero-btn hero-btn-ghost">마이페이지</a>
+      {% else %}
+        <a href="/register" class="hero-btn hero-btn-ghost">팀 합류하기</a>
+      {% endif %}
+    </div>
+  </div>
+</section>
+
+{# ══════════════════════════════════════════════════════════════
+   STATS  — 핵심 지표
+   ══════════════════════════════════════════════════════════════ #}
+<section class="home-stats">
+  <div class="container">
+    <div class="stats-grid">
+      <div class="stat-item">
+        <span class="stat-icon">👥</span>
+        <span class="stat-value">{{ total_members }}</span>
+        <span class="stat-label">Members</span>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat-item">
+        <span class="stat-icon">🏆</span>
+        <span class="stat-value">{{ total_comps }}</span>
+        <span class="stat-label">Competitions</span>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat-item">
+        <span class="stat-icon">🏅</span>
+        <span class="stat-value">{{ total_awards }}</span>
+        <span class="stat-label">Awards</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+{# ══════════════════════════════════════════════════════════════
+   QUICK NAV  — 빠른 이동
+   ══════════════════════════════════════════════════════════════ #}
+<section class="home-section">
+  <div class="container">
+    <div class="quick-nav-grid">
+
+      <a href="/competitions" class="quick-card quick-card-comp">
+        <div class="quick-icon">🏆</div>
+        <div class="quick-info">
+          <div class="quick-title">Competition</div>
+          <div class="quick-desc">공모전 탐색 및 팀 구성</div>
+        </div>
+        <svg class="quick-arrow" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+      </a>
+
+      <a href="/board/free" class="quick-card quick-card-board">
+        <div class="quick-icon">💬</div>
+        <div class="quick-info">
+          <div class="quick-title">Board</div>
+          <div class="quick-desc">자유 · 친목 · 프로젝트</div>
+        </div>
+        <svg class="quick-arrow" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+      </a>
+
+      <a href="/chat" class="quick-card quick-card-chat">
+        <div class="quick-icon">💬</div>
+        <div class="quick-info">
+          <div class="quick-title">Chat</div>
+          <div class="quick-desc">실시간 채팅방</div>
+        </div>
+        <svg class="quick-arrow" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+      </a>
+
+      <a href="/awards" class="quick-card quick-card-awards">
+        <div class="quick-icon">🏅</div>
+        <div class="quick-info">
+          <div class="quick-title">Awards</div>
+          <div class="quick-desc">우리 팀의 수상 실적</div>
+        </div>
+        <svg class="quick-arrow" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+      </a>
+
+      <a href="/gallery" class="quick-card quick-card-gallery">
+        <div class="quick-icon">📷</div>
+        <div class="quick-info">
+          <div class="quick-title">Gallery</div>
+          <div class="quick-desc">MT · 총회 · 파티 기록</div>
+        </div>
+        <svg class="quick-arrow" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+      </a>
+
+      <a href="/members" class="quick-card quick-card-members">
+        <div class="quick-icon">👤</div>
+        <div class="quick-info">
+          <div class="quick-title">Member</div>
+          <div class="quick-desc">기수별 멤버 소개</div>
+        </div>
+        <svg class="quick-arrow" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+      </a>
+
+    </div>
+  </div>
+</section>
+
+{# ══════════════════════════════════════════════════════════════
+   진행 중인 공모전
+   ══════════════════════════════════════════════════════════════ #}
+{% if active_comps %}
+<section class="home-section" style="background:linear-gradient(180deg,#f8faff 0%,var(--bg) 100%)">
+  <div class="container">
+    <div class="section-heading">
+      <div>
+        <h2 class="section-heading-title">진행 중인 공모전</h2>
+        <p class="section-heading-sub">마감일이 남아있는 공모전들이에요.</p>
+      </div>
+      <a href="/competitions" class="section-more-link">전체 보기 →</a>
+    </div>
+    <div class="home-comp-grid">
+      {% for comp in active_comps %}
+      <a href="/competition/{{ comp.id }}" class="comp-card status-{{ comp.status }}">
+        {% if comp.image %}
+        <div class="card-thumb" style="background-image:url('/uploads/{{ comp.image }}')"></div>
+        {% endif %}
+        <div class="comp-card-tags">
+          {% for tag in comp.tags | fromjson %}
+            <span class="tag-chip tag-small">{{ tag }}</span>
+          {% endfor %}
+        </div>
+        <h3 class="comp-card-title">{{ comp.title }}</h3>
+        <p class="comp-card-org">{{ comp.organizer }}</p>
+        {% if comp.prize %}
+          <p class="comp-card-prize">시상 {{ comp.prize }}</p>
+        {% endif %}
+        <div class="comp-card-footer">
+          <span class="date-deadline">마감 {{ comp.deadline.strftime('%Y.%m.%d') }}</span>
+          {% if comp.status == 'urgent' %}
+            <span class="deadline-badge urgent">D-{{ comp.days_left }}</span>
+          {% elif comp.status == 'soon' %}
+            <span class="deadline-badge soon">D-{{ comp.days_left }}</span>
+          {% else %}
+            <span class="deadline-badge open">D-{{ comp.days_left }}</span>
+          {% endif %}
+        </div>
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+{% endif %}
+
+{# ══════════════════════════════════════════════════════════════
+   최근 수상 실적
+   ══════════════════════════════════════════════════════════════ #}
+{% if recent_awards %}
+<section class="home-section">
+  <div class="container">
+    <div class="section-heading">
+      <div>
+        <h2 class="section-heading-title">🏅 최근 수상 실적</h2>
+        <p class="section-heading-sub">카르텔이 이뤄낸 최근 수상들이에요.</p>
+      </div>
+      <a href="/awards" class="section-more-link">전체 보기 →</a>
+    </div>
+    <div class="home-awards-grid">
+      {% for entry in recent_awards %}
+        {% set comp = award_comps_map.get(entry.competition_id) %}
+        {% set team = award_teams_map.get(entry.team_id) %}
+        <div class="home-award-card">
+          <div style="font-size:1.8rem;margin-bottom:8px">🏆</div>
+          {% if entry.award_name %}
+            <span class="award-rank" style="margin-bottom:8px">{{ entry.award_name }}</span>
+          {% endif %}
+          {% if comp %}
+            <p style="font-size:.82rem;color:var(--muted);margin:0 0 4px;line-height:1.3">{{ comp.title }}</p>
+          {% endif %}
+          {% if team %}
+            <p style="font-size:.85rem;font-weight:700;color:var(--cartel-blue);margin:0">{{ team.name }}</p>
+          {% endif %}
+          {% if entry.prize_amount %}
+            <div class="award-prize-badge" style="margin-top:8px">💰 {{ entry.prize_amount }}</div>
+          {% endif %}
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+{% endif %}
+
+{# ══════════════════════════════════════════════════════════════
+   갤러리 미리보기
+   ══════════════════════════════════════════════════════════════ #}
+{% if recent_gallery %}
+<section class="home-section" style="background:linear-gradient(180deg,#f8faff 0%,var(--bg) 100%)">
+  <div class="container">
+    <div class="section-heading">
+      <div>
+        <h2 class="section-heading-title">📷 갤러리</h2>
+        <p class="section-heading-sub">카르텔의 순간들을 담았어요.</p>
+      </div>
+      <a href="/gallery" class="section-more-link">갤러리 전체 보기 →</a>
+    </div>
+    <div class="home-gallery-strip">
+      {% for post in recent_gallery %}
+        {% set imgs = post.images | fromjson %}
+        <a href="/gallery" class="home-gallery-thumb">
+          {% if imgs %}
+            <img src="/uploads/{{ imgs[0] }}" alt="{{ post.title }}" loading="lazy">
+          {% else %}
+            <span style="font-size:2rem">📷</span>
+          {% endif %}
+          <div class="home-gallery-overlay">
+            <span class="gallery-type-badge">{{ post.event_type }}</span>
+            <span style="font-size:.8rem;font-weight:700;color:#fff;margin-top:4px">{{ post.title }}</span>
+          </div>
+        </a>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+{% endif %}
+
+<style>
+/* ── HOME HERO ───────────────────────────────────────────────── */
+.home-hero {
+  position: relative;
+  min-height: 520px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(ellipse at 60% 40%, #0A1E3D 0%, #050D1A 55%, #000814 100%);
+  overflow: hidden;
+}
+
+/* 파티클 */
+.hero-particles { position: absolute; inset: 0; pointer-events: none; }
+.hero-particle {
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+  width: var(--s);
+  height: var(--s);
+  border-radius: 50%;
+  background: #fff;
+  opacity: 0;
+  animation: twinkle var(--dur) var(--d) infinite ease-in-out;
+}
+@keyframes twinkle {
+  0%, 100% { opacity: 0; transform: scale(0.5); }
+  50% { opacity: 0.85; transform: scale(1); }
+}
+
+/* 연결선 효과 (pseudo) */
+.home-hero::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: url("data:image/svg+xml,%3Csvg width='800' height='520' xmlns='http://www.w3.org/2000/svg'%3E%3Cg opacity='0.06' stroke='%234DB8FF' stroke-width='1'%3E%3Cline x1='120' y1='80' x2='320' y2='200'/%3E%3Cline x1='320' y1='200' x2='600' y2='140'/%3E%3Cline x1='600' y1='140' x2='700' y2='300'/%3E%3Cline x1='200' y1='350' x2='320' y2='200'/%3E%3Cline x1='450' y1='400' x2='600' y2='140'/%3E%3Cline x1='80' y1='250' x2='200' y2='350'/%3E%3C/g%3E%3C/svg%3E") center/cover no-repeat;
+  pointer-events: none;
+}
+
+.home-hero-inner {
+  position: relative;
+  z-index: 2;
+  text-align: center;
+  padding: 40px 20px;
+}
+
+/* 큰 C 아이콘 */
+.hero-logo-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 4px;
+}
+.hero-c {
+  font-family: var(--font-display);
+  font-size: clamp(5rem, 12vw, 9rem);
+  font-weight: 800;
+  color: transparent;
+  background: linear-gradient(135deg, #3B82F6 0%, #60A5FA 40%, #93C5FD 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  text-shadow: none;
+  filter: drop-shadow(0 0 32px rgba(59,130,246,0.55)) drop-shadow(0 0 8px rgba(59,130,246,0.4));
+  line-height: 1;
+  animation: heroGlow 3s ease-in-out infinite alternate;
+}
+@keyframes heroGlow {
+  from { filter: drop-shadow(0 0 24px rgba(59,130,246,0.45)) drop-shadow(0 0 6px rgba(59,130,246,0.3)); }
+  to   { filter: drop-shadow(0 0 44px rgba(59,130,246,0.75)) drop-shadow(0 0 14px rgba(59,130,246,0.55)); }
+}
+
+.hero-title {
+  font-family: var(--font-display);
+  font-size: clamp(2rem, 6vw, 4rem);
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  color: #fff;
+  margin: 0 0 8px;
+  line-height: 1;
+}
+.hero-tagline {
+  font-family: var(--font-display);
+  font-size: clamp(0.8rem, 2vw, 1rem);
+  letter-spacing: 0.2em;
+  color: rgba(255,255,255,0.45);
+  margin: 0 0 16px;
+  text-transform: uppercase;
+}
+.hero-sub {
+  font-size: clamp(0.9rem, 2vw, 1.05rem);
+  color: rgba(255,255,255,0.65);
+  margin: 0 0 32px;
+  max-width: 460px;
+  margin-left: auto;
+  margin-right: auto;
+  line-height: 1.6;
+}
+.hero-cta {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+.hero-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 12px 28px;
+  border-radius: 10px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.95rem;
+  text-decoration: none;
+  transition: transform 0.15s, box-shadow 0.15s, background 0.15s;
+}
+.hero-btn:hover { transform: translateY(-2px); }
+.hero-btn-primary {
+  background: var(--cartel-blue);
+  color: #fff;
+  box-shadow: 0 4px 24px rgba(37,99,235,0.45);
+}
+.hero-btn-primary:hover { box-shadow: 0 8px 32px rgba(37,99,235,0.6); background: var(--primary-dark); }
+.hero-btn-ghost {
+  background: rgba(255,255,255,0.1);
+  color: rgba(255,255,255,0.85);
+  border: 1.5px solid rgba(255,255,255,0.2);
+  backdrop-filter: blur(4px);
+}
+.hero-btn-ghost:hover { background: rgba(255,255,255,0.18); color: #fff; }
+
+/* ── STATS ───────────────────────────────────────────────────── */
+.home-stats {
+  background: var(--cartel-navy);
+  border-bottom: 1px solid rgba(59,130,246,0.15);
+  padding: 24px 0;
+}
+.stats-grid {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+}
+.stat-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 0 48px;
+}
+.stat-icon { font-size: 1.4rem; }
+.stat-value {
+  font-family: var(--font-display);
+  font-size: 2rem;
+  font-weight: 800;
+  color: #fff;
+  line-height: 1;
+}
+.stat-label {
+  font-family: var(--font-display);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.4);
+}
+.stat-divider {
+  width: 1px;
+  height: 40px;
+  background: rgba(255,255,255,0.12);
+}
+
+/* ── SECTIONS ────────────────────────────────────────────────── */
+.home-section { padding: 56px 0; }
+
+.section-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+}
+.section-heading-title {
+  font-family: var(--font-display);
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: var(--text);
+  margin: 0 0 4px;
+}
+.section-heading-sub { color: var(--muted); font-size: .88rem; margin: 0; }
+.section-more-link {
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--cartel-blue);
+  text-decoration: none;
+  white-space: nowrap;
+  transition: opacity 0.15s;
+}
+.section-more-link:hover { opacity: 0.7; }
+
+/* ── QUICK NAV ───────────────────────────────────────────────── */
+.quick-nav-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+}
+.quick-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 18px 20px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  text-decoration: none;
+  color: var(--text);
+  box-shadow: var(--shadow);
+  transition: transform 0.15s, box-shadow 0.15s, border-color 0.15s;
+  position: relative;
+  overflow: hidden;
+}
+.quick-card::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+  border-radius: 14px 0 0 14px;
+}
+.quick-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 12px 32px rgba(0,0,0,0.1);
+}
+.quick-card-comp::before   { background: #3B82F6; }
+.quick-card-board::before  { background: #8B5CF6; }
+.quick-card-chat::before   { background: #06B6D4; }
+.quick-card-awards::before { background: #F59E0B; }
+.quick-card-gallery::before{ background: #EC4899; }
+.quick-card-members::before{ background: #10B981; }
+
+.quick-card-comp:hover   { border-color: rgba(59,130,246,0.3); }
+.quick-card-board:hover  { border-color: rgba(139,92,246,0.3); }
+.quick-card-chat:hover   { border-color: rgba(6,182,212,0.3); }
+.quick-card-awards:hover { border-color: rgba(245,158,11,0.3); }
+.quick-card-gallery:hover{ border-color: rgba(236,72,153,0.3); }
+.quick-card-members:hover{ border-color: rgba(16,185,129,0.3); }
+
+.quick-icon {
+  font-size: 1.6rem;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  background: var(--surface-soft);
+  flex-shrink: 0;
+}
+.quick-info { flex: 1; min-width: 0; }
+.quick-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--text);
+}
+.quick-desc { font-size: 0.78rem; color: var(--muted); margin-top: 2px; }
+.quick-arrow {
+  color: var(--muted);
+  flex-shrink: 0;
+  transition: transform 0.15s, color 0.15s;
+}
+.quick-card:hover .quick-arrow { transform: translateX(4px); color: var(--cartel-blue); }
+
+/* ── COMP GRID ───────────────────────────────────────────────── */
+.home-comp-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 16px;
+}
+
+/* ── AWARDS GRID ─────────────────────────────────────────────── */
+.home-awards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px;
+}
+.home-award-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 20px;
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  position: relative;
+  overflow: hidden;
+}
+.home-award-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #F59E0B, #FBBF24);
+}
+
+/* ── GALLERY STRIP ───────────────────────────────────────────── */
+.home-gallery-strip {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+}
+.home-gallery-thumb {
+  position: relative;
+  aspect-ratio: 4/3;
+  border-radius: 14px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #e2e8f0;
+  text-decoration: none;
+  cursor: pointer;
+}
+.home-gallery-thumb img {
+  width: 100%; height: 100%;
+  object-fit: cover;
+  transition: transform 0.3s;
+}
+.home-gallery-thumb:hover img { transform: scale(1.05); }
+.home-gallery-overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top, rgba(5,13,26,0.75) 0%, transparent 50%);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: flex-start;
+  padding: 12px 14px;
+  gap: 4px;
+}
+
+/* ── 반응형 ──────────────────────────────────────────────────── */
+@media (max-width: 900px) {
+  .quick-nav-grid { grid-template-columns: repeat(2, 1fr); }
+  .home-gallery-strip { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 600px) {
+  .home-hero { min-height: 420px; }
+  .hero-c { font-size: 5rem; }
+  .hero-title { font-size: 2.2rem; }
+  .stat-item { padding: 0 24px; }
+  .stat-value { font-size: 1.5rem; }
+  .quick-nav-grid { grid-template-columns: 1fr; }
+  .home-gallery-strip { grid-template-columns: 1fr; }
+  .home-comp-grid { grid-template-columns: 1fr; }
+}
+</style>
+
+{% endblock %}

@@ -26,7 +26,7 @@
       {# 데스크탑 링크 #}
       <div class="c-nav-links" id="cNavLinks">
         <a href="/" class="c-nav-link {% if request.url.path == '/' %}is-active{% endif %}">Home</a>
-        <a href="/" class="c-nav-link {% if request.url.path == '/' %}{% endif %}">Competition</a>
+        <a href="/competitions" class="c-nav-link {% if '/competitions' in request.url.path %}is-active{% endif %}">Competition</a>
 
         {# Board 드롭다운 #}
         <div class="c-dropdown" id="boardDropdown">
@@ -68,7 +68,7 @@
       {# 오른쪽 영역 #}
       <div class="c-nav-right">
         {# 검색 #}
-        <form class="c-search" action="/" method="get" id="navSearchForm">
+        <form class="c-search" action="/competitions" method="get" id="navSearchForm">
           {% if current_tag is defined and current_tag and current_tag != 'all' %}
             <input type="hidden" name="tag" value="{{ current_tag }}">
           {% endif %}
@@ -134,7 +134,7 @@
 
       <nav class="c-mobile-links">
         <a href="/" class="c-mobile-link {% if request.url.path == '/' %}is-active{% endif %}">🏠 Home</a>
-        <a href="/" class="c-mobile-link">🏆 Competition</a>
+        <a href="/competitions" class="c-mobile-link {% if '/competitions' in request.url.path %}is-active{% endif %}">🏆 Competition</a>
         <div class="c-mobile-group">
           <div class="c-mobile-group-title">Board</div>
           <a href="/board/free"    class="c-mobile-link c-mobile-sub {% if '/board/free'    in request.url.path %}is-active{% endif %}">✏️ 자유게시판</a>
@@ -191,6 +191,7 @@
       <p class="c-footer-tagline">AI · Competition · Together</p>
       <nav class="c-footer-nav">
         <a href="/">Home</a>
+        <a href="/competitions">Competition</a>
         <a href="/awards">Awards</a>
         <a href="/gallery">Gallery</a>
         <a href="/members">Member</a>

@@ -567,6 +567,55 @@ def _is_comment_muted(member: Member) -> bool:
 # ════════════════════════════════════════════════════════════════════════════
 
 @app.get("/", response_class=HTMLResponse)
+async def home(request: Request, db: Session = Depends(get_db)):
+    today = date.today()
+
+    # 통계
+    total_members = db.query(func.count(Member.id)).scalar() or 0
+    total_comps   = db.query(func.count(Competition.id)).scalar() or 0
+    total_awards  = db.query(func.count(TeamCompetitionEntry.id)).filter(
+        TeamCompetitionEntry.is_awarded.is_(True),
+        TeamCompetitionEntry.is_public.is_(True),
+    ).scalar() or 0
+
+    # 진행 중인 공모전 (최대 4개)
+    active_comps = _annotate(
+        db.query(Competition)
+        .filter(Competition.deadline >= today)
+        .order_by(Competition.deadline.asc())
+        .limit(4)
+        .all()
+    )
+
+    # 최근 수상 실적 (공개, 최대 3개)
+    recent_awards = db.query(TeamCompetitionEntry).filter(
+        TeamCompetitionEntry.is_awarded.is_(True),
+        TeamCompetitionEntry.is_public.is_(True),
+    ).order_by(TeamCompetitionEntry.updated_at.desc()).limit(3).all()
+
+    award_comp_ids = [e.competition_id for e in recent_awards]
+    award_team_ids = [e.team_id for e in recent_awards]
+    award_comps_map = {c.id: c for c in db.query(Competition).filter(Competition.id.in_(award_comp_ids)).all()} if award_comp_ids else {}
+    award_teams_map = {t.id: t for t in db.query(Team).filter(Team.id.in_(award_team_ids)).all()} if award_team_ids else {}
+
+    # 갤러리 최신 3개
+    recent_gallery = db.query(GalleryPost).filter(
+        GalleryPost.is_public.is_(True)
+    ).order_by(GalleryPost.created_at.desc()).limit(3).all()
+
+    return _render(request, "home.html", _ctx(request, db,
+        total_members=total_members,
+        total_comps=total_comps,
+        total_awards=total_awards,
+        active_comps=active_comps,
+        recent_awards=recent_awards,
+        award_comps_map=award_comps_map,
+        award_teams_map=award_teams_map,
+        recent_gallery=recent_gallery,
+    ))
+
+
+@app.get("/competitions", response_class=HTMLResponse)
 async def index(
     request: Request,
     tag: str = "",

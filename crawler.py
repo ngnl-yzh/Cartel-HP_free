@@ -298,74 +298,45 @@ async def _crawl_contestkorea(client: httpx.AsyncClient) -> list:
 # ── 2. 데이콘 ──────────────────────────────────────────────────────────────────
 
 async def _crawl_dacon(client: httpx.AsyncClient) -> list:
-    """데이콘(dacon.io) — 데이터·AI 공모전 플랫폼"""
+    """데이콘(dacon.io) — 데이터·AI 공모전 플랫폼
+    HTML 구조: div.comp > a[href=/competitions/official/NNNN/overview/] > p.name (제목)
+    """
     results = []
     try:
         r = await client.get(
             "https://dacon.io/competitions",
             headers={**HEADERS, "Accept": "text/html,application/xhtml+xml,*/*"},
-            timeout=20,
+            timeout=25,
         )
         _check_response(r, "데이콘")
         soup = _soup(r.text)
 
-        # ① Next.js __NEXT_DATA__ JSON 추출 시도
-        import json as _json
-        nxt = soup.find("script", {"id": "__NEXT_DATA__"})
-        if nxt and nxt.string:
-            try:
-                page_data = _json.loads(nxt.string)
-                props = page_data.get("props", {}).get("pageProps", {})
-                comps = (
-                    props.get("competitions")
-                    or props.get("data")
-                    or props.get("list")
-                    or []
-                )
-                if isinstance(comps, dict):
-                    comps = comps.get("results") or comps.get("data") or []
-                for comp in (comps if isinstance(comps, list) else []):
-                    title = (comp.get("title") or comp.get("name") or "").strip()
-                    if not title:
-                        continue
-                    comp_id = comp.get("id") or ""
-                    link = f"https://dacon.io/competitions/{comp_id}" if comp_id else "https://dacon.io/competitions"
-                    deadline_raw = (
-                        comp.get("end_date") or comp.get("deadline")
-                        or comp.get("finish_date") or comp.get("endDate") or ""
-                    )
-                    deadline = _parse_date(str(deadline_raw)) if deadline_raw else None
-                    organizer = (comp.get("host") or comp.get("organizer") or "").strip()
-                    prize = str(comp.get("prize") or comp.get("reward") or "").strip()
-                    if title and _is_current_year(deadline):
-                        results.append(_item("dacon", "데이콘", title, link, organizer, deadline, prize, tags=["AI/SW"]))
-                if results:
-                    return results
-            except Exception:
-                pass
-
-        # ② HTML fallback — /competitions/숫자 형태 링크 추출
         seen_links: set = set()
-        for a in soup.select("a[href]"):
-            href = a.get("href", "")
-            if not re.search(r"/competitions/\d+", href):
+        # 실제 HTML 구조: div.comp 내부 a[href] + p.name
+        for item in soup.select(".comp"):
+            try:
+                a = item.select_one("a[href]")
+                if not a:
+                    continue
+                href = a.get("href", "")
+                if not href.startswith("http"):
+                    href = "https://dacon.io" + href
+                if href in seen_links:
+                    continue
+                seen_links.add(href)
+
+                name_el = item.select_one(".name") or item.select_one("p.ellipsis")
+                title = _norm(name_el.get_text() if name_el else a.get_text())
+                if len(title) < 4:
+                    continue
+
+                # dday: "참가신청중" / "연습" / "D-7" 등 → 날짜 파싱 불가, None 처리
+                results.append(_item("dacon", "데이콘", title, href, "", None, tags=["AI/SW"]))
+            except Exception:
                 continue
-            if not href.startswith("http"):
-                href = "https://dacon.io" + href
-            if href in seen_links:
-                continue
-            seen_links.add(href)
-            title_el = (
-                a.select_one("h2, h3, h4, [class*='tit'], [class*='title'], [class*='name']")
-                or a
-            )
-            title = _norm(title_el.get_text())
-            if len(title) < 4:
-                continue
-            results.append(_item("dacon", "데이콘", title, href, "", None, tags=["AI/SW"]))
 
         if not results:
-            results.append({"_error": "데이콘: 공모전 파싱 실패 (JavaScript 렌더링 또는 구조 변경)"})
+            results.append({"_error": "데이콘: 공모전 파싱 실패 (.comp 요소 없음, 구조 변경 가능성)"})
 
     except Exception as e:
         results.append({"_error": f"데이콘 오류: {type(e).__name__}: {e}"})
@@ -571,74 +542,70 @@ async def _crawl_linkareer(client: httpx.AsyncClient) -> list:
 # ── 5. 올콘 ───────────────────────────────────────────────────────────────────
 
 async def _crawl_allcon(client: httpx.AsyncClient) -> list:
-    """올콘(all-con.co.kr) — 공모전 정보 포털"""
+    """올콘(all-con.co.kr) — 공모전 정보 포털
+    HTML 구조(메인 페이지):
+      .banner-d-inner  → p.title a[href=/hit/contest/NNNN] + .host + .dday
+      .banner-c-inner  → p.title a[href=/hit/contest/NNNN] + .host
+    목록 페이지는 JS 렌더링이므로 메인 배너 영역에서 파싱.
+    """
+    _BASE = "https://www.all-con.co.kr"
     results = []
     try:
-        urls = [
-            "https://www.all-con.co.kr/",
-            "https://www.all-con.co.kr/list/1",
-        ]
-        responses = await asyncio.gather(
-            *[client.get(u, headers=HEADERS) for u in urls],
-            return_exceptions=True,
+        r = await client.get(
+            _BASE + "/",
+            headers={**HEADERS,
+                     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"},
+            timeout=20,
         )
+        _check_response(r, "올콘")
+        soup = _soup(r.text)
+
         seen_links: set = set()
-        for r in responses:
-            if isinstance(r, Exception):
-                continue
+        # banner-d (대형 배너 3개) + banner-c (소형 배너 ~11개)
+        for item in soup.select(".banner-d-inner, .banner-c-inner"):
             try:
-                _check_response(r, "올콘")
-            except Exception:
-                continue
-            soup = _soup(r.text)
-            # 올콘 목록 구조 탐색
-            cards = (
-                soup.select(".con_list li")
-                or soup.select("#cList li")
-                or soup.select(".contest-list li")
-                or soup.select("ul.list li")
-                or soup.select(".box_list li")
-            )
-            for li in cards:
-                try:
-                    a = li.select_one("a[href]")
-                    if not a:
-                        continue
-                    href = a.get("href", "")
-                    if not href.startswith("http"):
-                        href = "https://www.all-con.co.kr" + (href if href.startswith("/") else "/" + href)
-                    if href in seen_links:
-                        continue
-                    seen_links.add(href)
+                # 링크: p.title > a 또는 임의 a[href*=hit/contest]
+                a = (
+                    item.select_one("p.title a[href]")
+                    or item.select_one("a[href*='hit/contest']")
+                    or item.select_one("a[href*='view/contest']")
+                    or item.select_one("a[href]")
+                )
+                if not a:
+                    continue
+                href = a.get("href", "")
+                if not href.startswith("http"):
+                    href = _BASE + (href if href.startswith("/") else "/" + href)
+                if href in seen_links:
+                    continue
+                seen_links.add(href)
 
-                    tit_el = (
-                        li.select_one(".tit") or li.select_one(".title")
-                        or li.select_one("strong") or li.select_one("p") or a
-                    )
-                    title = _norm(tit_el.get_text())
-                    if not title or len(title) < 3:
-                        continue
-
-                    cate_el = li.select_one(".cate") or li.select_one(".category")
-                    category = _norm(cate_el.get_text()) if cate_el else ""
-                    tags = _classify_tags(category) or _classify_tags(title)
-
-                    date_el = (
-                        li.select_one(".date") or li.select_one(".deadline")
-                        or li.select_one(".dday") or li.select_one(".period")
-                    )
-                    deadline = _parse_range_date(date_el.get_text()) if date_el else None
-
-                    host_el = li.select_one(".host") or li.select_one(".org")
-                    organizer = _norm(host_el.get_text()) if host_el else ""
-
-                    if title and href and _is_current_year(deadline):
-                        results.append(_item("allcon", "올콘", title, href, organizer, deadline, tags=tags))
-                except Exception:
+                # 제목: p.title 텍스트 (a 태그 안쪽)
+                title_el = item.select_one("p.title")
+                title = _norm(title_el.get_text() if title_el else a.get_text())
+                if not title or len(title) < 3:
                     continue
 
+                # 주최: .host
+                host_el = item.select_one(".host")
+                organizer = _norm(host_el.get_text()) if host_el else ""
+
+                # 마감: .dday → "D-8" 형식 — 실제 날짜 알 수 없으므로 None
+                # D-0 이하(종료)는 스킵
+                dday_el = item.select_one(".dday")
+                if dday_el:
+                    dday_text = dday_el.get_text(strip=True)
+                    m = re.search(r"D-(\d+)", dday_text, re.I)
+                    if not m and ("종료" in dday_text or "마감" in dday_text):
+                        continue  # 이미 종료
+
+                tags = _classify_tags(title)
+                results.append(_item("allcon", "올콘", title, href, organizer, None, tags=tags))
+            except Exception:
+                continue
+
         if not results:
-            results.append({"_error": "올콘: 항목 파싱 실패 (HTML 구조 확인 필요)"})
+            results.append({"_error": "올콘: 항목 파싱 실패 (banner-d-inner/banner-c-inner 없음)"})
     except Exception as e:
         results.append({"_error": f"올콘 오류: {type(e).__name__}: {e}"})
     return results
@@ -647,67 +614,98 @@ async def _crawl_allcon(client: httpx.AsyncClient) -> list:
 # ── 6. 온오프믹스 ──────────────────────────────────────────────────────────────
 
 async def _crawl_onoffmix(client: httpx.AsyncClient) -> list:
-    """온오프믹스(onoffmix.com) — 이벤트·공모전 플랫폼"""
+    """온오프믹스(onoffmix.com) — 이벤트 플랫폼 (공모전 포함)
+    HTML 구조: article.event_area > a[href=/event/NNNN]
+               .title (제목), .date (기간), .category_type (이벤트 유형)
+    검색 URL: /event?s=공모전  (진행 중 공모전 필터)
+    대부분 JS 렌더링이므로 진행 중 이벤트가 없으면 빈 결과 반환 (오류 아님).
+    """
+    _BASE = "https://onoffmix.com"
     results = []
     try:
-        # 공모전 관련 키워드로 이벤트 검색
+        # ① 공모전 키워드 검색
         search_urls = [
-            "https://onoffmix.com/event/upcoming?tag=공모전",
-            "https://onoffmix.com/event/all?tag=공모전",
-            "https://onoffmix.com/search?q=공모전&type=event",
+            f"{_BASE}/event?s=%EA%B3%B5%EB%AA%A8%EC%A0%84",   # 공모전
+            f"{_BASE}/event?s=%EA%B2%BD%EC%A7%84%EB%8C%80%ED%9A%8C",  # 경진대회
         ]
         seen_links: set = set()
-        found = False
         for url in search_urls:
             try:
-                r = await client.get(url, headers=HEADERS, timeout=15)
+                r = await client.get(url, headers=HEADERS, timeout=20)
                 if r.status_code >= 400:
                     continue
                 soup = _soup(r.text)
-                # onoffmix 카드 구조
-                cards = (
-                    soup.select(".event-card")
-                    or soup.select(".card")
-                    or soup.select("article")
-                    or soup.select(".list-item")
-                )
-                for card in cards:
+                for article in soup.select("article.event_area"):
                     try:
-                        a = card.select_one("a[href]") or (card if card.name == "a" else None)
+                        # 종료된 이벤트 스킵
+                        if article.select_one(".end_layer"):
+                            continue
+                        a = article.select_one("a[href]")
                         if not a:
                             continue
                         href = a.get("href", "")
                         if not href.startswith("http"):
-                            href = "https://onoffmix.com" + (href if href.startswith("/") else "/" + href)
+                            href = _BASE + (href if href.startswith("/") else "/" + href)
                         if href in seen_links:
                             continue
                         seen_links.add(href)
 
-                        tit_el = (
-                            card.select_one("h2, h3, h4, [class*='title'], [class*='name']")
-                            or a
-                        )
-                        title = _norm(tit_el.get_text())
+                        title_el = article.select_one(".title")
+                        title = _norm(title_el.get_text() if title_el else a.get_text())
                         if not title or len(title) < 4:
                             continue
 
-                        date_el = card.select_one("time, [class*='date'], [class*='period']")
+                        date_el = article.select_one(".date")
                         deadline = _parse_range_date(date_el.get_text()) if date_el else None
 
                         tags = _classify_tags(title)
-
-                        if _is_current_year(deadline):
-                            results.append(_item("onoffmix", "온오프믹스", title, href, "", deadline, tags=tags))
+                        results.append(_item("onoffmix", "온오프믹스", title, href, "", deadline, tags=tags))
                     except Exception:
                         continue
-                if results:
-                    found = True
-                    break
             except Exception:
                 continue
 
-        if not found and not results:
-            results.append({"_error": "온오프믹스: 공모전 목록 파싱 실패"})
+        # ② 키워드 검색 결과 없으면 여러 interest 페이지에서 제목 필터링
+        if not results:
+            # 공모전 관련 가능성 높은 interest 코드
+            interest_codes = ["A0101", "A0103", "A0104", "A0108"]
+            contest_keywords = ["공모전", "경진대회", "공모", "선발", "대회", "contest", "competition"]
+            for code in interest_codes:
+                try:
+                    r = await client.get(
+                        f"{_BASE}/event/main/?interest={code}",
+                        headers=HEADERS, timeout=20,
+                    )
+                    if r.status_code >= 400:
+                        continue
+                    soup = _soup(r.text)
+                    for article in soup.select("article.event_area"):
+                        try:
+                            if article.select_one(".end_layer"):
+                                continue
+                            title_el = article.select_one(".title")
+                            title = _norm(title_el.get_text() if title_el else "")
+                            if not any(kw in title for kw in contest_keywords):
+                                continue
+                            a = article.select_one("a[href]")
+                            if not a:
+                                continue
+                            href = a.get("href", "")
+                            if not href.startswith("http"):
+                                href = _BASE + (href if href.startswith("/") else "/" + href)
+                            if href in seen_links:
+                                continue
+                            seen_links.add(href)
+                            date_el = article.select_one(".date")
+                            deadline = _parse_range_date(date_el.get_text()) if date_el else None
+                            tags = _classify_tags(title)
+                            results.append(_item("onoffmix", "온오프믹스", title, href, "", deadline, tags=tags))
+                        except Exception:
+                            continue
+                except Exception:
+                    continue
+
+        # 온오프믹스는 공모전이 없을 수 있으므로 빈 결과는 오류가 아님
     except Exception as e:
         results.append({"_error": f"온오프믹스 오류: {type(e).__name__}: {e}"})
     return results

@@ -339,3 +339,17 @@ class ExternalAchievement(Base):
     achieved_year  = Column(Integer, nullable=True)
     note           = Column(Text, default="")
     created_at     = Column(DateTime, default=datetime.now)
+
+
+class CrawlSession(Base):
+    """크롤링 세션 이력 (날짜별 영속 보관)"""
+    __tablename__ = "crawl_sessions"
+
+    id           = Column(Integer, primary_key=True, index=True)
+    sources      = Column(Text, default="[]")    # JSON: ["contestkorea", "wevity", ...]
+    items        = Column(Text, default="[]")    # JSON: [{source, title, link, ...}, ...]
+    errors       = Column(Text, default="[]")    # JSON: ["오류 메시지", ...]
+    counts       = Column(Text, default="{}")    # JSON: {"사이트": n}
+    item_count   = Column(Integer, default=0)
+    skipped_count = Column(Integer, default=0)   # 분야 필터로 제외된 수
+    crawled_at   = Column(DateTime, default=datetime.now)

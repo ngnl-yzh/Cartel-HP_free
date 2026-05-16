@@ -36,7 +36,7 @@ from models import (
     AppSetting,
     ChatMessage, ChatRoom, ChatRoomMember,
     Comment, CommentLike,
-    Competition, CompetitionScrap, InviteCode, InviteCodeUseLog, Member,
+    Competition, CompetitionScrap, CrawlSession, InviteCode, InviteCodeUseLog, Member,
     DirectMessage, ExternalAchievement, Follow, Notification,
     Post, PostLike,
     GalleryPost, Team, TeamCompetitionEntry, TeamMember, TeamResult,
@@ -3402,10 +3402,8 @@ async def ws_chat(ws: WebSocket, room_id: int):
 #  관리자 — 공모전 자동 크롤링 (Phase 3)
 # ════════════════════════════════════════════════════════════════════════════
 
-# 크롤 결과를 서버 인스턴스 메모리에 캐시 (재크롤 전까지 유지)
+# 크롤 결과를 서버 인스턴스 메모리에 캐시 (재크롤 전까지 유지, add/gpt 라우트용)
 _crawl_cache: dict = {"items": [], "errors": [], "counts": {}, "crawled_at": None}
-# 크롤 히스토리 (최근 10회, 최신순)
-_crawl_history: list = []
 
 
 def _get_enabled_sources(db: Session) -> list:
@@ -3433,25 +3431,67 @@ def _save_enabled_sources(db: Session, sources: list) -> None:
     db.commit()
 
 
+def _load_crawl_history(db: Session) -> list:
+    """DB에서 크롤 세션 이력 로드 (최신순 최대 30개). 각 항목은 dict 형태."""
+    try:
+        rows = (
+            db.query(CrawlSession)
+            .order_by(CrawlSession.crawled_at.desc())
+            .limit(30)
+            .all()
+        )
+        history = []
+        for row in rows:
+            history.append({
+                "id": row.id,
+                "items": json.loads(row.items or "[]"),
+                "errors": json.loads(row.errors or "[]"),
+                "counts": json.loads(row.counts or "{}"),
+                "sources": json.loads(row.sources or "[]"),
+                "skipped": row.skipped_count,
+                "item_count": row.item_count,
+                "crawled_at": row.crawled_at.strftime("%Y년 %m월 %d일 %H:%M") if row.crawled_at else "",
+            })
+        return history
+    except Exception:
+        return []
+
+
+def _save_crawl_session(db: Session, result: dict, sources: list) -> int:
+    """크롤 결과를 DB CrawlSession에 저장. 저장된 session id 반환."""
+    items = result.get("items", [])
+    sess = CrawlSession(
+        sources=json.dumps(sources, ensure_ascii=False),
+        items=json.dumps(items, ensure_ascii=False),
+        errors=json.dumps(result.get("errors", []), ensure_ascii=False),
+        counts=json.dumps(result.get("counts", {}), ensure_ascii=False),
+        item_count=len(items),
+        skipped_count=result.get("skipped", 0),
+    )
+    db.add(sess)
+    db.commit()
+    db.refresh(sess)
+    return sess.id
+
+
 @app.get("/admin/crawl", response_class=HTMLResponse)
 async def admin_crawl_page(request: Request, db: Session = Depends(get_db)):
     if r := _admin_redirect(request):
         return r
-    # 최신 캐시에서 새로 추가된 항목 재필터
+    # 최신 캐시에서 새로 추가된 항목 재필터 (메모리 캐시 기준)
     cache = dict(_crawl_cache)
     if cache.get("items"):
         refreshed, extra_skipped = _dedup_crawl_items(cache["items"], db)
         if extra_skipped:
             cache["items"] = refreshed
             _crawl_cache["items"] = refreshed
-            if _crawl_history:
-                _crawl_history[0]["items"] = refreshed
             cache["skipped"] = cache.get("skipped", 0) + extra_skipped
+    history = _load_crawl_history(db)
     return _render(request,
         "admin/crawl.html",
         _ctx(request, db,
              cache=cache,
-             history=_crawl_history,
+             history=history,
              all_tags=_get_tags(db),
              all_sources=CRAWL_SOURCES,
              enabled_sources=_get_enabled_sources(db)),
@@ -3489,7 +3529,7 @@ async def admin_crawl_run(
     """크롤링 실행 — 완료까지 기다린 후 결과 페이지로 이동"""
     if r := _admin_redirect(request):
         return r
-    global _crawl_cache, _crawl_history
+    global _crawl_cache
 
     # 선택 소스 저장 (비어있으면 전체)
     selected = [s for s in sources if s in CRAWL_SOURCES] or list(CRAWL_SOURCES.keys())
@@ -3525,11 +3565,25 @@ async def admin_crawl_run(
     result["crawled_at"]        = datetime.now().strftime("%Y년 %m월 %d일 %H:%M")
 
     _crawl_cache = result
-    # 히스토리 앞에 추가 (최대 10회 유지)
-    _crawl_history.insert(0, result)
-    if len(_crawl_history) > 10:
-        _crawl_history.pop()
+    # DB에 세션 저장 (영속)
+    _save_crawl_session(db, result, selected)
 
+    return RedirectResponse(url="/admin/crawl", status_code=303)
+
+
+@app.post("/admin/crawl/session/{session_id}/delete")
+async def admin_crawl_session_delete(
+    session_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """크롤 세션 이력 삭제"""
+    if r := _admin_redirect(request):
+        return r
+    sess = db.query(CrawlSession).filter(CrawlSession.id == session_id).first()
+    if sess:
+        db.delete(sess)
+        db.commit()
     return RedirectResponse(url="/admin/crawl", status_code=303)
 
 

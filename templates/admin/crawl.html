@@ -37,11 +37,12 @@
     {# ── 크롤 히스토리 (날짜별 접기/펼치기) ── #}
     {% if history %}
       {% for session in history %}
+      {% set sess_idx = loop.index0 %}
       <details class="crawl-session" {% if loop.first %}open{% endif %}>
         <summary class="crawl-session-summary">
           <span class="crawl-session-date">📅 {{ session.crawled_at }}</span>
           <span class="crawl-session-meta">
-            <strong>{{ session['items'] | length }}건</strong> 수집
+            <strong>{{ session.item_count }}건</strong> 수집
             {% if session.skipped %} &nbsp;·&nbsp; 🔁 {{ session.skipped }}건 중복제거{% endif %}
             {% if session.errors %} &nbsp;·&nbsp; ⚠️ {{ session.errors | length }}개 오류{% endif %}
           </span>
@@ -50,6 +51,12 @@
             <span class="crawl-site-badge">{{ label }} <strong>{{ cnt }}</strong></span>
             {% endfor %}
           </span>
+          {# 삭제 버튼 #}
+          <form method="post" action="/admin/crawl/session/{{ session.id }}/delete"
+                class="crawl-delete-form"
+                onsubmit="return confirm('이 크롤 기록을 삭제할까요?')">
+            <button type="submit" class="crawl-delete-btn" title="기록 삭제">🗑</button>
+          </form>
         </summary>
 
         <div class="crawl-session-body">
@@ -68,7 +75,6 @@
 
           {% else %}
           {# 분야 필터 바 #}
-          {% set sess_idx = loop.index0 %}
           <div class="crawl-filter-bar" id="filterBar{{ sess_idx }}">
             <button class="crawl-filter-btn active" data-tag="all" data-sess="{{ sess_idx }}">전체</button>
             {% if all_tags %}
@@ -219,6 +225,18 @@
 .crawl-session-date { font-weight: 700; color: var(--text); }
 .crawl-session-meta { color: var(--muted); font-size: .85rem; }
 .crawl-session-badges { display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto; }
+.crawl-delete-form { margin: 0; flex-shrink: 0; }
+.crawl-delete-btn {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 2px 6px;
+  cursor: pointer;
+  font-size: .9rem;
+  opacity: .5;
+  transition: opacity .15s, border-color .15s;
+}
+.crawl-delete-btn:hover { opacity: 1; border-color: #ef4444; }
 
 .crawl-session-body { padding: 16px 18px; }
 
@@ -276,6 +294,11 @@
 </style>
 
 <script>
+// ── 삭제 버튼 클릭 시 <details> 토글 방지 ────────────────────────
+document.querySelectorAll('.crawl-delete-btn').forEach(function(btn) {
+  btn.addEventListener('click', function(e) { e.stopPropagation(); });
+});
+
 // ── 소스 선택 최소 1개 보장 ──────────────────────────────────────
 function onCrawlSubmit(e) {
   const checked = document.querySelectorAll('.crawl-source-chk:checked');

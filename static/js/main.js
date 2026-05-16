@@ -168,8 +168,32 @@ function _getReviewRows() {
   })).filter((r) => r.label || r.date);
 }
 
+const _ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const _ANNOUNCE_KWS = ["발표", "결과", "시상", "당선"];
+
+function _syncAnnouncementDate() {
+  const announceEl = document.getElementById("announcement_date");
+  if (!announceEl || !_reviewContainer) return;
+  // 이미 값이 있으면 덮어쓰지 않음
+  if (announceEl.value) return;
+
+  for (const row of _reviewContainer.querySelectorAll(".review-row")) {
+    const label = (row.querySelector(".review-label")?.value || "").trim();
+    const dt    = (row.querySelector(".review-date")?.value || "").trim();
+    if (_ANNOUNCE_KWS.some((kw) => label.includes(kw)) && _ISO_DATE_RE.test(dt)) {
+      announceEl.value = dt;
+      // 잠깐 하이라이트해서 자동 채워진 걸 알려줌
+      announceEl.style.transition = "background .3s";
+      announceEl.style.background = "#fef9c3";
+      setTimeout(() => { announceEl.style.background = ""; }, 1800);
+      break;
+    }
+  }
+}
+
 function _updateReviewHidden() {
   if (_reviewHidden) _reviewHidden.value = JSON.stringify(_getReviewRows());
+  _syncAnnouncementDate();
 }
 
 function _addReviewRow(label = "", dt = "") {
@@ -224,6 +248,7 @@ function initReviewDates() {
     const existing = JSON.parse(_reviewHidden.value || "[]");
     if (Array.isArray(existing) && existing.length > 0) {
       existing.forEach((r) => _addReviewRow(r.label || "", r.date || ""));
+      _syncAnnouncementDate();  // 로드 후에도 자동 동기화
     }
   } catch {}
 }

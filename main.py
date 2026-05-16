@@ -3325,6 +3325,20 @@ async def admin_crawl_add_with_gpt(
     if not isinstance(_rd, list):
         _rd = []
 
+    # review_dates의 "결과 발표/시상" 항목 날짜가 YYYY-MM-DD이면 announcement_date 자동 동기화
+    if not parsed.get("announcement_date"):
+        _ANNOUNCE_KWS = ("발표", "결과", "시상", "당선")
+        for _rdi in _rd:
+            if any(kw in str(_rdi.get("label", "")) for kw in _ANNOUNCE_KWS):
+                _rdi_date = str(_rdi.get("date", "")).strip()
+                try:
+                    date.fromisoformat(_rdi_date)   # YYYY-MM-DD 검증
+                    parsed["announcement_date"] = _rdi_date
+                    _log.info("GPT추가 announcement_date 자동 동기화: %s ← %s", _rdi_date, _rdi.get("label"))
+                    break
+                except (ValueError, TypeError):
+                    pass  # 텍스트 날짜("8월 말")는 무시
+
     def _safe_date(val) -> Optional[date]:
         try:
             return date.fromisoformat(str(val)) if val else None

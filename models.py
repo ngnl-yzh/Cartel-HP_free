@@ -57,18 +57,22 @@ class TeamMember(Base):
     id             = Column(Integer, primary_key=True, index=True)
     team_id        = Column(Integer, nullable=True, index=True)
     competition_id = Column(Integer, nullable=True, index=True)
-    nickname       = Column(String(100), nullable=False)
-    password_hash = Column(String(300), nullable=False)
-    role = Column(String(50), default="기타")
-    memo = Column(String(500), default="")
-    is_leader = Column(Boolean, default=False)
+    nickname       = Column(String(100), nullable=False)   # 표시명(닉네임)
+    real_name      = Column(String(100), default="")       # 본명 (신청 시 필수)
+    student_id     = Column(String(50),  default="")       # 학번 (신청 시 필수)
+    password_hash  = Column(String(300), nullable=True)    # 팀장만 사용 (nullable)
+    role           = Column(String(50),  default="기타")
+    memo           = Column(String(500), default="")
+    is_leader      = Column(Boolean, default=False)
     is_participant = Column(Boolean, default=False)
-    member_id = Column(Integer, nullable=True)
+    # pending = 승인 대기 / approved = 승인 완료 / rejected = 거절
+    status         = Column(String(20),  default="approved")
+    member_id      = Column(Integer, nullable=True)
     # ── 수상 정보 ──────────────────────────────────────────────────
-    award_rank = Column(String(50), nullable=True)     # 대상/최우수상/우수상/장려상/입선
+    award_rank  = Column(String(50),  nullable=True)   # 대상/최우수상/우수상/장려상/입선
     award_prize = Column(String(300), default="")      # 상금·부상 내용
-    award_note = Column(Text, default="")              # 수상 관련 메모
-    created_at = Column(DateTime, default=datetime.now)
+    award_note  = Column(Text,        default="")      # 수상 관련 메모
+    created_at  = Column(DateTime, default=datetime.now)
 
 
 class Member(Base):

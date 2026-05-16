@@ -681,9 +681,14 @@ async def index(
         competitions.sort(key=_sort_key)
 
     all_ids = [c.id for c in competitions] + [c.id for c in featured]
+    # 팀장(is_leader=True)은 팀원 수에 포함하지 않음; 승인된 팀원만 카운트
     counts = dict(
         db.query(TeamMember.competition_id, func.count(TeamMember.id))
-        .filter(TeamMember.competition_id.in_(all_ids))
+        .filter(
+            TeamMember.competition_id.in_(all_ids),
+            TeamMember.is_leader.is_(False),
+            TeamMember.status == "approved",
+        )
         .group_by(TeamMember.competition_id)
         .all()
     ) if all_ids else {}
@@ -2514,6 +2519,8 @@ async def create_team(
     team_desc: str = Form(""),
     team_requirements: str = Form(""),
     nickname: str = Form(...),
+    real_name: str = Form(...),
+    student_id: str = Form(...),
     password: str = Form(...),
     role: str = Form("기타"),
     memo: str = Form(""),
@@ -2527,6 +2534,10 @@ async def create_team(
     team_name = team_name.strip()
     if not team_name:
         raise HTTPException(status_code=400, detail="팀 이름을 입력하세요.")
+    if not real_name.strip():
+        raise HTTPException(status_code=400, detail="본명을 입력하세요.")
+    if not student_id.strip():
+        raise HTTPException(status_code=400, detail="학번을 입력하세요.")
     if db.query(Team).filter(Team.competition_id == comp_id, Team.name == team_name).first():
         raise HTTPException(status_code=400, detail="같은 이름의 팀이 이미 있습니다.")
     try:
@@ -2537,45 +2548,48 @@ async def create_team(
             requirements=(team_requirements or "").strip(),
         )
         db.add(team)
-        db.flush()  # team.id 확보
+        db.flush()
         cm = _current_member(request, db)
         leader = TeamMember(
             team_id=team.id,
             competition_id=comp_id,
             nickname=nickname.strip(),
+            real_name=real_name.strip(),
+            student_id=student_id.strip(),
             password_hash=hash_password(password),
             role=role if role in ROLES else "기타",
             memo=(memo or "").strip(),
             is_leader=True,
+            status="approved",
             member_id=cm.id if cm else None,
         )
         db.add(leader)
-        db.flush()  # team.id, leader.id 확보
+        db.flush()
         # 팔로워 알림
-        creator = cm
-        if creator:
-            follower_rows = db.query(Follow).filter(
-                Follow.following_id == creator.id, Follow.status == "approved"
-            ).all()
-            for fr in follower_rows:
+        if cm:
+            for fr in db.query(Follow).filter(Follow.following_id == cm.id, Follow.status == "approved").all():
                 _create_notification(
-                    db, fr.follower_id, "team_recruit", creator.id, team.id,
-                    f"{creator.activity_name}님이 '{comp.title}' 팀 '{team_name}'을 모집합니다.",
+                    db, fr.follower_id, "team_recruit", cm.id, team.id,
+                    f"{cm.activity_name}님이 '{comp.title}' 팀 '{team_name}'을 모집합니다.",
                 )
         db.commit()
     except Exception:
         db.rollback()
-        raise HTTPException(status_code=500, detail="팀 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.")
+        raise HTTPException(status_code=500, detail="팀 생성 중 오류가 발생했습니다.")
     return RedirectResponse(url=f"/competition/{comp_id}#team", status_code=303)
 
 
 @app.post("/competition/{comp_id}/team/{team_id}/join")
 async def team_join(
     request: Request, comp_id: int, team_id: int,
-    nickname: str = Form(...), password: str = Form(...),
-    role: str = Form("기타"), memo: str = Form(""),
+    nickname: str = Form(...),
+    real_name: str = Form(...),
+    student_id: str = Form(...),
+    role: str = Form("기타"),
+    memo: str = Form(""),
     db: Session = Depends(get_db),
 ):
+    """팀원 참여 신청 — 팀장 승인 후 확정"""
     comp = db.query(Competition).filter(Competition.id == comp_id).first()
     if not comp:
         raise HTTPException(status_code=404)
@@ -2584,62 +2598,156 @@ async def team_join(
     team = db.query(Team).filter(Team.id == team_id, Team.competition_id == comp_id).first()
     if not team:
         raise HTTPException(status_code=404)
-    # 인원 제한 확인: COUNT 쿼리로 직접 확인 (목록 로드 불필요)
-    current_count = db.query(func.count(TeamMember.id)).filter(
-        TeamMember.team_id == team_id
+    if not real_name.strip():
+        raise HTTPException(status_code=400, detail="본명을 입력하세요.")
+    if not student_id.strip():
+        raise HTTPException(status_code=400, detail="학번을 입력하세요.")
+    # 인원 제한: 승인된 팀원(비팀장) 기준
+    approved_count = db.query(func.count(TeamMember.id)).filter(
+        TeamMember.team_id == team_id,
+        TeamMember.is_leader.is_(False),
+        TeamMember.status == "approved",
     ).scalar() or 0
-    if comp.max_members and current_count >= comp.max_members:
+    if comp.max_members and approved_count >= comp.max_members:
         raise HTTPException(status_code=400, detail="팀 인원이 가득 찼습니다.")
-    if db.query(TeamMember).filter(TeamMember.team_id == team_id, TeamMember.nickname == nickname).first():
-        raise HTTPException(status_code=400, detail="이미 같은 닉네임으로 참여 중입니다.")
+    # 중복 신청 확인 (같은 학번)
+    if db.query(TeamMember).filter(
+        TeamMember.team_id == team_id,
+        TeamMember.student_id == student_id.strip(),
+        TeamMember.is_leader.is_(False),
+    ).first():
+        raise HTTPException(status_code=400, detail="이미 이 팀에 신청하셨습니다.")
     cm = _current_member(request, db)
     db.add(TeamMember(
         team_id=team_id,
         competition_id=comp_id,
-        nickname=nickname,
-        password_hash=hash_password(password),
+        nickname=nickname.strip(),
+        real_name=real_name.strip(),
+        student_id=student_id.strip(),
+        password_hash=None,
         role=role if role in ROLES else "기타",
-        memo=memo,
-        is_leader=current_count == 0,
+        memo=(memo or "").strip(),
+        is_leader=False,
+        status="pending",   # ← 승인 대기
         member_id=cm.id if cm else None,
     ))
+    # 팀장에게 알림
+    leader_tm = db.query(TeamMember).filter(
+        TeamMember.team_id == team_id, TeamMember.is_leader.is_(True)
+    ).first()
+    if leader_tm and leader_tm.member_id:
+        _create_notification(
+            db, leader_tm.member_id, "team_recruit", cm.id if cm else None, team_id,
+            f"'{team.name}' 팀에 '{nickname.strip()}'({real_name.strip()})님이 참여 신청했습니다.",
+        )
     db.commit()
     return RedirectResponse(url=f"/competition/{comp_id}#team", status_code=303)
+
+
+@app.post("/competition/{comp_id}/team/{team_id}/member/{tm_id}/approve")
+async def approve_member(
+    request: Request, comp_id: int, team_id: int, tm_id: int,
+    leader_password: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    """팀장 또는 관리자가 신청을 승인"""
+    team = db.query(Team).filter(Team.id == team_id, Team.competition_id == comp_id).first()
+    if not team:
+        raise HTTPException(status_code=404)
+    applicant = db.query(TeamMember).filter(TeamMember.id == tm_id, TeamMember.team_id == team_id).first()
+    if not applicant:
+        raise HTTPException(status_code=404)
+
+    # 권한 확인: 관리자 OR 로그인된 팀장 OR 팀장 비밀번호 입력
+    cm = _current_member(request, db)
+    leader_tm = db.query(TeamMember).filter(
+        TeamMember.team_id == team_id, TeamMember.is_leader.is_(True)
+    ).first()
+    is_admin_user = _is_privileged(request, db)
+    is_logged_leader = cm and leader_tm and leader_tm.member_id == cm.id
+    is_pwd_leader = (leader_password and leader_tm and leader_tm.password_hash
+                     and verify_team_password(leader_password, leader_tm.password_hash))
+    if not (is_admin_user or is_logged_leader or is_pwd_leader):
+        raise HTTPException(status_code=403, detail="팀장 권한이 필요합니다.")
+
+    applicant.status = "approved"
+    db.commit()
+    return RedirectResponse(url=f"/competition/{comp_id}#team-{team_id}", status_code=303)
+
+
+@app.post("/competition/{comp_id}/team/{team_id}/member/{tm_id}/reject")
+async def reject_member(
+    request: Request, comp_id: int, team_id: int, tm_id: int,
+    leader_password: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    """팀장 또는 관리자가 신청을 거절(삭제)"""
+    team = db.query(Team).filter(Team.id == team_id, Team.competition_id == comp_id).first()
+    if not team:
+        raise HTTPException(status_code=404)
+    applicant = db.query(TeamMember).filter(TeamMember.id == tm_id, TeamMember.team_id == team_id).first()
+    if not applicant:
+        raise HTTPException(status_code=404)
+
+    cm = _current_member(request, db)
+    leader_tm = db.query(TeamMember).filter(
+        TeamMember.team_id == team_id, TeamMember.is_leader.is_(True)
+    ).first()
+    is_admin_user = _is_privileged(request, db)
+    is_logged_leader = cm and leader_tm and leader_tm.member_id == cm.id
+    is_pwd_leader = (leader_password and leader_tm and leader_tm.password_hash
+                     and verify_team_password(leader_password, leader_tm.password_hash))
+    if not (is_admin_user or is_logged_leader or is_pwd_leader):
+        raise HTTPException(status_code=403, detail="팀장 권한이 필요합니다.")
+
+    db.delete(applicant)
+    db.commit()
+    return RedirectResponse(url=f"/competition/{comp_id}#team-{team_id}", status_code=303)
 
 
 @app.post("/competition/{comp_id}/team/{team_id}/leave/{member_id}")
 async def team_leave(
     request: Request, comp_id: int, team_id: int, member_id: int,
-    nickname: str = Form(...), password: str = Form(...),
+    nickname: str = Form(...),
+    verify_field: str = Form(""),   # 팀장: 비밀번호 / 팀원: 학번
     db: Session = Depends(get_db),
 ):
-    # team이 해당 comp_id에 속하는지 검증 (IDOR 방지)
     team_check = db.query(Team).filter(Team.id == team_id, Team.competition_id == comp_id).first()
     if not team_check:
         raise HTTPException(status_code=404)
     member = db.query(TeamMember).filter(
-        TeamMember.id == member_id,
-        TeamMember.team_id == team_id,
+        TeamMember.id == member_id, TeamMember.team_id == team_id,
     ).first()
     if not member:
         raise HTTPException(status_code=404)
+
     if not _is_privileged(request, db):
-        if member.nickname != nickname or not verify_team_password(password, member.password_hash):
-            raise HTTPException(status_code=400, detail="닉네임 또는 비밀번호가 올바르지 않습니다.")
+        if member.nickname != nickname:
+            raise HTTPException(status_code=400, detail="닉네임이 올바르지 않습니다.")
+        if member.is_leader:
+            # 팀장은 비밀번호로 인증
+            if not (member.password_hash and verify_team_password(verify_field, member.password_hash)):
+                raise HTTPException(status_code=400, detail="비밀번호가 올바르지 않습니다.")
+        else:
+            # 팀원은 학번으로 인증
+            if member.student_id != verify_field.strip():
+                raise HTTPException(status_code=400, detail="학번이 올바르지 않습니다.")
+
     was_leader = member.is_leader
     db.delete(member)
-    db.flush()  # 삭제 반영하되 커밋은 보류
+    db.flush()
 
-    # 남은 팀원 있으면 리더 재배정, 없으면 팀 삭제
     remaining = db.query(TeamMember).filter(TeamMember.team_id == team_id).order_by(TeamMember.created_at.asc()).all()
     if not remaining:
         team = db.query(Team).filter(Team.id == team_id).first()
         if team:
             db.delete(team)
     elif was_leader:
-        remaining[0].is_leader = True
+        # 승인된 팀원 중 가장 오래된 사람을 팀장으로 승격
+        next_leader = next((r for r in remaining if not r.is_leader and r.status == "approved"), remaining[0])
+        next_leader.is_leader = True
 
-    db.commit()  # 단일 트랜잭션으로 커밋
+    db.commit()
     return RedirectResponse(url=f"/competition/{comp_id}#team", status_code=303)
 
 
@@ -2651,8 +2759,43 @@ async def set_leader(request: Request, comp_id: int, team_id: int, member_id: in
     m = db.query(TeamMember).filter(TeamMember.id == member_id).first()
     if m:
         m.is_leader = True
+        m.status = "approved"
     db.commit()
     return RedirectResponse(url=f"/competition/{comp_id}#team", status_code=303)
+
+
+@app.post("/admin/competition/{comp_id}/team/{team_id}/member/add")
+async def admin_add_member(
+    request: Request, comp_id: int, team_id: int,
+    nickname: str = Form(...),
+    real_name: str = Form(...),
+    student_id: str = Form(...),
+    role: str = Form("기타"),
+    memo: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    """관리자가 팀원을 직접 추가 (즉시 승인)"""
+    if not _is_privileged(request, db):
+        raise HTTPException(status_code=403)
+    team = db.query(Team).filter(Team.id == team_id, Team.competition_id == comp_id).first()
+    if not team:
+        raise HTTPException(status_code=404)
+    if not real_name.strip() or not student_id.strip():
+        raise HTTPException(status_code=400, detail="본명과 학번을 모두 입력하세요.")
+    db.add(TeamMember(
+        team_id=team_id,
+        competition_id=comp_id,
+        nickname=nickname.strip(),
+        real_name=real_name.strip(),
+        student_id=student_id.strip(),
+        password_hash=None,
+        role=role if role in ROLES else "기타",
+        memo=(memo or "").strip(),
+        is_leader=False,
+        status="approved",
+    ))
+    db.commit()
+    return RedirectResponse(url=f"/admin/competition/{comp_id}/members", status_code=303)
 
 
 # ── 어드민: 공모전별 참여자·수상 관리 ─────────────────────────────────────────────

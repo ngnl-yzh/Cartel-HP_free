@@ -76,6 +76,10 @@ def init_db():
             _add_col(conn, inspector, "team_members", "award_rank",     "award_rank VARCHAR(50)")
             _add_col(conn, inspector, "team_members", "award_prize",    "award_prize VARCHAR(300) DEFAULT ''")
             _add_col(conn, inspector, "team_members", "award_note",     "award_note TEXT DEFAULT ''")
+            # 2025-05 — 팀원 신청 승인 시스템
+            _add_col(conn, inspector, "team_members", "real_name",  "real_name VARCHAR(100) DEFAULT ''")
+            _add_col(conn, inspector, "team_members", "student_id", "student_id VARCHAR(50) DEFAULT ''")
+            _add_col(conn, inspector, "team_members", "status",     "status VARCHAR(20) DEFAULT 'approved'")
 
         # team_competition_entries — 신규 테이블이므로 create_all로 생성됨
         # gallery_posts — 신규 테이블이므로 create_all로 생성됨

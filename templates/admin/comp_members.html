@@ -22,94 +22,185 @@
     </div>
 
     {# ── 참여자 없음 ─────────────────────────────────────────────── #}
-    {% if not team %}
+    {% if not teams %}
     <section class="empty-state">
-      <p class="empty-title">아직 참여자가 없습니다.</p>
+      <p class="empty-title">아직 팀이 없습니다.</p>
     </section>
 
-    {# ── 참여자 목록 ─────────────────────────────────────────────── #}
+    {# ── 팀별 참여자 목록 ─────────────────────────────────────────── #}
     {% else %}
-    <p class="muted" style="margin-bottom:16px;font-size:.88rem;">
-      총 <strong>{{ team | length }}</strong>명 참여 ·
-      신청 완료 <strong>{{ team | selectattr('is_participant') | list | length }}</strong>명 ·
-      수상 <strong>{{ team | selectattr('award_rank') | list | length }}</strong>명
-    </p>
+    {% for t in teams %}
+    <section style="margin-bottom:32px">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;flex-wrap:wrap">
+        <div>
+          <h2 style="font-size:1.1rem;font-weight:800;margin:0">{{ t.name }}</h2>
+          {% if t.description %}<p class="muted" style="font-size:.83rem;margin:2px 0 0">{{ t.description }}</p>{% endif %}
+        </div>
+        {# ── 관리자 직접 팀원 추가 버튼 ── #}
+        <details style="position:relative">
+          <summary class="btn btn-outline btn-sm" style="cursor:pointer">+ 팀원 직접 추가</summary>
+          <div style="position:absolute;right:0;top:calc(100% + 6px);min-width:300px;background:var(--surface);border:1.5px solid var(--line);border-radius:12px;padding:16px;box-shadow:0 8px 24px rgba(0,0,0,.12);z-index:50">
+            <p style="font-size:.82rem;font-weight:700;margin:0 0 10px">팀원 직접 추가 (즉시 승인)</p>
+            <form method="post" action="/admin/competition/{{ comp.id }}/team/{{ t.id }}/member/add">
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+                <label class="field">
+                  <span>닉네임</span>
+                  <input type="text" name="nickname" placeholder="표시명" required maxlength="30">
+                </label>
+                <label class="field">
+                  <span>본명</span>
+                  <input type="text" name="real_name" placeholder="실명" required maxlength="30">
+                </label>
+                <label class="field">
+                  <span>학번</span>
+                  <input type="text" name="student_id" placeholder="20231234" required maxlength="20">
+                </label>
+                <label class="field">
+                  <span>역할</span>
+                  <select name="role">
+                    {% for rank in award_ranks %}{# roles 변수가 없어 award_ranks 대신 하드코딩 #}{% endfor %}
+                    <option>기획</option><option>개발</option><option>디자인</option>
+                    <option>마케팅</option><option selected>기타</option>
+                  </select>
+                </label>
+                <label class="field" style="grid-column:1/-1">
+                  <span>메모 (선택)</span>
+                  <input type="text" name="memo" placeholder="한마디" maxlength="100">
+                </label>
+              </div>
+              <button type="submit" class="btn btn-primary btn-sm" style="margin-top:8px;width:100%">추가</button>
+            </form>
+          </div>
+        </details>
+      </div>
 
-    <div class="member-cards">
-      {% for tm in team %}
-      {% set linked = members_map.get(tm.member_id) %}
-      <div class="member-card award-card">
-        {# ── 상단: 기본 정보 ── #}
-        <div class="award-card-header">
-          <div style="display:flex;align-items:center;gap:10px">
-            {% if linked and linked.profile_image %}
-            <img src="/uploads/{{ linked.profile_image }}" class="award-avatar" alt="">
-            {% else %}
-            <div class="award-avatar avatar-placeholder">{{ tm.nickname[0] }}</div>
-            {% endif %}
-            <div>
-              <strong>{{ tm.nickname }}</strong>
-              {% if linked %}
-              <a href="/profile/{{ linked.activity_name | urlencode }}" class="profile-link" target="_blank">
-                @{{ linked.activity_name }}
-              </a>
-              {% else %}
-              <span class="muted" style="font-size:.8rem"> (비회원)</span>
-              {% endif %}
-              <div style="display:flex;gap:6px;margin-top:3px">
-                <span class="role-tag">{{ tm.role }}</span>
-                {% if tm.is_leader %}<span class="role-tag leader-tag">리더</span>{% endif %}
-                {% if tm.is_participant %}
-                <span class="submit-badge submitted">✅ 신청완료</span>
-                {% else %}
-                <span class="submit-badge">미신청</span>
-                {% endif %}
+      {% set all_members = t.members %}
+      {% set leader_m = all_members | selectattr('is_leader') | list | first %}
+      {% set approved = all_members | rejectattr('is_leader') | selectattr('status', 'equalto', 'approved') | list %}
+      {% set pending  = all_members | rejectattr('is_leader') | selectattr('status', 'equalto', 'pending')  | list %}
+
+      <div class="member-cards">
+        {# 팀장 #}
+        {% if leader_m %}
+        {% set linked = members_map.get(leader_m.member_id) %}
+        <div class="member-card award-card" style="border-color:#fbbf24;background:#fffbeb">
+          <div class="award-card-header">
+            <div style="display:flex;align-items:center;gap:10px">
+              <div class="award-avatar avatar-placeholder" style="background:linear-gradient(135deg,#f59e0b,#d97706)">{{ leader_m.nickname[0] }}</div>
+              <div>
+                <strong>👑 {{ leader_m.nickname }}</strong>
+                <span class="muted" style="font-size:.8rem"> (팀장)</span>
+                {% if linked %}<a href="/profile/{{ linked.activity_name | urlencode }}" class="profile-link" target="_blank"> @{{ linked.activity_name }}</a>{% endif %}
+                <div style="font-size:.78rem;color:var(--muted);margin-top:2px">{{ leader_m.real_name }} · 학번 {{ leader_m.student_id }}</div>
+                <div style="display:flex;gap:6px;margin-top:3px">
+                  <span class="role-tag">{{ leader_m.role }}</span>
+                </div>
               </div>
             </div>
           </div>
-          {% if tm.award_rank %}
-          <span class="award-rank-badge rank-{{ tm.award_rank }}">🏆 {{ tm.award_rank }}</span>
-          {% endif %}
+          {% if leader_m.memo %}<p class="award-memo">{{ leader_m.memo }}</p>{% endif %}
+          <form method="post" action="/admin/competition/{{ comp.id }}/members/{{ leader_m.id }}/award" class="award-form">
+            <div class="award-form-row">
+              <label class="award-label">수상 등급
+                <select name="award_rank" class="award-select">
+                  <option value="">수상 없음</option>
+                  {% for rank in award_ranks %}<option value="{{ rank }}" {% if leader_m.award_rank == rank %}selected{% endif %}>{{ rank }}</option>{% endfor %}
+                </select>
+              </label>
+              <label class="award-label">상금·부상
+                <input type="text" name="award_prize" class="award-input" placeholder="예) 상금 100만원" value="{{ leader_m.award_prize or '' }}">
+              </label>
+            </div>
+            <div style="text-align:right;margin-top:8px">
+              <button type="submit" class="btn btn-primary btn-sm">저장</button>
+            </div>
+          </form>
         </div>
-
-        {% if tm.memo %}
-        <p class="award-memo">{{ tm.memo }}</p>
         {% endif %}
 
-        {# ── 수상 정보 입력 폼 ── #}
-        <form method="post" action="/admin/competition/{{ comp.id }}/members/{{ tm.id }}/award"
-              class="award-form">
-          <div class="award-form-row">
-            <label class="award-label">
-              수상 등급
-              <select name="award_rank" class="award-select">
-                <option value="">수상 없음</option>
-                {% for rank in award_ranks %}
-                <option value="{{ rank }}" {% if tm.award_rank == rank %}selected{% endif %}>{{ rank }}</option>
-                {% endfor %}
-              </select>
-            </label>
-
-            <label class="award-label">
-              상금·부상
-              <input type="text" name="award_prize" class="award-input"
-                     placeholder="예) 상금 100만원" value="{{ tm.award_prize or '' }}">
-            </label>
+        {# 승인된 팀원 #}
+        {% for tm in approved %}
+        {% set linked = members_map.get(tm.member_id) %}
+        <div class="member-card award-card">
+          <div class="award-card-header">
+            <div style="display:flex;align-items:center;gap:10px">
+              {% if linked and linked.profile_image %}
+              <img src="/uploads/{{ linked.profile_image }}" class="award-avatar" alt="">
+              {% else %}
+              <div class="award-avatar avatar-placeholder">{{ tm.nickname[0] }}</div>
+              {% endif %}
+              <div>
+                <strong>{{ tm.nickname }}</strong>
+                {% if linked %}<a href="/profile/{{ linked.activity_name | urlencode }}" class="profile-link" target="_blank"> @{{ linked.activity_name }}</a>
+                {% else %}<span class="muted" style="font-size:.8rem"> (비회원)</span>{% endif %}
+                <div style="font-size:.78rem;color:var(--muted);margin-top:2px">{{ tm.real_name }} · 학번 {{ tm.student_id }}</div>
+                <div style="display:flex;gap:6px;margin-top:3px">
+                  <span class="role-tag">{{ tm.role }}</span>
+                  {% if tm.is_participant %}<span class="submit-badge submitted">✅ 신청완료</span>
+                  {% else %}<span class="submit-badge">미신청</span>{% endif %}
+                </div>
+              </div>
+            </div>
+            {% if tm.award_rank %}<span class="award-rank-badge rank-{{ tm.award_rank }}">🏆 {{ tm.award_rank }}</span>{% endif %}
           </div>
+          {% if tm.memo %}<p class="award-memo">{{ tm.memo }}</p>{% endif %}
+          <form method="post" action="/admin/competition/{{ comp.id }}/members/{{ tm.id }}/award" class="award-form">
+            <div class="award-form-row">
+              <label class="award-label">수상 등급
+                <select name="award_rank" class="award-select">
+                  <option value="">수상 없음</option>
+                  {% for rank in award_ranks %}<option value="{{ rank }}" {% if tm.award_rank == rank %}selected{% endif %}>{{ rank }}</option>{% endfor %}
+                </select>
+              </label>
+              <label class="award-label">상금·부상
+                <input type="text" name="award_prize" class="award-input" placeholder="예) 상금 100만원" value="{{ tm.award_prize or '' }}">
+              </label>
+            </div>
+            <label class="award-label" style="display:block;margin-top:8px">메모
+              <textarea name="award_note" class="award-textarea" rows="2" placeholder="수상 관련 메모">{{ tm.award_note or '' }}</textarea>
+            </label>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px">
+              <form method="post" action="/competition/{{ comp.id }}/team/{{ t.id }}/leave/{{ tm.id }}" style="display:inline">
+                <input type="hidden" name="nickname" value="{{ tm.nickname }}">
+                <input type="hidden" name="verify_field" value="__admin__">
+                <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('{{ tm.nickname }}님을 팀에서 제거할까요?')">제거</button>
+              </form>
+              <button type="submit" class="btn btn-primary btn-sm">저장</button>
+            </div>
+          </form>
+        </div>
+        {% endfor %}
 
-          <label class="award-label" style="display:block;margin-top:8px">
-            메모
-            <textarea name="award_note" class="award-textarea" rows="2"
-                      placeholder="수상 관련 메모 (홍보 문구 등)">{{ tm.award_note or '' }}</textarea>
-          </label>
-
-          <div style="text-align:right;margin-top:8px">
-            <button type="submit" class="btn btn-primary btn-sm">저장</button>
+        {# 대기 중 신청 #}
+        {% if pending %}
+        <div style="grid-column:1/-1;padding:12px 16px;background:#fffbeb;border:1.5px dashed #f59e0b;border-radius:10px">
+          <p style="font-size:.85rem;font-weight:700;color:#92400e;margin:0 0 10px">⏳ 승인 대기 ({{ pending | length }}명)</p>
+          {% for tm in pending %}
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:7px 0;border-top:1px solid rgba(245,158,11,.2);flex-wrap:wrap">
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <span style="font-weight:700">{{ tm.nickname }}</span>
+              <span style="font-size:.78rem;color:var(--muted)">{{ tm.real_name }} · 학번 {{ tm.student_id }}</span>
+              <span class="role-tag">{{ tm.role }}</span>
+              {% if tm.memo %}<span style="font-size:.75rem;color:var(--muted)">"{{ tm.memo }}"</span>{% endif %}
+            </div>
+            <div style="display:flex;gap:4px">
+              <form method="post" action="/competition/{{ comp.id }}/team/{{ t.id }}/member/{{ tm.id }}/approve" style="display:inline">
+                <input type="hidden" name="leader_password" value="">
+                <button type="submit" class="btn btn-sm" style="background:#16a34a;color:#fff;border:none">✅ 승인</button>
+              </form>
+              <form method="post" action="/competition/{{ comp.id }}/team/{{ t.id }}/member/{{ tm.id }}/reject" style="display:inline">
+                <input type="hidden" name="leader_password" value="">
+                <button type="submit" class="btn btn-sm btn-danger">❌ 거절</button>
+              </form>
+            </div>
           </div>
-        </form>
-      </div>
-      {% endfor %}
-    </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+
+      </div>{# /member-cards #}
+    </section>
+    {% endfor %}
     {% endif %}
 
   </div>

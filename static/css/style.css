@@ -1023,6 +1023,63 @@ select {
   display: flex; gap: 4px; flex-shrink: 0;
 }
 
+/* ── 팀장 전용 행 ── */
+.leader-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  background: #fffbeb;
+  border: 1.5px solid #fbbf24;
+  border-radius: var(--radius);
+  margin-top: 10px;
+}
+.ldr-avatar {
+  background: linear-gradient(135deg, #f59e0b, #d97706) !important;
+}
+
+/* ── 본명·학번 (팀장/관리자에게만) ── */
+.member-real {
+  display: block;
+  font-size: .72rem;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+/* ── 승인 대기 섹션 ── */
+.pending-section {
+  margin-top: 12px;
+  padding: 10px 14px;
+  background: #fffbeb;
+  border: 1.5px dashed #f59e0b;
+  border-radius: var(--radius);
+}
+.pending-title {
+  font-size: .82rem;
+  font-weight: 700;
+  color: #92400e;
+  margin: 0 0 8px;
+}
+.pending-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 0;
+  border-top: 1px solid rgba(245,158,11,.2);
+  flex-wrap: wrap;
+}
+.pending-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  flex: 1;
+}
+.pending-name  { font-weight: 700; font-size: .88rem; }
+.pending-real  { font-size: .78rem; color: var(--muted); }
+.pending-actions { display: flex; gap: 4px; flex-shrink: 0; }
+
 .btn-xs {
   min-height: 26px;
   padding: 3px 7px;

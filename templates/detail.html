@@ -179,9 +179,14 @@
             </div>
             {% endif %}
           </div>
-          <div style="display:flex;gap:6px;align-items:center">
-            <span class="team-count">{{ team.members | length }}{% if comp.max_members %}/{{ comp.max_members }}{% endif %}명</span>
-            {% if comp.max_members and team.members | length >= comp.max_members %}
+          {% set approved_cnt = team.members | rejectattr('is_leader') | selectattr('status', 'equalto', 'approved') | list | length %}
+          {% set pending_cnt  = team.members | rejectattr('is_leader') | selectattr('status', 'equalto', 'pending')  | list | length %}
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+            <span class="team-count">팀원 {{ approved_cnt }}{% if comp.max_members %}/{{ comp.max_members }}{% endif %}명</span>
+            {% if pending_cnt > 0 and (is_admin or team.id in leader_team_ids) %}
+            <span class="deadline-badge" style="background:#f59e0b;color:#fff">대기 {{ pending_cnt }}</span>
+            {% endif %}
+            {% if comp.max_members and approved_cnt >= comp.max_members %}
             <span class="deadline-badge closed">모집 완료</span>
             {% else %}
             <span class="deadline-badge open">모집 중</span>
@@ -211,49 +216,121 @@
         </div>
         {% endif %}
 
-        {# 팀원 목록 #}
-        {% if team.members %}
-        <div class="member-grid" style="margin-top:12px">
-          {% for m in team.members %}
-          <div class="member-card {% if m.is_leader %}is-leader{% endif %}">
+        {# ── 팀장 표시 ── #}
+        {% set leader_m = team.members | selectattr('is_leader') | list | first %}
+        {% if leader_m %}
+        <div class="leader-row">
+          <div class="member-avatar ldr-avatar">{{ leader_m.nickname[0] | upper }}</div>
+          <div class="member-info">
+            <div class="member-name-row">
+              <span class="leader-crown">👑</span>
+              <span class="member-name">{{ leader_m.nickname }}</span>
+              <span class="member-role role-{{ leader_m.role }}">{{ leader_m.role }}</span>
+            </div>
+            {% if leader_m.real_name %}
+            <span class="member-real">{{ leader_m.real_name }} · {{ leader_m.student_id }}</span>
+            {% endif %}
+          </div>
+          <div class="member-actions">
+            <button class="btn btn-ghost btn-xs leave-trigger"
+              data-member-id="{{ leader_m.id }}" data-team-id="{{ team.id }}" data-comp-id="{{ comp.id }}"
+              data-nickname="{{ leader_m.nickname }}" data-is-leader="true"
+              data-admin="{{ 'true' if is_admin else 'false' }}">탈퇴</button>
+          </div>
+        </div>
+        {% endif %}
+
+        {# ── 승인된 팀원 목록 ── #}
+        {% set approved_members = team.members | rejectattr('is_leader') | selectattr('status', 'equalto', 'approved') | list %}
+        {% if approved_members %}
+        <div class="member-grid" style="margin-top:10px">
+          {% for m in approved_members %}
+          <div class="member-card">
             <div class="member-top">
               <div class="member-avatar">{{ m.nickname[0] | upper }}</div>
               <div class="member-info">
                 <div class="member-name-row">
-                  {% if m.is_leader %}<span class="leader-crown">👑</span>{% endif %}
                   <span class="member-name">{{ m.nickname }}</span>
+                  <span class="member-role role-{{ m.role }}">{{ m.role }}</span>
                 </div>
-                <span class="member-role role-{{ m.role }}">{{ m.role }}</span>
+                {% if is_admin or team.id in leader_team_ids %}
+                <span class="member-real">{{ m.real_name }} · {{ m.student_id }}</span>
+                {% endif %}
               </div>
               <div class="member-actions">
                 {% if is_admin %}
-                  {% if not m.is_leader %}
                   <form method="post" action="/admin/competition/{{ comp.id }}/team/{{ team.id }}/set-leader/{{ m.id }}" style="display:inline">
                     <button type="submit" class="btn btn-ghost btn-xs" title="팀장으로 지정">👑</button>
                   </form>
-                  {% endif %}
-                  <button class="btn btn-ghost btn-xs leave-trigger"
-                    data-member-id="{{ m.id }}" data-team-id="{{ team.id }}" data-comp-id="{{ comp.id }}"
-                    data-nickname="{{ m.nickname }}" data-admin="true">✕</button>
-                {% else %}
-                  <button class="btn btn-ghost btn-xs leave-trigger"
-                    data-member-id="{{ m.id }}" data-team-id="{{ team.id }}" data-comp-id="{{ comp.id }}"
-                    data-nickname="{{ m.nickname }}" data-admin="false">탈퇴</button>
                 {% endif %}
+                <button class="btn btn-ghost btn-xs leave-trigger"
+                  data-member-id="{{ m.id }}" data-team-id="{{ team.id }}" data-comp-id="{{ comp.id }}"
+                  data-nickname="{{ m.nickname }}" data-is-leader="false"
+                  data-admin="{{ 'true' if is_admin else 'false' }}">탈퇴</button>
               </div>
             </div>
-            {% if m.memo %}
-            <p class="member-memo">"{{ m.memo }}"</p>
-            {% endif %}
+            {% if m.memo %}<p class="member-memo">"{{ m.memo }}"</p>{% endif %}
           </div>
           {% endfor %}
         </div>
         {% else %}
-        <p class="team-empty">아직 팀원이 없습니다.</p>
+        <p class="team-empty" style="margin-top:8px;font-size:.85rem">아직 승인된 팀원이 없습니다.</p>
+        {% endif %}
+
+        {# ── 승인 대기 신청 (팀장·관리자만 표시) ── #}
+        {% set pending_members = team.members | rejectattr('is_leader') | selectattr('status', 'equalto', 'pending') | list %}
+        {% if pending_members and (is_admin or team.id in leader_team_ids) %}
+        <div class="pending-section">
+          <p class="pending-title">⏳ 승인 대기 ({{ pending_members | length }}명)</p>
+          {% for m in pending_members %}
+          <div class="pending-row">
+            <div class="pending-info">
+              <span class="pending-name">{{ m.nickname }}</span>
+              <span class="pending-real">{{ m.real_name }} · {{ m.student_id }}</span>
+              <span class="member-role role-{{ m.role }}">{{ m.role }}</span>
+              {% if m.memo %}<span class="muted" style="font-size:.78rem">"{{ m.memo }}"</span>{% endif %}
+            </div>
+            <div class="pending-actions">
+              {# 로그인된 팀장이면 패스워드 없이 즉시 처리 #}
+              {% if is_admin or team.id in leader_team_ids %}
+              <form method="post" action="/competition/{{ comp.id }}/team/{{ team.id }}/member/{{ m.id }}/approve" style="display:inline">
+                <input type="hidden" name="leader_password" value="">
+                <button type="submit" class="btn btn-sm" style="background:#16a34a;color:#fff;border:none">✅ 승인</button>
+              </form>
+              <form method="post" action="/competition/{{ comp.id }}/team/{{ team.id }}/member/{{ m.id }}/reject" style="display:inline">
+                <input type="hidden" name="leader_password" value="">
+                <button type="submit" class="btn btn-sm btn-danger">❌ 거절</button>
+              </form>
+              {% else %}
+              {# 비로그인 팀장: 비밀번호 입력 후 처리 #}
+              <details style="display:inline-block">
+                <summary class="btn btn-sm btn-outline" style="cursor:pointer">처리</summary>
+                <div style="margin-top:6px;display:flex;flex-direction:column;gap:4px">
+                  <input type="text" id="lpwd-{{ m.id }}" placeholder="팀장 비밀번호" style="font-size:.8rem;padding:4px 8px;border:1px solid var(--line);border-radius:6px">
+                  <div style="display:flex;gap:4px">
+                    <form method="post" action="/competition/{{ comp.id }}/team/{{ team.id }}/member/{{ m.id }}/approve">
+                      <input type="hidden" name="leader_password" id="lp-approve-{{ m.id }}">
+                      <button type="submit" onclick="document.getElementById('lp-approve-{{ m.id }}').value=document.getElementById('lpwd-{{ m.id }}').value"
+                              class="btn btn-sm" style="background:#16a34a;color:#fff;border:none">승인</button>
+                    </form>
+                    <form method="post" action="/competition/{{ comp.id }}/team/{{ team.id }}/member/{{ m.id }}/reject">
+                      <input type="hidden" name="leader_password" id="lp-reject-{{ m.id }}">
+                      <button type="submit" onclick="document.getElementById('lp-reject-{{ m.id }}').value=document.getElementById('lpwd-{{ m.id }}').value"
+                              class="btn btn-sm btn-danger">거절</button>
+                    </form>
+                  </div>
+                </div>
+              </details>
+              {% endif %}
+            </div>
+          </div>
+          {% endfor %}
+        </div>
         {% endif %}
 
         {# 제출 현황 기록 #}
         {% if is_privileged and submission_window %}
+        {% set all_approved = team.members | selectattr('status', 'equalto', 'approved') | list %}
         <div class="submission-box" style="margin-top:12px">
           {% if team.submitted %}
           <div class="submission-done">
@@ -262,7 +339,7 @@
               <strong>제출 완료</strong> — {{ team.submitted_at.strftime('%Y년 %m월 %d일 %H:%M') }} 기록
               <div class="participant-list">
                 참여 팀원:
-                {% for m in team.members if m.is_participant %}
+                {% for m in all_approved if m.is_participant %}
                   <span class="part-chip">{{ m.nickname }}</span>
                 {% else %}
                   <span class="muted">기록 없음</span>
@@ -277,7 +354,7 @@
             <h4 class="submission-title">📋 제출 현황 기록</h4>
             <form method="post" action="/competition/{{ comp.id }}/team/{{ team.id }}/submit">
               <div class="participant-check-grid">
-                {% for m in team.members %}
+                {% for m in all_approved %}
                 <label class="check-pill">
                   <input type="checkbox" name="participant_ids" value="{{ m.id }}"
                     {% if m.is_participant %}checked{% endif %}>
@@ -290,13 +367,14 @@
           </div>
         </div>
         {% elif team.submitted %}
+        {% set all_approved = team.members | selectattr('status', 'equalto', 'approved') | list %}
         <div class="submission-done" style="margin-top:10px">
           <span class="submit-check">✅</span>
           <div>
             <strong>제출 완료</strong> — {{ team.submitted_at.strftime('%Y년 %m월 %d일') }}
             <div class="participant-list">
               참여:
-              {% for m in team.members if m.is_participant %}
+              {% for m in all_approved if m.is_participant %}
                 <span class="part-chip">{{ m.nickname }}</span>
               {% endfor %}
             </div>
@@ -368,32 +446,40 @@
         {% endif %}
 
         {# 팀 참여 신청 폼 #}
-        {% if (not comp.max_members or team.members | length < comp.max_members) and comp.status != 'closed' %}
+        {% set approved_cnt_join = team.members | rejectattr('is_leader') | selectattr('status', 'equalto', 'approved') | list | length %}
+        {% if (not comp.max_members or approved_cnt_join < comp.max_members) and comp.status != 'closed' %}
         <details class="join-details" style="margin-top:12px">
-          <summary class="btn btn-outline btn-sm" style="cursor:pointer;display:inline-block">+ 이 팀에 참여</summary>
-          <form method="post" action="/competition/{{ comp.id }}/team/{{ team.id }}/join" class="join-form" style="margin-top:10px">
-            <div class="join-grid">
-              <label class="field">
-                <span>닉네임</span>
-                <input type="text" name="nickname" placeholder="본인 닉네임" required maxlength="30">
-              </label>
-              <label class="field">
-                <span>비밀번호 <small>(탈퇴 시 필요)</small></span>
-                <input type="password" name="password" placeholder="비밀번호 설정" required minlength="4">
-              </label>
-              <label class="field">
-                <span>역할</span>
-                <select name="role">
-                  {% for r in roles %}<option value="{{ r }}">{{ r }}</option>{% endfor %}
-                </select>
-              </label>
-              <label class="field">
-                <span>한마디 <small>(선택)</small></span>
-                <input type="text" name="memo" placeholder="한마디 남기기" maxlength="100">
-              </label>
-            </div>
-            <button type="submit" class="btn btn-primary">참여 신청</button>
-          </form>
+          <summary class="btn btn-outline btn-sm" style="cursor:pointer;display:inline-block">+ 이 팀에 참여 신청</summary>
+          <div style="margin-top:10px;padding:12px;background:var(--bg);border-radius:10px;border:1px solid var(--line)">
+            <p style="font-size:.82rem;color:var(--muted);margin:0 0 10px">신청 후 팀장 승인이 필요합니다.</p>
+            <form method="post" action="/competition/{{ comp.id }}/team/{{ team.id }}/join" class="join-form">
+              <div class="join-grid">
+                <label class="field">
+                  <span>닉네임 <small>(표시명)</small></span>
+                  <input type="text" name="nickname" placeholder="팀에 표시될 이름" required maxlength="30">
+                </label>
+                <label class="field">
+                  <span>본명 <small>(팀장에게만 공개)</small></span>
+                  <input type="text" name="real_name" placeholder="실명 입력" required maxlength="30">
+                </label>
+                <label class="field">
+                  <span>학번 <small>(팀장에게만 공개)</small></span>
+                  <input type="text" name="student_id" placeholder="예) 20231234" required maxlength="20">
+                </label>
+                <label class="field">
+                  <span>역할</span>
+                  <select name="role">
+                    {% for r in roles %}<option value="{{ r }}">{{ r }}</option>{% endfor %}
+                  </select>
+                </label>
+                <label class="field" style="grid-column:1/-1">
+                  <span>한마디 <small>(선택)</small></span>
+                  <input type="text" name="memo" placeholder="한마디 남기기" maxlength="100">
+                </label>
+              </div>
+              <button type="submit" class="btn btn-primary">참여 신청하기</button>
+            </form>
+          </div>
         </details>
         {% endif %}
 
@@ -425,14 +511,22 @@
               <textarea name="team_requirements" placeholder="예) 카카오톡 오픈채팅 참여 필수, 인스타그램 DM: @cartel_yzh, 매주 수요일 회의 참석 가능자" rows="3" maxlength="500"></textarea>
             </label>
           </div>
-          <h3 style="margin:16px 0 12px;font-size:1rem">내 정보 (팀장으로 자동 등록)</h3>
+          <h3 style="margin:16px 0 12px;font-size:1rem">팀장 정보</h3>
           <div class="join-grid">
             <label class="field">
-              <span>닉네임</span>
-              <input type="text" name="nickname" placeholder="본인 닉네임" required maxlength="30">
+              <span>닉네임 <small>(표시명)</small></span>
+              <input type="text" name="nickname" placeholder="팀에 표시될 이름" required maxlength="30">
             </label>
             <label class="field">
-              <span>비밀번호 <small>(탈퇴 시 필요)</small></span>
+              <span>본명</span>
+              <input type="text" name="real_name" placeholder="실명 입력" required maxlength="30">
+            </label>
+            <label class="field">
+              <span>학번</span>
+              <input type="text" name="student_id" placeholder="예) 20231234" required maxlength="20">
+            </label>
+            <label class="field">
+              <span>비밀번호 <small>(팀 관리·탈퇴 시 필요)</small></span>
               <input type="password" name="password" placeholder="비밀번호 설정" required minlength="4">
             </label>
             <label class="field">
@@ -467,8 +561,8 @@
           <input type="text" name="nickname" id="leaveNickname" required>
         </label>
         <label class="field" style="margin-top:.6rem">
-          <span>비밀번호 확인</span>
-          <input type="password" name="password" id="leavePassword" required>
+          <span id="leaveVerifyLabel">인증</span>
+          <input type="text" name="verify_field" id="leaveVerify" required>
         </label>
       </div>
       <div class="modal-actions">
@@ -495,5 +589,49 @@ if (scrapBtn) {
     }
   });
 }
+
+// ── 탈퇴 모달 ──
+const leaveModal   = document.getElementById('leaveModal');
+const leaveForm    = document.getElementById('leaveForm');
+const leaveNick    = document.getElementById('leaveNickname');
+const leaveVerify  = document.getElementById('leaveVerify');
+const leaveLabel   = document.getElementById('leaveVerifyLabel');
+const leaveCancel  = document.getElementById('leaveCancel');
+
+document.querySelectorAll('.leave-trigger').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const memberId = btn.dataset.memberId;
+    const teamId   = btn.dataset.teamId;
+    const compId   = btn.dataset.compId;
+    const nickname = btn.dataset.nickname;
+    const isLeader = btn.dataset.isLeader === 'true';
+    const isAdmin  = btn.dataset.admin === 'true';
+
+    leaveForm.action = `/competition/${compId}/team/${teamId}/leave/${memberId}`;
+    leaveNick.value  = nickname;
+
+    if (isAdmin) {
+      // 관리자: 입력 필드 숨기고 바로 제출
+      document.getElementById('leaveFields').style.display = 'none';
+    } else {
+      document.getElementById('leaveFields').style.display = '';
+      leaveNick.value = '';
+      leaveVerify.value = '';
+      if (isLeader) {
+        leaveLabel.textContent = '비밀번호 확인';
+        leaveVerify.type = 'password';
+        leaveVerify.placeholder = '팀 생성 시 설정한 비밀번호';
+      } else {
+        leaveLabel.textContent = '학번 확인';
+        leaveVerify.type = 'text';
+        leaveVerify.placeholder = '신청 시 입력한 학번';
+      }
+    }
+    leaveModal.style.display = 'flex';
+  });
+});
+
+leaveCancel && leaveCancel.addEventListener('click', () => { leaveModal.style.display = 'none'; });
+leaveModal  && leaveModal.addEventListener('click', e => { if (e.target === leaveModal) leaveModal.style.display = 'none'; });
 </script>
 {% endblock %}

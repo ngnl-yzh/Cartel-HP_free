@@ -3450,7 +3450,7 @@ def _load_crawl_history(db: Session) -> list:
                 "sources": json.loads(row.sources or "[]"),
                 "skipped": row.skipped_count,
                 "item_count": row.item_count,
-                "crawled_at": row.crawled_at.strftime("%Y년 %m월 %d일 %H:%M") if row.crawled_at else "",
+                "crawled_at": (row.crawled_at + timedelta(hours=9)).strftime("%Y년 %m월 %d일 %H:%M") if row.crawled_at else "",
             })
         return history
     except Exception:

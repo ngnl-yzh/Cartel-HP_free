@@ -21,10 +21,14 @@
   </div>
 
   <div class="home-hero-inner">
-    <div class="hero-logo-wrap">
-      <img src="/static/images/cartel-logo.png" class="hero-logo-img" alt="CARTEL">
+    {# 로고 + 타이틀을 가로로 배치 #}
+    <div class="hero-brand">
+      <img src="/static/images/cartel-logo-black.png" class="hero-logo-img" alt="CARTEL">
+      <div class="hero-brand-text">
+        <h1 class="hero-title">CARTEL</h1>
+        <p class="hero-tagline">AI &nbsp;·&nbsp; Competition &nbsp;·&nbsp; Together</p>
+      </div>
     </div>
-    <p class="hero-tagline">AI &nbsp;·&nbsp; Competition &nbsp;·&nbsp; Together</p>
     <p class="hero-sub">공모전을 함께 도전하고, 성장을 함께 나누는 공간</p>
     <div class="hero-cta">
       <a href="/competitions" class="hero-btn hero-btn-primary">공모전 보기</a>
@@ -292,39 +296,62 @@
   padding: 40px 20px;
 }
 
-/* 실제 로고 이미지 — 히어로 */
-.hero-logo-wrap {
+/* 히어로 브랜드 영역 — 로고 + 타이틀 가로 배치 */
+.hero-brand {
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 16px;
+  gap: 20px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
 }
+.hero-brand-text {
+  text-align: left;
+}
+@media (max-width: 540px) {
+  .hero-brand { flex-direction: column; gap: 8px; }
+  .hero-brand-text { text-align: center; }
+}
+
+/* 히어로 로고 이미지 — 검정 배경 버전 screen blend */
 .hero-logo-img {
-  width: clamp(160px, 32vw, 300px);
+  width: clamp(80px, 14vw, 130px);
   height: auto;
   object-fit: contain;
-  /* screen 블렌딩: 흰 배경이 어두운 히어로 배경에 녹아들고 파란 별자리만 빛남 */
   mix-blend-mode: screen;
-  filter: brightness(1.2)
-          drop-shadow(0 0 40px rgba(59,130,246,0.7))
-          drop-shadow(0 0 12px rgba(59,130,246,0.5));
+  filter: brightness(1.15)
+          drop-shadow(0 0 32px rgba(59,130,246,0.65))
+          drop-shadow(0 0 10px rgba(59,130,246,0.45));
   animation: heroGlow 3s ease-in-out infinite alternate;
+  flex-shrink: 0;
 }
 @keyframes heroGlow {
-  from { filter: brightness(1.1)
-                 drop-shadow(0 0 24px rgba(59,130,246,0.5))
-                 drop-shadow(0 0 8px rgba(59,130,246,0.35)); }
-  to   { filter: brightness(1.35)
-                 drop-shadow(0 0 56px rgba(59,130,246,0.9))
-                 drop-shadow(0 0 20px rgba(59,130,246,0.7)); }
+  from { filter: brightness(1.05)
+                 drop-shadow(0 0 20px rgba(59,130,246,0.45))
+                 drop-shadow(0 0 6px rgba(59,130,246,0.3)); }
+  to   { filter: brightness(1.3)
+                 drop-shadow(0 0 48px rgba(59,130,246,0.85))
+                 drop-shadow(0 0 16px rgba(59,130,246,0.65)); }
+}
+
+/* 히어로 CARTEL 타이틀 */
+.hero-title {
+  font-family: var(--font-display);
+  font-size: clamp(2.4rem, 6vw, 4.5rem);
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  color: #fff;
+  margin: 0;
+  line-height: 1;
+  text-shadow: 0 0 40px rgba(59,130,246,0.25);
 }
 
 .hero-tagline {
   font-family: var(--font-display);
-  font-size: clamp(0.8rem, 2vw, 1rem);
-  letter-spacing: 0.2em;
-  color: rgba(255,255,255,0.45);
-  margin: 0 0 16px;
+  font-size: clamp(0.72rem, 1.6vw, 0.88rem);
+  letter-spacing: 0.18em;
+  color: rgba(255,255,255,0.4);
+  margin: 4px 0 0;
   text-transform: uppercase;
 }
 .hero-sub {

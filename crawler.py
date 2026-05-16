@@ -372,6 +372,347 @@ async def _crawl_dacon(client: httpx.AsyncClient) -> list:
     return results
 
 
+# ── 3. 위비티 ──────────────────────────────────────────────────────────────────
+
+_WEVITY_BASE = "https://www.wevity.com"
+
+async def _crawl_wevity(client: httpx.AsyncClient) -> list:
+    """위비티(wevity.com) — 공모전 전문 포털"""
+    results = []
+    try:
+        urls = [
+            f"{_WEVITY_BASE}/?c=find&s=1&gotoPage=1&listType=1",
+            f"{_WEVITY_BASE}/?c=find&s=1&gotoPage=2&listType=1",
+        ]
+        responses = await asyncio.gather(
+            *[client.get(u, headers=HEADERS) for u in urls],
+            return_exceptions=True,
+        )
+        for r in responses:
+            if isinstance(r, Exception):
+                continue
+            try:
+                _check_response(r, "위비티")
+            except Exception:
+                continue
+            soup = _soup(r.text)
+            # 위비티 목록: ul.list > li 또는 div.cList > ul > li
+            items = (
+                soup.select("ul.list > li")
+                or soup.select(".cList li")
+                or soup.select("div.list-group li")
+            )
+            for li in items:
+                try:
+                    a = li.select_one("a[href]")
+                    if not a:
+                        continue
+                    href = a.get("href", "")
+                    if href and not href.startswith("http"):
+                        href = _WEVITY_BASE + "/" + href.lstrip("/")
+
+                    # 제목
+                    tit = (
+                        li.select_one(".tit") or li.select_one(".title")
+                        or li.select_one("strong") or a
+                    )
+                    title = _norm(tit.get_text())
+                    if not title or len(title) < 3:
+                        continue
+
+                    # 분야
+                    cate_el = li.select_one(".category") or li.select_one(".cate")
+                    category = _norm(cate_el.get_text()) if cate_el else ""
+                    tags = _classify_tags(category) or _classify_tags(title)
+
+                    # 마감일
+                    date_el = (
+                        li.select_one(".date") or li.select_one(".deadline")
+                        or li.select_one(".dday")
+                    )
+                    deadline = _parse_range_date(date_el.get_text()) if date_el else None
+
+                    # 주최
+                    host_el = li.select_one(".host") or li.select_one(".organizer")
+                    organizer = _norm(host_el.get_text()) if host_el else ""
+                    organizer = re.sub(r"^주최\s*[·.\s]*", "", organizer).strip()
+
+                    if title and href and _is_current_year(deadline):
+                        results.append(_item("wevity", "위비티", title, href, organizer, deadline, tags=tags))
+                except Exception:
+                    continue
+
+        if not results:
+            results.append({"_error": "위비티: 항목 파싱 실패 (HTML 구조 변경 가능성)"})
+    except Exception as e:
+        results.append({"_error": f"위비티 오류: {type(e).__name__}: {e}"})
+    return results
+
+
+# ── 4. 링커리어 ────────────────────────────────────────────────────────────────
+
+async def _crawl_linkareer(client: httpx.AsyncClient) -> list:
+    """링커리어(linkareer.com) — 공모전·대외활동 플랫폼"""
+    results = []
+    try:
+        # ① API 시도 (링커리어 REST or GraphQL)
+        api_tried = False
+        for api_url in [
+            "https://linkareer.com/api/v1/activities?types=CONTEST&orderBy=LATEST&first=30",
+            "https://linkareer.com/api/activity/list?type=contest&page=1&pageSize=30",
+        ]:
+            try:
+                ar = await client.get(api_url, headers={**HEADERS, "Accept": "application/json"}, timeout=10)
+                if ar.status_code == 200:
+                    import json as _json
+                    data = ar.json()
+                    # 다양한 응답 구조 탐색
+                    comps = (
+                        data.get("data") or data.get("results") or
+                        data.get("activities") or data.get("list") or []
+                    )
+                    if isinstance(comps, dict):
+                        comps = comps.get("edges") or comps.get("results") or []
+                    # GraphQL edge 구조
+                    if comps and isinstance(comps[0], dict) and "node" in comps[0]:
+                        comps = [c["node"] for c in comps]
+                    for comp in (comps if isinstance(comps, list) else []):
+                        title = (comp.get("title") or comp.get("name") or "").strip()
+                        if not title:
+                            continue
+                        comp_id = comp.get("id") or comp.get("slug") or ""
+                        link = f"https://linkareer.com/activity/{comp_id}" if comp_id else "https://linkareer.com/list/contest"
+                        deadline_raw = comp.get("dueDate") or comp.get("deadline") or comp.get("endDate") or ""
+                        deadline = _parse_date(str(deadline_raw)) if deadline_raw else None
+                        organizer = (comp.get("organization") or comp.get("organizer") or comp.get("host") or "").strip()
+                        category = (comp.get("category") or comp.get("type") or "").strip()
+                        tags = _classify_tags(category) or _classify_tags(title)
+                        if title and _is_current_year(deadline):
+                            results.append(_item("linkareer", "링커리어", title, link, organizer, deadline, tags=tags))
+                    if results:
+                        api_tried = True
+                        break
+            except Exception:
+                continue
+
+        if api_tried and results:
+            return results
+
+        # ② HTML 페이지 파싱 (Next.js __NEXT_DATA__ 포함)
+        r = await client.get("https://linkareer.com/list/contest", headers=HEADERS, timeout=20)
+        _check_response(r, "링커리어")
+        soup = _soup(r.text)
+
+        import json as _json
+        nxt = soup.find("script", {"id": "__NEXT_DATA__"})
+        if nxt and nxt.string:
+            try:
+                page_data = _json.loads(nxt.string)
+                props = page_data.get("props", {}).get("pageProps", {})
+                # 링커리어 pageProps 구조 탐색
+                comps = []
+                for key in ("activities", "list", "data", "contests", "items"):
+                    candidate = props.get(key)
+                    if isinstance(candidate, list) and candidate:
+                        comps = candidate
+                        break
+                    if isinstance(candidate, dict):
+                        inner = candidate.get("edges") or candidate.get("results") or candidate.get("data") or []
+                        if inner:
+                            comps = inner
+                            break
+                if comps and isinstance(comps[0], dict) and "node" in comps[0]:
+                    comps = [c["node"] for c in comps]
+                for comp in comps:
+                    title = (comp.get("title") or comp.get("name") or "").strip()
+                    if not title:
+                        continue
+                    comp_id = comp.get("id") or comp.get("slug") or ""
+                    link = f"https://linkareer.com/activity/{comp_id}" if comp_id else "https://linkareer.com/list/contest"
+                    deadline_raw = comp.get("dueDate") or comp.get("deadline") or comp.get("endDate") or ""
+                    deadline = _parse_date(str(deadline_raw)) if deadline_raw else None
+                    organizer = (comp.get("organization") or comp.get("organizer") or "").strip()
+                    category = (comp.get("category") or comp.get("type") or "").strip()
+                    tags = _classify_tags(category) or _classify_tags(title)
+                    if title and _is_current_year(deadline):
+                        results.append(_item("linkareer", "링커리어", title, link, organizer, deadline, tags=tags))
+                if results:
+                    return results
+            except Exception:
+                pass
+
+        # ③ HTML fallback
+        for card in soup.select("a[href*='/activity/']"):
+            href = card.get("href", "")
+            if not href.startswith("http"):
+                href = "https://linkareer.com" + href
+            tit_el = card.select_one("h2, h3, [class*='title'], [class*='name']") or card
+            title = _norm(tit_el.get_text())
+            if len(title) < 4 or "링커리어" in title:
+                continue
+            results.append(_item("linkareer", "링커리어", title, href, "", None, tags=_classify_tags(title)))
+
+        seen = set()
+        dedup = []
+        for it in results:
+            k = it.get("link", it.get("title", ""))
+            if k not in seen:
+                seen.add(k)
+                dedup.append(it)
+        results = dedup
+
+        if not results:
+            results.append({"_error": "링커리어: 항목 파싱 실패 (JavaScript 렌더링 필요 가능성)"})
+    except Exception as e:
+        results.append({"_error": f"링커리어 오류: {type(e).__name__}: {e}"})
+    return results
+
+
+# ── 5. 올콘 ───────────────────────────────────────────────────────────────────
+
+async def _crawl_allcon(client: httpx.AsyncClient) -> list:
+    """올콘(all-con.co.kr) — 공모전 정보 포털"""
+    results = []
+    try:
+        urls = [
+            "https://www.all-con.co.kr/",
+            "https://www.all-con.co.kr/list/1",
+        ]
+        responses = await asyncio.gather(
+            *[client.get(u, headers=HEADERS) for u in urls],
+            return_exceptions=True,
+        )
+        seen_links: set = set()
+        for r in responses:
+            if isinstance(r, Exception):
+                continue
+            try:
+                _check_response(r, "올콘")
+            except Exception:
+                continue
+            soup = _soup(r.text)
+            # 올콘 목록 구조 탐색
+            cards = (
+                soup.select(".con_list li")
+                or soup.select("#cList li")
+                or soup.select(".contest-list li")
+                or soup.select("ul.list li")
+                or soup.select(".box_list li")
+            )
+            for li in cards:
+                try:
+                    a = li.select_one("a[href]")
+                    if not a:
+                        continue
+                    href = a.get("href", "")
+                    if not href.startswith("http"):
+                        href = "https://www.all-con.co.kr" + (href if href.startswith("/") else "/" + href)
+                    if href in seen_links:
+                        continue
+                    seen_links.add(href)
+
+                    tit_el = (
+                        li.select_one(".tit") or li.select_one(".title")
+                        or li.select_one("strong") or li.select_one("p") or a
+                    )
+                    title = _norm(tit_el.get_text())
+                    if not title or len(title) < 3:
+                        continue
+
+                    cate_el = li.select_one(".cate") or li.select_one(".category")
+                    category = _norm(cate_el.get_text()) if cate_el else ""
+                    tags = _classify_tags(category) or _classify_tags(title)
+
+                    date_el = (
+                        li.select_one(".date") or li.select_one(".deadline")
+                        or li.select_one(".dday") or li.select_one(".period")
+                    )
+                    deadline = _parse_range_date(date_el.get_text()) if date_el else None
+
+                    host_el = li.select_one(".host") or li.select_one(".org")
+                    organizer = _norm(host_el.get_text()) if host_el else ""
+
+                    if title and href and _is_current_year(deadline):
+                        results.append(_item("allcon", "올콘", title, href, organizer, deadline, tags=tags))
+                except Exception:
+                    continue
+
+        if not results:
+            results.append({"_error": "올콘: 항목 파싱 실패 (HTML 구조 확인 필요)"})
+    except Exception as e:
+        results.append({"_error": f"올콘 오류: {type(e).__name__}: {e}"})
+    return results
+
+
+# ── 6. 온오프믹스 ──────────────────────────────────────────────────────────────
+
+async def _crawl_onoffmix(client: httpx.AsyncClient) -> list:
+    """온오프믹스(onoffmix.com) — 이벤트·공모전 플랫폼"""
+    results = []
+    try:
+        # 공모전 관련 키워드로 이벤트 검색
+        search_urls = [
+            "https://onoffmix.com/event/upcoming?tag=공모전",
+            "https://onoffmix.com/event/all?tag=공모전",
+            "https://onoffmix.com/search?q=공모전&type=event",
+        ]
+        seen_links: set = set()
+        found = False
+        for url in search_urls:
+            try:
+                r = await client.get(url, headers=HEADERS, timeout=15)
+                if r.status_code >= 400:
+                    continue
+                soup = _soup(r.text)
+                # onoffmix 카드 구조
+                cards = (
+                    soup.select(".event-card")
+                    or soup.select(".card")
+                    or soup.select("article")
+                    or soup.select(".list-item")
+                )
+                for card in cards:
+                    try:
+                        a = card.select_one("a[href]") or (card if card.name == "a" else None)
+                        if not a:
+                            continue
+                        href = a.get("href", "")
+                        if not href.startswith("http"):
+                            href = "https://onoffmix.com" + (href if href.startswith("/") else "/" + href)
+                        if href in seen_links:
+                            continue
+                        seen_links.add(href)
+
+                        tit_el = (
+                            card.select_one("h2, h3, h4, [class*='title'], [class*='name']")
+                            or a
+                        )
+                        title = _norm(tit_el.get_text())
+                        if not title or len(title) < 4:
+                            continue
+
+                        date_el = card.select_one("time, [class*='date'], [class*='period']")
+                        deadline = _parse_range_date(date_el.get_text()) if date_el else None
+
+                        tags = _classify_tags(title)
+
+                        if _is_current_year(deadline):
+                            results.append(_item("onoffmix", "온오프믹스", title, href, "", deadline, tags=tags))
+                    except Exception:
+                        continue
+                if results:
+                    found = True
+                    break
+            except Exception:
+                continue
+
+        if not found and not results:
+            results.append({"_error": "온오프믹스: 공모전 목록 파싱 실패"})
+    except Exception as e:
+        results.append({"_error": f"온오프믹스 오류: {type(e).__name__}: {e}"})
+    return results
+
+
 # ════════════════════════════════════════════════════════════════════════════
 #  지원 소스 목록 & 메인 진입점
 # ════════════════════════════════════════════════════════════════════════════
@@ -379,6 +720,10 @@ async def _crawl_dacon(client: httpx.AsyncClient) -> list:
 # 소스 ID → (표시 이름, 크롤러 함수)
 CRAWL_SOURCES: dict = {
     "contestkorea": ("공모전코리아", _crawl_contestkorea),
+    "wevity":       ("위비티",       _crawl_wevity),
+    "linkareer":    ("링커리어",     _crawl_linkareer),
+    "allcon":       ("올콘",         _crawl_allcon),
+    "onoffmix":     ("온오프믹스",   _crawl_onoffmix),
     "dacon":        ("데이콘",       _crawl_dacon),
 }
 

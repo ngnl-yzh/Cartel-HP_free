@@ -3504,10 +3504,20 @@ async def admin_crawl_run(
     raw_items = result.get("items", [])
     filtered_items, skipped = _dedup_crawl_items(raw_items, db)
 
-    # 활성 태그 외 태그 제거 → 기타 항목으로 분류
+    # 선택한 분야 외 항목 제외
+    # - 원래 태그가 있는데 하나도 안 맞으면 → 완전 제외
+    # - 원래 태그가 없는 항목(분류 불가) → 기타로 유지
     active_tags = set(_get_tags(db))
+    tag_filtered = []
     for item in filtered_items:
-        item["tags"] = [t for t in item.get("tags", []) if t in active_tags]
+        original_tags = item.get("tags", [])
+        matching = [t for t in original_tags if t in active_tags]
+        if original_tags and not matching:
+            # 분류됐지만 선택한 분야에 없음 → 제외
+            continue
+        item["tags"] = matching
+        tag_filtered.append(item)
+    filtered_items = tag_filtered
 
     result["items"]             = filtered_items
     result["skipped"]           = skipped

@@ -445,38 +445,60 @@
         </div>
         {% endif %}
 
-        {# 팀 참여 신청 폼 #}
+        {# 팀 참여 신청 폼 — 반드시 사이트 회원이어야 신청 가능 #}
         {% set approved_cnt_join = team.members | rejectattr('is_leader') | selectattr('status', 'equalto', 'approved') | list | length %}
         {% if (not comp.max_members or approved_cnt_join < comp.max_members) and comp.status != 'closed' %}
         <details class="join-details" style="margin-top:12px">
           <summary class="btn btn-outline btn-sm" style="cursor:pointer;display:inline-block">+ 이 팀에 참여 신청</summary>
-          <div style="margin-top:10px;padding:12px;background:var(--bg);border-radius:10px;border:1px solid var(--line)">
-            <p style="font-size:.82rem;color:var(--muted);margin:0 0 10px">신청 후 팀장 승인이 필요합니다.</p>
+          <div style="margin-top:10px;padding:14px;background:var(--bg);border-radius:10px;border:1px solid var(--line)">
+            <p style="font-size:.82rem;color:var(--muted);margin:0 0 12px">
+              사이트 회원만 신청할 수 있습니다. 신청 후 팀장 승인이 필요합니다.
+            </p>
             <form method="post" action="/competition/{{ comp.id }}/team/{{ team.id }}/join" class="join-form">
               <div class="join-grid">
+                {% if current_member %}
+                {# ── 로그인 상태: 학번·본명 자동 입력 (수정 불가) ── #}
+                <div class="field" style="grid-column:1/-1;background:rgba(37,99,235,.06);border:1px solid rgba(37,99,235,.15);border-radius:8px;padding:10px 12px">
+                  <p style="font-size:.8rem;font-weight:700;color:var(--cartel-blue);margin:0 0 4px">신청 회원 정보 (자동)</p>
+                  <p style="font-size:.85rem;margin:0">
+                    <strong>{{ current_member.activity_name }}</strong>
+                    · {{ current_member.real_name }} · 학번 {{ current_member.student_id or '미등록' }}
+                  </p>
+                  <input type="hidden" name="student_id" value="{{ current_member.student_id or '' }}">
+                  <input type="hidden" name="real_name"  value="{{ current_member.real_name }}">
+                </div>
+                {% else %}
+                {# ── 비로그인: 직접 입력 ── #}
                 <label class="field">
-                  <span>닉네임 <small>(표시명)</small></span>
-                  <input type="text" name="nickname" placeholder="팀에 표시될 이름" required maxlength="30">
-                </label>
-                <label class="field">
-                  <span>본명 <small>(팀장에게만 공개)</small></span>
-                  <input type="text" name="real_name" placeholder="실명 입력" required maxlength="30">
-                </label>
-                <label class="field">
-                  <span>학번 <small>(팀장에게만 공개)</small></span>
+                  <span>학번</span>
                   <input type="text" name="student_id" placeholder="예) 20231234" required maxlength="20">
                 </label>
+                <label class="field">
+                  <span>본명</span>
+                  <input type="text" name="real_name" placeholder="실명 입력" required maxlength="30">
+                </label>
+                <label class="field" style="grid-column:1/-1">
+                  <span>홈페이지 비밀번호 <small>(본인 확인용)</small></span>
+                  <input type="password" name="site_password" placeholder="사이트 로그인 비밀번호" required>
+                </label>
+                {% endif %}
                 <label class="field">
                   <span>역할</span>
                   <select name="role">
                     {% for r in roles %}<option value="{{ r }}">{{ r }}</option>{% endfor %}
                   </select>
                 </label>
-                <label class="field" style="grid-column:1/-1">
+                <label class="field">
                   <span>한마디 <small>(선택)</small></span>
                   <input type="text" name="memo" placeholder="한마디 남기기" maxlength="100">
                 </label>
               </div>
+              {% if not current_member %}
+              <p style="font-size:.78rem;color:var(--muted);margin:0 0 8px">
+                비로그인 신청 시 학번·본명·비밀번호로 본인 확인합니다.
+                <a href="/login" style="color:var(--cartel-blue)">로그인</a>하면 자동 입력됩니다.
+              </p>
+              {% endif %}
               <button type="submit" class="btn btn-primary">참여 신청하기</button>
             </form>
           </div>

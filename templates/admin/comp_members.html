@@ -42,28 +42,26 @@
           <div style="position:absolute;right:0;top:calc(100% + 6px);min-width:300px;background:var(--surface);border:1.5px solid var(--line);border-radius:12px;padding:16px;box-shadow:0 8px 24px rgba(0,0,0,.12);z-index:50">
             <p style="font-size:.82rem;font-weight:700;margin:0 0 10px">팀원 직접 추가 (즉시 승인)</p>
             <form method="post" action="/admin/competition/{{ comp.id }}/team/{{ t.id }}/member/add">
+              <p style="font-size:.75rem;color:var(--muted);margin:0 0 8px">
+                학번·본명으로 회원을 조회 후 자동 연결됩니다.
+              </p>
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
                 <label class="field">
-                  <span>닉네임</span>
-                  <input type="text" name="nickname" placeholder="표시명" required maxlength="30">
+                  <span>학번</span>
+                  <input type="text" name="student_id" placeholder="20231234" required maxlength="20">
                 </label>
                 <label class="field">
                   <span>본명</span>
                   <input type="text" name="real_name" placeholder="실명" required maxlength="30">
                 </label>
                 <label class="field">
-                  <span>학번</span>
-                  <input type="text" name="student_id" placeholder="20231234" required maxlength="20">
-                </label>
-                <label class="field">
                   <span>역할</span>
                   <select name="role">
-                    {% for rank in award_ranks %}{# roles 변수가 없어 award_ranks 대신 하드코딩 #}{% endfor %}
                     <option>기획</option><option>개발</option><option>디자인</option>
                     <option>마케팅</option><option selected>기타</option>
                   </select>
                 </label>
-                <label class="field" style="grid-column:1/-1">
+                <label class="field">
                   <span>메모 (선택)</span>
                   <input type="text" name="memo" placeholder="한마디" maxlength="100">
                 </label>

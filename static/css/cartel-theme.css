@@ -276,12 +276,15 @@ body {
   color: #fff;
 }
 
-/* 유저 버튼 */
+/* 유저 드롭다운 */
+.c-user-dropdown {
+  position: relative;
+}
 .c-user-btn {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 5px 12px 5px 5px;
+  padding: 5px 10px 5px 5px;
   border-radius: 999px;
   background: rgba(255,255,255,0.07);
   border: 1px solid rgba(255,255,255,0.1);
@@ -289,12 +292,52 @@ body {
   color: rgba(255,255,255,0.85);
   font-size: 0.85rem;
   font-weight: 500;
+  cursor: pointer;
   transition: background 0.15s, border-color 0.15s;
 }
-.c-user-btn:hover {
+.c-user-btn:hover,
+.c-user-btn[aria-expanded="true"] {
   background: rgba(59,130,246,0.15);
   border-color: rgba(59,130,246,0.35);
   color: #fff;
+}
+.c-dropdown-caret {
+  opacity: .6;
+  transition: transform .2s;
+}
+.c-user-btn[aria-expanded="true"] .c-dropdown-caret {
+  transform: rotate(180deg);
+}
+.c-dropdown-menu {
+  display: none;
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 160px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 8px 28px rgba(0,0,0,0.18);
+  padding: 6px;
+  z-index: 300;
+}
+.c-dropdown-menu.is-open { display: block; }
+.c-dropdown-item {
+  display: block;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: .85rem;
+  color: var(--text);
+  text-decoration: none;
+  transition: background .12s;
+}
+.c-dropdown-item:hover { background: var(--hover); }
+.c-dropdown-item-danger { color: #ef4444; }
+.c-dropdown-item-danger:hover { background: rgba(239,68,68,0.08); }
+.c-dropdown-divider {
+  height: 1px;
+  background: var(--line);
+  margin: 4px 0;
 }
 
 .c-avatar {

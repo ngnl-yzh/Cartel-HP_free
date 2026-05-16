@@ -94,14 +94,27 @@
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
             {% if dm_unread %}<span class="c-badge">{{ dm_unread }}</span>{% endif %}
           </a>
-          <a href="/profile/{{ current_member.activity_name }}" class="c-user-btn">
-            {% if current_member.profile_image %}
-              <img src="/uploads/{{ current_member.profile_image }}" class="c-avatar" alt="">
-            {% else %}
-              <span class="c-avatar-letter">{{ current_member.activity_name[0] | upper }}</span>
-            {% endif %}
-            <span class="c-username">{{ current_member.activity_name }}</span>
-          </a>
+          {# 아바타 드롭다운 #}
+          <div class="c-user-dropdown" id="cUserDropdown">
+            <button class="c-user-btn" id="cUserBtn" aria-expanded="false" aria-haspopup="true">
+              {% if current_member.profile_image %}
+                <img src="/uploads/{{ current_member.profile_image }}" class="c-avatar" alt="">
+              {% else %}
+                <span class="c-avatar-letter">{{ current_member.activity_name[0] | upper }}</span>
+              {% endif %}
+              <span class="c-username">{{ current_member.activity_name }}</span>
+              <svg class="c-dropdown-caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+            <div class="c-dropdown-menu" id="cDropdownMenu" role="menu">
+              <a href="/profile/{{ current_member.activity_name }}" class="c-dropdown-item">👤 내 프로필</a>
+              <a href="/my" class="c-dropdown-item">🏠 마이페이지</a>
+              {% if current_member.role == 'sub_admin' %}
+              <a href="/admin" class="c-dropdown-item">⚙️ 관리</a>
+              {% endif %}
+              <div class="c-dropdown-divider"></div>
+              <a href="/member/logout" class="c-dropdown-item c-dropdown-item-danger">로그아웃</a>
+            </div>
+          </div>
         {% else %}
           <a href="/member/login" class="c-nav-action c-nav-action-ghost">로그인</a>
           <a href="/register" class="c-nav-action c-nav-action-primary">회원가입</a>
@@ -241,6 +254,28 @@
     if (closeBtn)  closeBtn.addEventListener('click', closeMenu);
     if (overlay)   overlay.addEventListener('click', function (e) {
       if (e.target === overlay) closeMenu();
+    });
+  })();
+
+  // 유저 드롭다운
+  (function () {
+    const btn  = document.getElementById('cUserBtn');
+    const menu = document.getElementById('cDropdownMenu');
+    if (!btn || !menu) return;
+
+    function toggleDropdown(e) {
+      e.stopPropagation();
+      const open = menu.classList.toggle('is-open');
+      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    }
+    function closeDropdown() {
+      menu.classList.remove('is-open');
+      btn.setAttribute('aria-expanded', 'false');
+    }
+    btn.addEventListener('click', toggleDropdown);
+    document.addEventListener('click', closeDropdown);
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') closeDropdown();
     });
   })();
   </script>

@@ -75,10 +75,10 @@
           <tr>
             <th style="width:80px">출처</th>
             <th>공모전명</th>
-            <th style="width:120px">분야</th>
-            <th style="width:130px">주최기관</th>
-            <th style="width:100px">마감일</th>
-            <th style="width:190px">액션</th>
+            <th style="width:140px">분야</th>
+            <th style="width:160px">주최기관</th>
+            <th style="width:90px;white-space:nowrap">마감일</th>
+            <th style="width:160px">액션</th>
           </tr>
         </thead>
         <tbody>
@@ -102,8 +102,9 @@
                 <span class="muted">-</span>
               {% endif %}
             </td>
-            <td class="muted">{{ item.organizer or "-" }}</td>
-            <td class="muted">{{ item.deadline or "-" }}</td>
+            <td class="muted" style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+                title="{{ item.organizer or '' }}">{{ item.organizer or "-" }}</td>
+            <td class="muted" style="white-space:nowrap">{{ item.deadline or "-" }}</td>
             <td class="crawl-actions">
               <form method="post" action="/admin/crawl/add" style="display:inline">
                 <input type="hidden" name="idx" value="{{ loop.index0 }}">

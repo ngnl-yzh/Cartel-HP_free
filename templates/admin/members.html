@@ -6,14 +6,14 @@
   <div class="container">
     <div class="page-heading">
       <div>
-        <p class="eyebrow">Admin</p>
+        <p class="eyebrow"><a href="/admin" style="color:inherit;text-decoration:none;opacity:.6">Admin</a> › 회원 관리</p>
         <h1>회원 관리 <span class="muted" style="font-size:1rem;font-weight:400">총 {{ members | length }}명</span></h1>
       </div>
       <div style="display:flex;gap:8px">
         {% if is_admin %}
         <a href="/admin/invite-codes" class="btn btn-outline">초대 코드 관리</a>
         {% endif %}
-        <a href="/admin" class="btn btn-ghost">← 대시보드</a>
+        <a href="/admin" class="btn btn-outline">← 홈</a>
       </div>
     </div>
 

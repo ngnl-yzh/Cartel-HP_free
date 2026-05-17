@@ -1484,23 +1484,38 @@ async def admin_debug_storage(request: Request, db: Session = Depends(get_db)):
 
 
 @app.get("/admin", response_class=HTMLResponse)
-async def admin_dashboard(
+async def admin_dashboard(request: Request, db: Session = Depends(get_db)):
+    """관리자 허브 페이지 — 4개 섹션 카드 표시"""
+    if r := _privileged_redirect(request, db):
+        return r
+    # 허브에서 간단한 통계 표시
+    comp_count    = db.query(Competition).count()
+    job_count     = db.query(JobPosting).count()
+    member_count  = db.query(Member).count()
+    return _render(request, "admin/dashboard.html", _ctx(request, db,
+        comp_count=comp_count,
+        job_count=job_count,
+        member_count=member_count,
+    ))
+
+
+@app.get("/admin/competitions", response_class=HTMLResponse)
+async def admin_competitions(
     request: Request,
     db: Session = Depends(get_db),
     bulk_added: int = 0,
     bulk_errors: int = 0,
 ):
+    """공모전 관리 페이지"""
     if r := _privileged_redirect(request, db):
         return r
     competitions = _annotate(db.query(Competition).order_by(Competition.deadline.asc()).all())
-    return _render(request,
-        "admin/dashboard.html",
-        _ctx(request, db,
-             competitions=competitions,
-             today=date.today(),
-             bulk_added=bulk_added,
-             bulk_errors=bulk_errors),
-    )
+    return _render(request, "admin/competitions.html", _ctx(request, db,
+        competitions=competitions,
+        today=date.today(),
+        bulk_added=bulk_added,
+        bulk_errors=bulk_errors,
+    ))
 
 
 @app.post("/admin/competition/{comp_id}/toggle-featured")
@@ -1516,7 +1531,7 @@ async def admin_toggle_featured(
     if comp:
         comp.is_featured = not bool(comp.is_featured)
         db.commit()
-    return RedirectResponse(url="/admin", status_code=303)
+    return RedirectResponse(url="/admin/competitions", status_code=303)
 
 
 # ── 공모전 CRUD ───────────────────────────────────────────────────────────────
@@ -1577,7 +1592,7 @@ async def admin_add(
     )
     db.add(comp)
     db.commit()
-    return RedirectResponse(url="/admin", status_code=303)
+    return RedirectResponse(url="/admin/competitions", status_code=303)
 
 
 @app.get("/admin/edit/{comp_id}", response_class=HTMLResponse)
@@ -1666,7 +1681,7 @@ async def admin_edit(
 
     comp.files = json.dumps(existing_files + await _save_files(files), ensure_ascii=False)
     db.commit()
-    return RedirectResponse(url="/admin", status_code=303)
+    return RedirectResponse(url="/admin/competitions", status_code=303)
 
 
 @app.post("/admin/delete/{comp_id}")
@@ -1682,7 +1697,7 @@ async def admin_delete(request: Request, comp_id: int, db: Session = Depends(get
                 pass
         db.delete(comp)
         db.commit()
-    return RedirectResponse(url="/admin", status_code=303)
+    return RedirectResponse(url="/admin/competitions", status_code=303)
 
 
 @app.post("/admin/delete-bulk")
@@ -1708,7 +1723,7 @@ async def admin_delete_bulk(
                 ip.unlink(missing_ok=True)
         db.delete(comp)
     db.commit()
-    return RedirectResponse(url="/admin", status_code=303)
+    return RedirectResponse(url="/admin/competitions", status_code=303)
 
 
 @app.post("/admin/delete-file/{comp_id}")
@@ -4015,7 +4030,7 @@ async def admin_crawl_add_bulk(
         db.add(comp)
         added += 1
     db.commit()
-    return RedirectResponse(url=f"/admin?bulk_added={added}", status_code=303)
+    return RedirectResponse(url=f"/admin/competitions?bulk_added={added}", status_code=303)
 
 
 @app.post("/admin/crawl/add-bulk-gpt")
@@ -4045,7 +4060,7 @@ async def admin_crawl_add_bulk_gpt(
             errors.append(f"{item.get('title','?')} — {str(e)[:80]}")
 
     return RedirectResponse(
-        url=f"/admin?bulk_added={added}&bulk_errors={len(errors)}",
+        url=f"/admin/competitions?bulk_added={added}&bulk_errors={len(errors)}",
         status_code=303,
     )
 

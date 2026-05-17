@@ -1134,19 +1134,17 @@ async def crawl_saramin_intern(client: httpx.AsyncClient) -> list:
     results = []
     _SARAMIN_BASE = "https://www.saramin.co.kr"
 
-    # 여러 URL 순서대로 시도 (지역 필터 없는 버전 우선)
+    # 여러 URL 순서대로 시도 (인턴 전용 페이지 우선)
     candidate_urls = [
+        # ① 인턴 전용 리스트 페이지
+        f"{_SARAMIN_BASE}/zf_user/jobs/list/intern?recruitPage=1",
+        # ② 직종 카테고리 검색 (지역 필터 없음)
         (
             f"{_SARAMIN_BASE}/zf_user/jobs/list/job-category"
             "?cat_kewd=2232&panel_type=&search_optional_item=n"
             "&search_done=y&panel_count=y&preview=y"
         ),
-        (
-            f"{_SARAMIN_BASE}/zf_user/jobs/list/job-category"
-            "?cat_kewd=2232&panel_type=&search_optional_item=n"
-            "&search_done=y&panel_count=y&preview=y&page=1"
-        ),
-        # 키워드 검색 fallback
+        # ③ 키워드 검색 fallback
         f"{_SARAMIN_BASE}/zf_user/jobs/list/keyword-search?searchword=%EC%9D%B8%ED%84%B4&recruitPage=1",
     ]
 
@@ -1165,38 +1163,61 @@ async def crawl_saramin_intern(client: httpx.AsyncClient) -> list:
             results.append({"_error": "사람인: 페이지 로드 실패"})
             return results
 
-        # 항목 선택자 (여러 버전 대응)
-        items = (
-            soup.select(".list_recruit .item_recruit")
-            or soup.select(".list_item_wrap .item_recruit")
-            or soup.select(".jobs-list .list-item")
-            or soup.select(".area_list .item")
-        )
+        # 항목 선택자 — 사람인 HTML 버전별 대응
+        item_selectors = [
+            ".list_recruit .item_recruit",
+            ".list_item_wrap .item_recruit",
+            "[class*='item_recruit']",
+            ".recruit_list_wrap li",
+            ".list-job-items li",
+            ".jobs-list .list-item",
+            ".area_list .item",
+        ]
+        items = []
+        for sel in item_selectors:
+            items = soup.select(sel)
+            if items:
+                break
 
+        # 전체 페이지에서 직접 공고 링크 탐색 (fallback)
+        if not items:
+            items = [
+                a.find_parent("li") or a.find_parent("div") or a
+                for a in soup.select("a[href*='zf_user/jobs/detail']")
+                if a.find_parent("li") or a.find_parent("div")
+            ]
+
+        seen_hrefs: set = set()
         for item in items:
             try:
                 # 제목 + 링크
                 tit_el = (
                     item.select_one(".job_tit a")
                     or item.select_one("a.job_tit")
+                    or item.select_one("a[href*='jobs/detail']")
                     or item.select_one(".title a")
                     or item.select_one("h2 a, h3 a")
                 )
                 if not tit_el:
                     continue
                 title = _norm(tit_el.get_text())
-                if not title:
+                if not title or len(title) < 2:
                     continue
                 href = tit_el.get("href", "")
-                if href and not href.startswith("http"):
+                if not href:
+                    continue
+                if not href.startswith("http"):
                     href = _SARAMIN_BASE + href
+                if href in seen_hrefs:
+                    continue
+                seen_hrefs.add(href)
 
                 # 회사명
                 corp_el = (
                     item.select_one(".corp_name a")
                     or item.select_one(".company_name a")
                     or item.select_one(".corp_name")
-                    or item.select_one(".company")
+                    or item.select_one("[class*='company']")
                 )
                 company = _norm(corp_el.get_text()) if corp_el else ""
 
@@ -1204,16 +1225,16 @@ async def crawl_saramin_intern(client: httpx.AsyncClient) -> list:
                 date_el = (
                     item.select_one(".job_date .date")
                     or item.select_one(".job_date")
-                    or item.select_one(".deadline")
-                    or item.select_one(".date")
+                    or item.select_one("[class*='deadline']")
+                    or item.select_one("[class*='date']")
                 )
                 deadline = _parse_date(date_el.get_text()) if date_el else None
 
                 # 근무지
                 loc_el = (
                     item.select_one(".work_place")
-                    or item.select_one(".location")
-                    or item.select_one(".job_condition span:first-child")
+                    or item.select_one("[class*='location']")
+                    or item.select_one(".job_condition span")
                 )
                 location = _norm(loc_el.get_text()) if loc_el else ""
 
@@ -1223,7 +1244,7 @@ async def crawl_saramin_intern(client: httpx.AsyncClient) -> list:
                 continue
 
         if not results:
-            results.append({"_error": "사람인: 인턴 공고 파싱 실패 (HTML 구조 변경 가능성)"})
+            results.append({"_error": "사람인: 인턴 공고 파싱 실패 (HTML 구조 변경 가능성 — JavaScript 렌더링 의심)"})
     except Exception as e:
         results.append({"_error": f"사람인 오류: {type(e).__name__}: {e}"})
     return results

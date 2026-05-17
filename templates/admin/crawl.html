@@ -8,12 +8,12 @@
     {# ── 페이지 헤더 + 소스 선택 + 크롤링 버튼 ── #}
     <div class="page-heading" style="flex-wrap:wrap;gap:16px;align-items:flex-start">
       <div>
-        <p class="eyebrow">Admin</p>
+        <p class="eyebrow"><a href="/admin" style="color:inherit;text-decoration:none;opacity:.6">Admin</a> › <a href="/admin/competitions" style="color:inherit;text-decoration:none;opacity:.6">공모전 관리</a> › 크롤링</p>
         <h1>자동 크롤링</h1>
       </div>
       <div style="display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap">
         <a href="/admin/settings" class="btn btn-outline">분야 설정</a>
-        <a href="/admin" class="btn btn-outline">관리자 홈</a>
+        <a href="/admin/competitions" class="btn btn-outline">← 공모전 관리</a>
 
         {# 소스 선택 + 크롤링 시작 폼 #}
         <form method="post" action="/admin/crawl/run" id="crawlForm" onsubmit="return onCrawlSubmit(event)">

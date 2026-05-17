@@ -1,209 +1,139 @@
 {% extends "base.html" %}
-{% block title %}관리자 패널 · 공모전 보드{% endblock %}
+{% block title %}관리자 홈 · CARTEL{% endblock %}
 
 {% block content %}
 <main class="admin-page">
   <div class="container">
 
-    {% if bulk_added or bulk_errors %}
-    <div style="margin-bottom:16px;padding:12px 18px;border-radius:12px;
-      background:{% if bulk_errors %}rgba(234,179,8,.1){% else %}rgba(34,197,94,.1){% endif %};
-      border:1.5px solid {% if bulk_errors %}rgba(234,179,8,.4){% else %}rgba(34,197,94,.35){% endif %};
-      display:flex;align-items:center;gap:10px">
-      <span style="font-size:1.2rem">{% if bulk_errors %}⚠️{% else %}✅{% endif %}</span>
-      <div>
-        <strong>일괄 추가 완료</strong>
-        {% if bulk_added %}<span style="color:#16a34a"> · {{ bulk_added }}개 등록됨</span>{% endif %}
-        {% if bulk_errors %}<span style="color:#b45309"> · {{ bulk_errors }}개 실패</span>{% endif %}
-      </div>
-    </div>
-    {% endif %}
-
     <div class="page-heading">
       <div>
         <p class="eyebrow">Admin</p>
-        <h1>공모전 관리</h1>
+        <h1>관리자 홈</h1>
       </div>
-      <div style="display:flex;gap:8px">
-        <a href="/admin/members" class="btn btn-outline">회원 관리</a>
-        <a href="/admin/invite-codes" class="btn btn-outline">초대 코드</a>
-        <a href="/admin/crawl" class="btn btn-outline">🔍 자동 크롤링</a>
-        <a href="/admin/jobs" class="btn btn-outline">💼 Career 관리</a>
-        <a href="/admin/jobs/crawl" class="btn btn-outline">🔍 Career 크롤링</a>
-        <a href="/admin/settings" class="btn btn-outline">⚙ 설정</a>
-        <a href="/admin/add" class="btn btn-primary">공모전 추가</a>
-      </div>
+      <a href="/admin/logout" class="btn btn-outline" style="font-size:.82rem">로그아웃</a>
     </div>
 
-    <div class="stat-grid">
-      <div class="stat-card">
-        <span>전체</span>
-        <strong>{{ competitions | length }}</strong>
-      </div>
-      <div class="stat-card">
-        <span>마감 임박</span>
-        <strong>{{ competitions | selectattr('status', 'equalto', 'urgent') | list | length }}</strong>
-      </div>
-      <div class="stat-card">
-        <span>주목 표시</span>
-        <strong>{{ competitions | selectattr('is_featured') | list | length }}</strong>
-      </div>
+    {# ── 허브 카드 4개 ── #}
+    <div class="admin-hub-grid">
+
+      <a href="/admin/members" class="admin-hub-card">
+        <div class="admin-hub-icon">👥</div>
+        <div class="admin-hub-body">
+          <h2>회원 관리</h2>
+          <p>가입 회원 조회 · 기수 · 역할 설정</p>
+          <span class="admin-hub-count">{{ member_count }}명</span>
+        </div>
+        <div class="admin-hub-arrow">›</div>
+      </a>
+
+      <a href="/admin/competitions" class="admin-hub-card">
+        <div class="admin-hub-icon">🏆</div>
+        <div class="admin-hub-body">
+          <h2>공모전 관리</h2>
+          <p>공모전 목록 · 크롤링 · 분야 설정</p>
+          <span class="admin-hub-count">{{ comp_count }}개</span>
+        </div>
+        <div class="admin-hub-arrow">›</div>
+      </a>
+
+      <a href="/admin/jobs" class="admin-hub-card">
+        <div class="admin-hub-icon">💼</div>
+        <div class="admin-hub-body">
+          <h2>Career 관리</h2>
+          <p>취업 공고 목록 · 크롤링</p>
+          <span class="admin-hub-count">{{ job_count }}개</span>
+        </div>
+        <div class="admin-hub-arrow">›</div>
+      </a>
+
+      <a href="/admin/invite-codes" class="admin-hub-card">
+        <div class="admin-hub-icon">🎟</div>
+        <div class="admin-hub-body">
+          <h2>초대 코드</h2>
+          <p>코드 생성 · 사용 이력 관리</p>
+        </div>
+        <div class="admin-hub-arrow">›</div>
+      </a>
+
     </div>
 
-    {% if competitions %}
-
-    {# ── 일괄 삭제 액션 바 ── #}
-    <div class="bulk-del-bar" id="bulkDelBar" style="display:none">
-      <span class="bulk-del-count" id="bulkDelCount">0개 선택됨</span>
-      <div style="display:flex;gap:6px">
-        <button type="button" class="btn btn-outline btn-sm"
-                onclick="clearDelSelection()">선택 해제</button>
-        <button type="button" class="btn btn-danger btn-sm"
-                onclick="submitBulkDelete()">선택 항목 삭제</button>
-      </div>
-    </div>
-
-    <section class="table-wrap">
-      <table class="admin-table" id="compTable">
-        <thead>
-          <tr>
-            <th style="width:32px;text-align:center">
-              <input type="checkbox" id="checkAllComp" title="전체 선택"
-                     onchange="toggleAllComp(this.checked)">
-            </th>
-            <th>공모전명</th>
-            <th>주최기관</th>
-            <th>마감일</th>
-            <th>조회수</th>
-            <th>상태</th>
-            <th style="width:36px" title="캐러셀 주목 표시">⭐</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for comp in competitions %}
-          <tr>
-            <td style="text-align:center">
-              <input type="checkbox" class="comp-chk" value="{{ comp.id }}"
-                     onchange="updateDelBar()">
-            </td>
-            <td>
-              <a href="/competition/{{ comp.id }}" class="table-title">{{ comp.title }}</a>
-            </td>
-            <td>{{ comp.organizer or "-" }}</td>
-            <td>{{ comp.deadline.strftime('%Y.%m.%d') }}</td>
-            <td>{{ comp.view_count }}</td>
-            <td>
-              {% if comp.status == 'closed' %}
-                <span class="deadline-badge closed">마감</span>
-              {% elif comp.status == 'urgent' %}
-                <span class="deadline-badge urgent">D-{{ comp.days_left }}</span>
-              {% elif comp.status == 'soon' %}
-                <span class="deadline-badge soon">D-{{ comp.days_left }}</span>
-              {% else %}
-                <span class="deadline-badge open">D-{{ comp.days_left }}</span>
-              {% endif %}
-            </td>
-            <td style="text-align:center">
-              <form method="post" action="/admin/competition/{{ comp.id }}/toggle-featured" style="margin:0">
-                <button type="submit" class="featured-toggle-btn {% if comp.is_featured %}is-on{% endif %}"
-                        title="{{ '주목 해제' if comp.is_featured else '캐러셀에 주목 표시' }}">
-                  ⭐
-                </button>
-              </form>
-            </td>
-            <td class="table-actions">
-              <a href="/admin/competition/{{ comp.id }}/members" class="btn btn-outline btn-sm">참여자</a>
-              <a href="/admin/edit/{{ comp.id }}" class="btn btn-outline btn-sm">수정</a>
-              <form method="post" action="/admin/delete/{{ comp.id }}" data-confirm="정말 삭제하시겠습니까?">
-                <button type="submit" class="btn btn-danger btn-sm">삭제</button>
-              </form>
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </section>
-    {% else %}
-    <section class="empty-state">
-      <p class="empty-title">등록된 공모전이 없습니다.</p>
-      <a href="/admin/add" class="btn btn-primary">첫 공모전 추가</a>
-    </section>
-    {% endif %}
   </div>
 </main>
 
 <style>
-.featured-toggle-btn {
-  background: none;
-  border: 1.5px solid var(--line);
-  border-radius: 6px;
-  padding: 2px 6px;
-  font-size: 1rem;
-  cursor: pointer;
-  opacity: .3;
-  transition: opacity .15s, border-color .15s;
-  line-height: 1;
+.admin-hub-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+  margin-top: 8px;
 }
-.featured-toggle-btn:hover { opacity: .7; }
-.featured-toggle-btn.is-on {
-  opacity: 1;
-  border-color: #f59e0b;
-  background: rgba(245,158,11,0.08);
+@media (max-width: 600px) {
+  .admin-hub-grid { grid-template-columns: 1fr; }
 }
-.bulk-del-bar {
+
+.admin-hub-card {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 14px;
-  margin-bottom: 8px;
-  background: rgba(239,68,68,.07);
-  border: 1.5px solid rgba(239,68,68,.25);
-  border-radius: 10px;
-  flex-wrap: wrap;
+  gap: 18px;
+  padding: 24px 22px;
+  background: var(--c-surface, #1a1a2e);
+  border: 1.5px solid var(--c-border, rgba(255,255,255,.08));
+  border-radius: 16px;
+  text-decoration: none;
+  color: inherit;
+  transition: border-color .18s, transform .15s, box-shadow .18s;
+  cursor: pointer;
 }
-.bulk-del-count { font-size: .85rem; font-weight: 700; color: #dc2626; }
-</style>
+.admin-hub-card:hover {
+  border-color: var(--cartel-blue, #3b82f6);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 24px rgba(59,130,246,.12);
+}
 
-<script>
-function updateDelBar() {
-  var checked = document.querySelectorAll('.comp-chk:checked');
-  var bar     = document.getElementById('bulkDelBar');
-  var count   = document.getElementById('bulkDelCount');
-  bar.style.display  = checked.length > 0 ? 'flex' : 'none';
-  count.textContent  = checked.length + '개 선택됨';
-  var all    = document.querySelectorAll('.comp-chk');
-  var allChk = document.getElementById('checkAllComp');
-  if (allChk) {
-    allChk.indeterminate = checked.length > 0 && checked.length < all.length;
-    allChk.checked       = all.length > 0 && checked.length === all.length;
-  }
+.admin-hub-icon {
+  font-size: 2rem;
+  flex-shrink: 0;
+  width: 52px;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(59,130,246,.08);
+  border-radius: 12px;
 }
-function toggleAllComp(checked) {
-  document.querySelectorAll('.comp-chk').forEach(function(c){ c.checked = checked; });
-  updateDelBar();
+
+.admin-hub-body {
+  flex: 1;
+  min-width: 0;
 }
-function clearDelSelection() {
-  document.querySelectorAll('.comp-chk').forEach(function(c){ c.checked = false; });
-  var allChk = document.getElementById('checkAllComp');
-  if (allChk) { allChk.checked = false; allChk.indeterminate = false; }
-  updateDelBar();
+.admin-hub-body h2 {
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin: 0 0 4px;
+  color: var(--c-text);
 }
-function submitBulkDelete() {
-  var ids = Array.from(document.querySelectorAll('.comp-chk:checked')).map(function(c){ return c.value; });
-  if (!ids.length) return;
-  if (!confirm(ids.length + '개 공모전을 삭제합니다. 복구할 수 없습니다. 계속하시겠습니까?')) return;
-  var form = document.createElement('form');
-  form.method = 'post';
-  form.action = '/admin/delete-bulk';
-  ids.forEach(function(id) {
-    var inp = document.createElement('input');
-    inp.type = 'hidden'; inp.name = 'ids'; inp.value = id;
-    form.appendChild(inp);
-  });
-  document.body.appendChild(form);
-  form.submit();
+.admin-hub-body p {
+  font-size: .8rem;
+  color: var(--c-muted);
+  margin: 0 0 6px;
 }
-</script>
+.admin-hub-count {
+  font-size: .78rem;
+  font-weight: 700;
+  color: var(--cartel-blue, #3b82f6);
+  background: rgba(59,130,246,.1);
+  padding: 2px 10px;
+  border-radius: 999px;
+}
+
+.admin-hub-arrow {
+  font-size: 1.5rem;
+  color: var(--c-muted);
+  flex-shrink: 0;
+  transition: color .15s;
+}
+.admin-hub-card:hover .admin-hub-arrow {
+  color: var(--cartel-blue, #3b82f6);
+}
+</style>
 {% endblock %}

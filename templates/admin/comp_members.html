@@ -7,7 +7,7 @@
 
     <div class="page-heading">
       <div>
-        <p class="eyebrow">Admin · 참여자 관리</p>
+        <p class="eyebrow"><a href="/admin" style="color:inherit;text-decoration:none;opacity:.6">Admin</a> › <a href="/admin/competitions" style="color:inherit;text-decoration:none;opacity:.6">공모전 관리</a> › 참여자 관리</p>
         <h1 class="page-h1-clamp">{{ comp.title }}</h1>
         <p class="muted" style="margin-top:4px;font-size:.85rem;">
           {{ comp.organizer or "" }}
@@ -17,7 +17,7 @@
       </div>
       <div style="display:flex;gap:8px;align-items:flex-start">
         <a href="/competition/{{ comp.id }}" class="btn btn-outline" target="_blank">공모전 보기</a>
-        <a href="/admin" class="btn btn-outline">관리자 홈</a>
+        <a href="/admin/competitions" class="btn btn-outline">← 공모전 관리</a>
       </div>
     </div>
 

@@ -8,13 +8,12 @@
     {# ── 헤더 + 소스 선택 폼 ── #}
     <div class="page-heading" style="flex-wrap:wrap;gap:16px;align-items:flex-start">
       <div>
-        <p class="eyebrow">Admin · Career</p>
+        <p class="eyebrow"><a href="/admin" style="color:inherit;text-decoration:none;opacity:.6">Admin</a> › <a href="/admin/jobs" style="color:inherit;text-decoration:none;opacity:.6">Career 관리</a> › 크롤링</p>
         <h1>취업 크롤링</h1>
       </div>
       <div style="display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap">
-        <a href="/admin/jobs" class="btn btn-outline">📋 공고 관리</a>
+        <a href="/admin/jobs" class="btn btn-outline">← Career 관리</a>
         <a href="/jobs" class="btn btn-outline">💼 Career</a>
-        <a href="/admin" class="btn btn-outline">← 관리자 패널</a>
 
         <form method="post" action="/admin/jobs/crawl/run" id="crawlForm"
               onsubmit="return onCrawlSubmit(event)">

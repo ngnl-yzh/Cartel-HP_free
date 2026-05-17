@@ -133,10 +133,10 @@
         <span style="flex:1"></span>
         {% if query %}
         <span style="font-size:.8rem;color:var(--muted);padding-right:4px">
-          "<strong style="color:var(--text)">{{ query }}</strong>" · {{ competitions | length }}건
+          "<strong style="color:var(--text)">{{ query }}</strong>" · {{ total_count }}건
         </span>
         {% else %}
-        <span style="font-size:.8rem;color:var(--muted);padding-right:4px">전체 {{ competitions | length }}개</span>
+        <span style="font-size:.8rem;color:var(--muted);padding-right:4px">전체 {{ total_count }}개</span>
         {% endif %}
       </div>
     </div>
@@ -196,6 +196,48 @@
       {% endif %}
     </div>
     {% endif %}
+
+    {# ── 페이지네이션 ── #}
+    {% if total_pages > 1 %}
+    <nav class="pagination" aria-label="페이지 이동">
+      {# 이전 #}
+      {% if page > 1 %}
+      <a href="/competitions?tag={{ current_tag | urlencode }}&sort={{ current_sort | urlencode }}&q={{ query | urlencode }}&page={{ page - 1 }}"
+         class="page-btn page-prev">‹</a>
+      {% else %}
+      <span class="page-btn page-prev disabled">‹</span>
+      {% endif %}
+
+      {# 페이지 번호 — 최대 7개 표시 (현재 ±3) #}
+      {% set start_page = [1, page - 3] | max %}
+      {% set end_page   = [total_pages, page + 3] | min %}
+      {% if start_page > 1 %}
+        <a href="/competitions?tag={{ current_tag | urlencode }}&sort={{ current_sort | urlencode }}&q={{ query | urlencode }}&page=1"
+           class="page-btn">1</a>
+        {% if start_page > 2 %}<span class="page-ellipsis">…</span>{% endif %}
+      {% endif %}
+
+      {% for p in range(start_page, end_page + 1) %}
+      <a href="/competitions?tag={{ current_tag | urlencode }}&sort={{ current_sort | urlencode }}&q={{ query | urlencode }}&page={{ p }}"
+         class="page-btn {% if p == page %}page-current{% endif %}">{{ p }}</a>
+      {% endfor %}
+
+      {% if end_page < total_pages %}
+        {% if end_page < total_pages - 1 %}<span class="page-ellipsis">…</span>{% endif %}
+        <a href="/competitions?tag={{ current_tag | urlencode }}&sort={{ current_sort | urlencode }}&q={{ query | urlencode }}&page={{ total_pages }}"
+           class="page-btn">{{ total_pages }}</a>
+      {% endif %}
+
+      {# 다음 #}
+      {% if page < total_pages %}
+      <a href="/competitions?tag={{ current_tag | urlencode }}&sort={{ current_sort | urlencode }}&q={{ query | urlencode }}&page={{ page + 1 }}"
+         class="page-btn page-next">›</a>
+      {% else %}
+      <span class="page-btn page-next disabled">›</span>
+      {% endif %}
+    </nav>
+    {% endif %}
+
   </div>
 </main>
 

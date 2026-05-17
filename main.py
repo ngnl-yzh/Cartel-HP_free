@@ -622,6 +622,7 @@ async def index(
     tag: str = "",
     sort: str = "deadline",
     q: str = "",
+    page: int = Query(1, ge=1),
     db: Session = Depends(get_db),
 ):
     today = date.today()
@@ -673,7 +674,7 @@ async def index(
     else:
         query = query.order_by(active_priority.asc(), Competition.deadline.asc())
 
-    competitions = _annotate(query.all())
+    all_competitions = _annotate(query.all())
     # upcoming(이벤트 임박) 공모전을 closed 앞에, active 뒤에 배치
     if sort == "deadline":
         def _sort_key(c):
@@ -683,9 +684,16 @@ async def index(
                 ev = c.upcoming_event
                 return (1, ev[3] if ev else 99)
             return (2, -c.days_left)
-        competitions.sort(key=_sort_key)
+        all_competitions.sort(key=_sort_key)
 
-    all_ids = [c.id for c in competitions] + [c.id for c in featured]
+    # 페이지네이션
+    _PAGE_SIZE = 12
+    total_count = len(all_competitions)
+    total_pages = max(1, (total_count + _PAGE_SIZE - 1) // _PAGE_SIZE)
+    page = max(1, min(page, total_pages))
+    competitions = all_competitions[(_PAGE_SIZE * (page - 1)):(_PAGE_SIZE * page)]
+
+    all_ids = [c.id for c in all_competitions] + [c.id for c in featured]
     # 팀장(is_leader=True)은 팀원 수에 포함하지 않음; 승인된 팀원만 카운트
     counts = dict(
         db.query(TeamMember.competition_id, func.count(TeamMember.id))
@@ -697,16 +705,17 @@ async def index(
         .group_by(TeamMember.competition_id)
         .all()
     ) if all_ids else {}
-    for c in competitions + featured:
+    for c in all_competitions + featured:
         c.member_count = counts.get(c.id, 0)
 
     return _render(request,
         "index.html",
         _ctx(request, db,
              featured=featured, competitions=competitions,
-             tags=list(_CONTESTKOREA_CATS),  # 항상 전체 카테고리 표시
+             tags=list(_CONTESTKOREA_CATS),
              current_tag=tag or "all",
-             current_sort=sort, query=q, today=today),
+             current_sort=sort, query=q, today=today,
+             page=page, total_pages=total_pages, total_count=total_count),
     )
 
 

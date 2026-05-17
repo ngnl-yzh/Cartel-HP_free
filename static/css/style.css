@@ -915,6 +915,62 @@ select {
   font-weight: 800;
 }
 
+/* ── 페이지네이션 ── */
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 32px 0 48px;
+  flex-wrap: wrap;
+}
+.page-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+  height: 36px;
+  padding: 0 10px;
+  border-radius: 9px;
+  border: 1.5px solid var(--line);
+  background: var(--surface);
+  color: var(--text);
+  font-size: .85rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: border-color .13s, background .13s, color .13s;
+  cursor: pointer;
+  user-select: none;
+}
+.page-btn:hover:not(.disabled):not(.page-current) {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: rgba(59,130,246,.06);
+}
+.page-current {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff !important;
+  cursor: default;
+}
+.page-btn.disabled {
+  opacity: .35;
+  cursor: default;
+}
+.page-prev, .page-next {
+  font-size: 1.1rem;
+  font-weight: 400;
+}
+.page-ellipsis {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  color: var(--muted);
+  font-size: .85rem;
+  letter-spacing: .1em;
+}
+
 .empty-icon {
   margin: 0;
   font-size: 2rem;

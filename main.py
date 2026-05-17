@@ -4623,8 +4623,15 @@ def _latest_job_crawl_items(db: Session) -> list:
 
 
 def _load_job_crawl_history(db: Session) -> list:
-    """DB에서 취업 크롤 히스토리 목록을 로드 (최신 20개)"""
+    """DB에서 취업 크롤 히스토리 목록을 로드 (최신 20개)
+    이미 추가된 공고는 already_added=True 로 표시하고 목록 하단으로 정렬.
+    """
     try:
+        # 현재 DB에 등록된 공고 링크 세트
+        existing_links: set = {
+            row.link for row in db.query(JobPosting.link).all() if row.link
+        }
+
         rows = (
             db.query(JobCrawlSession)
             .order_by(JobCrawlSession.id.desc())
@@ -4633,9 +4640,20 @@ def _load_job_crawl_history(db: Session) -> list:
         )
         history = []
         for row in rows:
+            items = json.loads(row.items or "[]")
+
+            # 이미 추가된 항목 표시
+            for item in items:
+                item["already_added"] = bool(
+                    item.get("link") and item["link"] in existing_links
+                )
+
+            # 미추가 항목 먼저, 이미 추가된 항목 뒤로
+            items.sort(key=lambda x: x.get("already_added", False))
+
             history.append({
                 "id":         row.id,
-                "items":      json.loads(row.items  or "[]"),
+                "items":      items,
                 "errors":     json.loads(row.errors or "[]"),
                 "counts":     json.loads(row.counts or "{}"),
                 "sources":    json.loads(row.sources or "[]"),

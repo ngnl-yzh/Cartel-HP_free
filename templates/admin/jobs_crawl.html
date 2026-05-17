@@ -150,44 +150,53 @@
               </thead>
               <tbody>
                 {% for item in session['items'] %}
+                {% set added = item.get('already_added', false) %}
                 <tr data-tags="{{ item.job_type or '' }}" data-sess="{{ sess_idx }}"
-                    data-idx="{{ loop.index0 }}">
+                    data-idx="{{ loop.index0 }}"
+                    data-added="{{ 'true' if added else 'false' }}"
+                    class="{% if added %}crawl-row-added{% endif %}">
                   {% if sess_idx == 0 %}
                   <td style="text-align:center">
+                    {% if added %}
+                    <input type="checkbox" disabled style="opacity:.3">
+                    {% else %}
                     <input type="checkbox" class="row-check-{{ sess_idx }}"
                            value="{{ loop.index0 }}"
                            onchange="updateBulkBar({{ sess_idx }})">
+                    {% endif %}
                   </td>
                   {% endif %}
                   <td>
-                    <span class="crawl-site-badge" style="font-size:.72rem">{{ item.source_label }}</span>
+                    <span class="crawl-site-badge crawl-site-{{ item.source }}" style="font-size:.72rem">{{ item.source_label }}</span>
                   </td>
                   <td>
-                    <a href="{{ item.link }}" target="_blank" rel="noopener" class="crawl-title">
+                    <a href="{{ item.link }}" target="_blank" rel="noopener"
+                       class="crawl-title{% if added %} crawl-title-added{% endif %}">
                       {{ item.title[:80] }}{% if item.title | length > 80 %}…{% endif %}
                     </a>
+                    {% if item.description %}
+                    <div class="crawl-desc">{{ item.description }}</div>
+                    {% endif %}
                   </td>
                   <td class="muted" style="font-size:.82rem">{{ item.company or '-' }}</td>
                   <td>
-                    <span class="tag tag-sm" style="
-                      background:{% if item.job_type == '인턴' %}rgba(99,102,241,.15)
-                      {% elif item.job_type == '채용' %}rgba(34,197,94,.15)
-                      {% elif item.job_type == '서포터즈' %}rgba(249,115,22,.15)
-                      {% else %}rgba(168,85,247,.15){% endif %};
-                      color:{% if item.job_type == '인턴' %}#6366f1
-                      {% elif item.job_type == '채용' %}#16a34a
-                      {% elif item.job_type == '서포터즈' %}#ea580c
-                      {% else %}#9333ea{% endif %}">{{ item.job_type or '-' }}</span>
+                    {% if item.job_type %}
+                    <span class="crawl-type-badge crawl-type-{{ item.job_type }}">{{ item.job_type }}</span>
+                    {% else %}-{% endif %}
                   </td>
                   <td class="muted" style="font-size:.82rem;white-space:nowrap">
                     {{ item.deadline or '상시' }}
                   </td>
                   {% if sess_idx == 0 %}
                   <td>
+                    {% if added %}
+                    <span class="crawl-added-badge">이미 추가됨</span>
+                    {% else %}
                     <form method="post" action="/admin/jobs/add">
                       <input type="hidden" name="idx" value="{{ loop.index0 }}">
                       <button type="submit" class="btn btn-outline btn-sm">추가</button>
                     </form>
+                    {% endif %}
                   </td>
                   {% endif %}
                 </tr>
@@ -291,8 +300,61 @@
 .bulk-count { font-size: .85rem; font-weight: 700; color: var(--cartel-blue); }
 .crawl-errors summary { cursor: pointer; font-size: .85rem; color: var(--muted); }
 .crawl-errors ul { margin: 8px 0 0 16px; font-size: .82rem; }
-.crawl-title { color: var(--text); font-weight: 500; }
+.crawl-title { color: var(--text); font-weight: 500; font-size: .9rem; }
 .crawl-title:hover { color: var(--cartel-blue); }
+.crawl-title-added { opacity: .45; text-decoration: line-through; }
+
+/* 요약 설명 */
+.crawl-desc {
+  font-size: .75rem;
+  color: var(--muted);
+  margin-top: 3px;
+  line-height: 1.4;
+  max-width: 360px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 이미 추가된 행 */
+.crawl-row-added {
+  background: rgba(0,0,0,.03);
+  opacity: .6;
+}
+
+/* 이미 추가됨 뱃지 */
+.crawl-added-badge {
+  display: inline-block;
+  font-size: .72rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(100,116,139,.12);
+  color: #64748b;
+  border: 1px solid rgba(100,116,139,.2);
+  white-space: nowrap;
+}
+
+/* 유형 뱃지 — 소스별 색상 */
+.crawl-type-badge {
+  display: inline-block;
+  font-size: .75rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+.crawl-type-인턴    { background: rgba(99,102,241,.13); color: #6366f1; }
+.crawl-type-채용    { background: rgba(34,197,94,.13);  color: #16a34a; }
+.crawl-type-서포터즈 { background: rgba(249,115,22,.13); color: #ea580c; }
+.crawl-type-대외활동 { background: rgba(168,85,247,.13); color: #9333ea; }
+.crawl-type-봉사활동 { background: rgba(20,184,166,.13); color: #0d9488; }
+.crawl-type-기타    { background: rgba(100,116,139,.12); color: #64748b; }
+
+/* 소스 뱃지 색상 구분 */
+.crawl-site-wanted    { background: rgba(239,68,68,.08);   border-color: rgba(239,68,68,.2);   color: #dc2626; }
+.crawl-site-linkareer { background: rgba(59,130,246,.08);  border-color: rgba(59,130,246,.2);  color: #2563eb; }
+.crawl-site-saramin   { background: rgba(234,179,8,.08);   border-color: rgba(234,179,8,.2);   color: #b45309; }
 </style>
 
 <script>
@@ -302,10 +364,14 @@ document.querySelectorAll('.crawl-delete-btn').forEach(function(btn) {
 });
 
 // ── 일괄 선택 ─────────────────────────────────────────────────────
+function isRowVisible(row) {
+  return row.style.display !== 'none' && row.getAttribute('data-added') !== 'true';
+}
+
 function getChecked(sessIdx) {
   return Array.from(
     document.querySelectorAll('.row-check-' + sessIdx + ':checked')
-  ).filter(function(c) { return c.closest('tr').style.display !== 'none'; });
+  ).filter(function(c) { return isRowVisible(c.closest('tr')); });
 }
 
 function updateBulkBar(sessIdx) {
@@ -319,14 +385,14 @@ function updateBulkBar(sessIdx) {
   if (!allChk) return;
   var allVisible = Array.from(
     document.querySelectorAll('.row-check-' + sessIdx)
-  ).filter(function(c) { return c.closest('tr').style.display !== 'none'; });
+  ).filter(function(c) { return isRowVisible(c.closest('tr')); });
   allChk.indeterminate = checked.length > 0 && checked.length < allVisible.length;
   allChk.checked = allVisible.length > 0 && checked.length === allVisible.length;
 }
 
 function toggleAll(sessIdx, checked) {
   Array.from(document.querySelectorAll('.row-check-' + sessIdx)).forEach(function(c) {
-    if (c.closest('tr').style.display !== 'none') c.checked = checked;
+    if (isRowVisible(c.closest('tr'))) c.checked = checked;
   });
   updateBulkBar(sessIdx);
 }
@@ -382,10 +448,11 @@ function onCrawlSubmit(e) {
       var rows = table.querySelectorAll('tbody tr[data-sess="' + sessIdx + '"]');
       var visible = 0;
       rows.forEach(function(row) {
-        var tag  = (row.getAttribute('data-tags') || '').trim();
-        var show = activeTag === 'all' || tag === activeTag;
+        var tag   = (row.getAttribute('data-tags') || '').trim();
+        var show  = activeTag === 'all' || tag === activeTag;
         row.style.display = show ? '' : 'none';
-        if (show) visible++;
+        // 이미 추가된 행은 필터 통과해도 개수에서 제외
+        if (show && row.getAttribute('data-added') !== 'true') visible++;
       });
       if (countEl) countEl.textContent = activeTag === 'all' ? '' : visible + '건';
       updateBulkBar(sessIdx);

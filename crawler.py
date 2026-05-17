@@ -958,7 +958,8 @@ async def crawl_all(sources: list = None) -> dict:
 
 def _job_item(source: str, source_label: str, title: str, company: str,
               link: str, deadline: Optional[str] = None,
-              job_type: str = "인턴", location: str = "") -> dict:
+              job_type: str = "인턴", location: str = "",
+              description: str = "") -> dict:
     return {
         "source":       source,
         "source_label": source_label,
@@ -968,6 +969,7 @@ def _job_item(source: str, source_label: str, title: str, company: str,
         "deadline":     deadline,
         "job_type":     job_type,
         "location":     location,
+        "description":  description[:200] if description else "",  # 최대 200자
     }
 
 
@@ -1043,7 +1045,20 @@ async def crawl_linkareer(client: httpx.AsyncClient) -> list:
             ).strip()
             job_type = _linkareer_job_type(comp, default_type)
 
-            results.append(_job_item("linkareer", "링커리어", title, company, link, deadline, job_type))
+            # description: 카테고리/태그/지원 분야 조합
+            desc_parts = []
+            for fld in ("category", "categories", "field", "tags", "description", "summary", "shortDescription"):
+                val = comp.get(fld)
+                if isinstance(val, str) and val.strip():
+                    desc_parts.append(val.strip()[:80])
+                    break
+                elif isinstance(val, list) and val:
+                    part = " · ".join(str(v) for v in val[:3])
+                    desc_parts.append(part[:80])
+                    break
+            description = " ".join(desc_parts)[:200]
+
+            results.append(_job_item("linkareer", "링커리어", title, company, link, deadline, job_type, "", description))
             added += 1
         return added
 
@@ -1169,9 +1184,12 @@ async def crawl_saramin_intern(client: httpx.AsyncClient) -> list:
                 link     = job.get("url", "")
                 exp_str  = job.get("expiration-date", "") or ""
                 deadline = exp_str[:10] if len(exp_str) >= 10 else None
-                location = job.get("position", {}).get("location", {}).get("name", "")
+                location    = job.get("position", {}).get("location", {}).get("name", "")
+                # description: keyword 필드 (쉼표 구분 → " · " 형식)
+                kw_raw      = job.get("keyword", "") or ""
+                description = " · ".join(k.strip() for k in kw_raw.split(",") if k.strip())[:200]
                 if title and link:
-                    results.append(_job_item("saramin", "사람인", title, company, link, deadline, "인턴", location))
+                    results.append(_job_item("saramin", "사람인", title, company, link, deadline, "인턴", location, description))
             except Exception:
                 continue
         if not results:
@@ -1240,8 +1258,17 @@ async def crawl_wanted(client: httpx.AsyncClient) -> list:
                 else:
                     jtype = "채용"
 
+                # description: 업종 + 경력 정보 조합
+                industry   = job.get("company", {}).get("industry_name", "")
+                tags_raw   = job.get("category_tags") or []
+                tag_names  = " · ".join(
+                    str(t.get("parent_id", "")) for t in tags_raw if isinstance(t, dict)
+                )[:60] if tags_raw else ""
+                desc_parts = [p for p in [industry, tag_names] if p]
+                description = " · ".join(desc_parts)
+
                 if title and link:
-                    results.append(_job_item("wanted", "원티드", title, company, link, deadline, jtype, location))
+                    results.append(_job_item("wanted", "원티드", title, company, link, deadline, jtype, location, description))
 
             # 다음 페이지 없으면 종료
             if not data.get("links", {}).get("next"):

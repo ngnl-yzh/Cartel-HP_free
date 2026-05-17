@@ -3,121 +3,71 @@
 
 {% block content %}
 
-{# ── 타입별 색상 팔레트 (파스텔 라이트) ── #}
-{% set type_palette = {
-  '인턴':    ('#eef2ff', '#6366f1', '#e0e7ff'),
-  '채용':    ('#f0fdf4', '#16a34a', '#dcfce7'),
-  '서포터즈':('#fff7ed', '#ea580c', '#fed7aa'),
-  '대외활동':('#faf5ff', '#9333ea', '#f3e8ff'),
-  '봉사활동':('#f0fdfa', '#0d9488', '#ccfbf1'),
-  '교육/강연':('#f0f9ff', '#0284c7', '#bae6fd'),
-  '기타':    ('#f8fafc', '#64748b', '#e2e8f0')
+{# ── 타입별 색상 팔레트 ── #}
+{% set type_grad = {
+  '인턴':    ('linear-gradient(135deg,#312e81 0%,#4f46e5 100%)', '#6366f1'),
+  '채용':    ('linear-gradient(135deg,#14532d 0%,#15803d 100%)', '#16a34a'),
+  '서포터즈':('linear-gradient(135deg,#7c2d12 0%,#c2410c 100%)', '#ea580c'),
+  '대외활동':('linear-gradient(135deg,#581c87 0%,#7e22ce 100%)', '#9333ea'),
+  '봉사활동':('linear-gradient(135deg,#134e4a 0%,#0f766e 100%)', '#0d9488'),
+  '교육/강연':('linear-gradient(135deg,#0c4a6e 0%,#0369a1 100%)', '#0284c7'),
+  '기타':    ('linear-gradient(135deg,#1e293b 0%,#334155 100%)', '#64748b')
 } %}
 {% set type_icons = {'인턴':'🎓','채용':'💼','서포터즈':'📢','대외활동':'🌐','봉사활동':'🤝','교육/강연':'📚','기타':'📌'} %}
 
-{# ── 히어로 헤더 ── #}
-<div class="jobs-hero">
-  <div class="container">
-    <div class="jobs-hero-inner">
-      <div>
-        <p class="eyebrow" style="color:rgba(255,255,255,.55);margin-bottom:4px;font-size:.75rem;letter-spacing:.08em;text-transform:uppercase">CARTEL</p>
-        <h1 style="font-size:clamp(1.4rem,2.8vw,2rem);font-weight:800;color:#fff;margin:0">💼 Career</h1>
-      </div>
-      <form class="jobs-hero-search" action="/jobs" method="get" id="jobsForm">
-        <input type="hidden" name="job_type" id="hiddenJobType" value="{{ current_job_type }}">
-        <input type="hidden" name="sort"     id="hiddenSort"    value="{{ current_sort }}">
-        <input type="search" name="q" value="{{ query }}" placeholder="공고명 · 회사 검색…"
-               class="jobs-search-input">
-        <select name="sort"
-                onchange="document.getElementById('hiddenSort').value=this.value;this.form.submit()"
-                class="jobs-sort-select">
-          <option value="deadline" {% if current_sort == 'deadline' %}selected{% endif %}>마감일순</option>
-          <option value="newest"   {% if current_sort == 'newest'   %}selected{% endif %}>최신순</option>
-          <option value="views"    {% if current_sort == 'views'    %}selected{% endif %}>조회순</option>
-        </select>
-        <button type="submit" class="btn btn-primary" style="white-space:nowrap">검색</button>
-      </form>
+{# ── 히어로 ── #}
+<div class="c-hero" style="padding:40px 0 32px">
+  <div class="c-hero-inner" style="display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap">
+    <div>
+      <p class="c-hero-eyebrow">CARTEL</p>
+      <h1 class="c-hero-title" style="font-size:clamp(1.5rem,3vw,2rem)">💼 Career</h1>
     </div>
-
-    {% if is_admin is defined and is_admin %}
-    <div style="display:flex;gap:8px;margin-top:14px">
-      <a href="/admin/jobs" class="btn btn-outline" style="border-color:rgba(255,255,255,.25);color:rgba(255,255,255,.75)">📋 공고 관리</a>
-      <a href="/admin/jobs/crawl" class="btn btn-primary">🔍 크롤링</a>
-    </div>
-    {% endif %}
+    <form class="comp-search-form" action="/jobs" method="get" id="jobsForm">
+      <input type="hidden" name="job_type" id="hiddenJobType" value="{{ current_job_type }}">
+      <input type="hidden" name="sort"     id="hiddenSort"    value="{{ current_sort }}">
+      <input type="search" name="q" class="form-control"
+             placeholder="공고명, 회사명 검색…"
+             value="{{ query }}"
+             style="min-width:240px">
+      <button type="submit" class="btn btn-primary" style="white-space:nowrap">검색</button>
+    </form>
   </div>
-</div>
-
-{# ── 분야 탭 필터 ── #}
-<div class="jobs-filter-bar">
-  <div class="container">
-    <div class="jobs-filter-tabs">
-      <button type="button"
-              class="jobs-tab {% if current_job_type == 'all' %}jobs-tab-active{% endif %}"
-              style="--tab-color:#3b82f6;--tab-bg:#eff6ff"
-              onclick="setJobType('all')">전체</button>
-      {% for jt in job_types %}
-      {% set pal = type_palette.get(jt, ('#f8fafc','#64748b','#e2e8f0')) %}
-      <button type="button"
-              class="jobs-tab {% if current_job_type == jt %}jobs-tab-active{% endif %}"
-              style="--tab-color:{{ pal[1] }};--tab-bg:{{ pal[0] }}"
-              onclick="setJobType('{{ jt }}')">
-        {{ type_icons.get(jt, '📌') }} {{ jt }}
-      </button>
-      {% endfor %}
-    </div>
+  {% if is_admin is defined and is_admin %}
+  <div style="display:flex;gap:8px;margin-top:14px">
+    <a href="/admin/jobs" class="btn btn-outline">📋 공고 관리</a>
+    <a href="/admin/jobs/crawl" class="btn btn-primary">🔍 크롤링</a>
   </div>
+  {% endif %}
 </div>
 
-{% if postings %}
-
-{# ── 결과 카운트 ── #}
-<div class="container">
-  <p class="jobs-result-count">
-    {% if current_job_type != 'all' %}
-      <strong>{{ current_job_type }}</strong> ·
-    {% endif %}
-    전체 {{ total_count }}개 공고
-    {% if total_pages > 1 %} · {{ page }}/{{ total_pages }} 페이지{% endif %}
-  </p>
-</div>
-
-{# ══════════════════════════════════════════
-   캐러셀 섹션
-   ══════════════════════════════════════════ #}
-<section class="jobs-carousel-section">
+{# ══════════════════════════════════════════════════════
+   피처드 캐러셀 — 마감 임박 · 인기 공고 최대 15개
+   ══════════════════════════════════════════════════════ #}
+{% if featured_jobs %}
+<section class="featured-section">
   <div class="container">
 
-    {# 헤더 + 네비 #}
-    <div class="jc-header">
+    <div class="fc-header">
       <div>
-        <h2 class="jc-header-title">
-          {% if current_job_type != 'all' %}
-            {{ type_icons.get(current_job_type, '📌') }} {{ current_job_type }} 공고
-          {% else %}
-            🔥 채용 공고
-          {% endif %}
-        </h2>
-        <p class="jc-header-sub">{{ postings | length }}개 · 슬라이드로 탐색</p>
+        <h2 class="fc-header-title">🔥 마감 임박 · 인기 공고</h2>
+        <p class="fc-header-sub">마감일 · 조회수 기준 자동 선정 · {{ featured_jobs | length }}개</p>
       </div>
-      {% if postings | length > 1 %}
-      <div class="jc-nav">
-        <button class="jc-nav-btn" id="jcPause" title="일시정지">⏸</button>
-        <button class="jc-nav-btn" id="jcPrev" title="이전">‹</button>
-        <button class="jc-nav-btn" id="jcNext" title="다음">›</button>
+      {% if featured_jobs | length > 1 %}
+      <div class="fc-nav">
+        <button class="fc-nav-btn" id="fcPause" title="일시정지">⏸</button>
+        <button class="fc-nav-btn" id="fcPrev" title="이전">‹</button>
+        <button class="fc-nav-btn" id="fcNext" title="다음">›</button>
       </div>
       {% endif %}
     </div>
 
-    {# 뷰포트 + 트랙 #}
-    <div class="jc-viewport">
-      <div class="jc-track" id="jobsCarousel">
-        {% for p in postings %}
+    <div class="fc-viewport">
+      <div class="fc-track" id="featuredCarousel">
+        {% for p in featured_jobs %}
         {% set jtype = p.job_type or '기타' %}
-        {% set pal = type_palette.get(jtype, ('#f8fafc','#64748b','#e2e8f0')) %}
-        {% set bg_light  = pal[0] %}
-        {% set accent    = pal[1] %}
-        {% set accent_lt = pal[2] %}
+        {% set grad_pair = type_grad.get(jtype, ('linear-gradient(135deg,#1e293b,#334155)', '#64748b')) %}
+        {% set grad   = grad_pair[0] %}
+        {% set accent = grad_pair[1] %}
         {% set is_closed = p.deadline and p.deadline < today %}
 
         {# 회사명 추출 #}
@@ -128,59 +78,57 @@
         {% set first_char = company_name[0] if company_name else type_icons.get(jtype, '?') %}
 
         <a href="/job/{{ p.id }}" target="_blank" rel="noopener"
-           class="jc-card {% if is_closed %}jc-card-closed{% endif %}"
-           style="--accent:{{ accent }};--accent-lt:{{ accent_lt }};--bg-light:{{ bg_light }}">
+           class="fc-card {% if is_closed %}fc-card-closed{% endif %}">
 
-          {# 상단 컬러 헤더 영역 #}
-          <div class="jc-card-top">
-            <div class="jc-card-avatar">{{ first_char }}</div>
-            <div style="flex:1;min-width:0">
-              <span class="jc-type-chip">{{ type_icons.get(jtype, '📌') }} {{ jtype }}</span>
-            </div>
-            <span class="jc-source-chip">{{ p.source_label }}</span>
-          </div>
-
-          {# 카드 본문 #}
-          <div class="jc-card-body">
-            {% if company_name %}
-            <p class="jc-card-company">{{ company_name }}</p>
-            {% endif %}
-            <p class="jc-card-title">{{ p.title }}</p>
-            {% if p.location %}
-            <p class="jc-card-location">📍 {{ p.location }}</p>
-            {% endif %}
-          </div>
-
-          {# 카드 푸터 #}
-          <div class="jc-card-footer">
-            {% if is_closed %}
-              <span class="jc-deadline jc-deadline-closed">마감</span>
-            {% elif p.deadline %}
-              {% set days = (p.deadline - today).days %}
-              {% if days <= 3 %}
-                <span class="jc-deadline jc-deadline-urgent">🔴 D-{{ days }}</span>
-              {% elif days <= 7 %}
-                <span class="jc-deadline jc-deadline-soon">🟡 D-{{ days }}</span>
+          {# 이미지 영역 — 그라디언트 #}
+          <div class="fc-card-img" style="background:{{ grad }}">
+            <div class="fc-card-overlay"></div>
+            <div class="fc-job-avatar">{{ first_char }}</div>
+            <div class="fc-card-badges">
+              {% if is_closed %}
+                <span class="fc-badge" style="background:rgba(100,116,139,.7)">마감</span>
+              {% elif p.deadline %}
+                {% set days = (p.deadline - today).days %}
+                {% if days <= 3 %}
+                  <span class="fc-badge fc-badge-urgent">D-{{ days }}</span>
+                {% elif days <= 7 %}
+                  <span class="fc-badge fc-badge-soon">D-{{ days }}</span>
+                {% else %}
+                  <span class="fc-badge fc-badge-open">D-{{ days }}</span>
+                {% endif %}
               {% else %}
-                <span class="jc-deadline jc-deadline-open">{{ p.deadline.strftime('%m/%d') }} 마감</span>
+                <span class="fc-badge fc-badge-open">상시</span>
               {% endif %}
-            {% else %}
-              <span class="jc-deadline jc-deadline-always">상시 채용</span>
+            </div>
+          </div>
+
+          {# 텍스트 영역 #}
+          <div class="fc-card-body">
+            <div class="fc-card-tags">
+              <span class="fc-card-tag" style="background:{{ accent }}18;color:{{ accent }};border-color:{{ accent }}30">
+                {{ type_icons.get(jtype, '📌') }} {{ jtype }}
+              </span>
+            </div>
+            {% if company_name %}
+            <p class="fc-card-org">{{ company_name }}</p>
             {% endif %}
-            <span class="jc-views">👁 {{ p.view_count }}</span>
+            <p class="fc-card-title">{{ p.title }}</p>
+            {% if p.location %}
+            <p class="fc-card-prize">📍 {{ p.location }}</p>
+            {% endif %}
+            <p class="fc-card-views">조회 {{ p.view_count }}</p>
           </div>
         </a>
         {% endfor %}
       </div>
     </div>
 
-    {# 프로그레스 + 도트 #}
-    {% if postings | length > 1 %}
-    <div class="jc-footer">
-      <div class="jc-progress-wrap"><div class="jc-progress" id="jcProgress"></div></div>
-      <div class="jc-dots" id="jcDots">
-        {% for p in postings %}
-        <button class="jcdot {% if loop.first %}is-active{% endif %}" data-idx="{{ loop.index0 }}"></button>
+    {% if featured_jobs | length > 1 %}
+    <div class="fc-footer">
+      <div class="fc-progress-wrap"><div class="fc-progress" id="fcProgress"></div></div>
+      <div class="fc-dots" id="fcDots">
+        {% for p in featured_jobs %}
+        <button class="fcdot {% if loop.first %}is-active{% endif %}" data-idx="{{ loop.index0 }}"></button>
         {% endfor %}
       </div>
     </div>
@@ -188,384 +136,349 @@
 
   </div>
 </section>
-
-{# ── 페이지네이션 ── #}
-{% if total_pages > 1 %}
-<div class="container">
-  <nav class="pagination" aria-label="페이지 이동" style="margin-bottom:56px">
-    {% if page > 1 %}
-    <a href="/jobs?q={{ query | urlencode }}&job_type={{ current_job_type | urlencode }}&sort={{ current_sort | urlencode }}&page={{ page - 1 }}"
-       class="page-btn page-prev">‹</a>
-    {% else %}
-    <span class="page-btn page-prev disabled">‹</span>
-    {% endif %}
-
-    {% set start_page = [1, page - 3] | max %}
-    {% set end_page   = [total_pages, page + 3] | min %}
-    {% if start_page > 1 %}
-      <a href="/jobs?q={{ query | urlencode }}&job_type={{ current_job_type | urlencode }}&sort={{ current_sort | urlencode }}&page=1"
-         class="page-btn">1</a>
-      {% if start_page > 2 %}<span class="page-ellipsis">…</span>{% endif %}
-    {% endif %}
-
-    {% for p in range(start_page, end_page + 1) %}
-    <a href="/jobs?q={{ query | urlencode }}&job_type={{ current_job_type | urlencode }}&sort={{ current_sort | urlencode }}&page={{ p }}"
-       class="page-btn {% if p == page %}page-current{% endif %}">{{ p }}</a>
-    {% endfor %}
-
-    {% if end_page < total_pages %}
-      {% if end_page < total_pages - 1 %}<span class="page-ellipsis">…</span>{% endif %}
-      <a href="/jobs?q={{ query | urlencode }}&job_type={{ current_job_type | urlencode }}&sort={{ current_sort | urlencode }}&page={{ total_pages }}"
-         class="page-btn">{{ total_pages }}</a>
-    {% endif %}
-
-    {% if page < total_pages %}
-    <a href="/jobs?q={{ query | urlencode }}&job_type={{ current_job_type | urlencode }}&sort={{ current_sort | urlencode }}&page={{ page + 1 }}"
-       class="page-btn page-next">›</a>
-    {% else %}
-    <span class="page-btn page-next disabled">›</span>
-    {% endif %}
-  </nav>
-</div>
 {% endif %}
 
-{% else %}
-<div class="container">
-  <div class="empty-state" style="margin-top:48px">
-    <p>조건에 맞는 공고가 없습니다.</p>
-    {% if is_admin is defined and is_admin %}
-    <a href="/admin/jobs/crawl" class="btn btn-primary" style="margin-top:12px">크롤링 시작</a>
+{# ══════════════════════════════════════════════════════
+   메인 — 필터 + 그리드
+   ══════════════════════════════════════════════════════ #}
+<main class="main-content">
+  <div class="container">
+
+    <div class="toolbar" style="flex-wrap:wrap;gap:10px">
+      {# 분야 탭 #}
+      <div class="filter-bar" style="flex-wrap:wrap">
+        <button type="button"
+                class="filter-btn {% if current_job_type == 'all' %}active{% endif %}"
+                onclick="setJobType('all')">전체</button>
+        {% for jt in job_types %}
+        <button type="button"
+                class="filter-btn {% if current_job_type == jt %}active{% endif %}"
+                onclick="setJobType('{{ jt }}')">
+          {{ type_icons.get(jt, '📌') }} {{ jt }}
+        </button>
+        {% endfor %}
+      </div>
+
+      {# 정렬 #}
+      <div class="sort-bar">
+        <span class="sort-label">정렬</span>
+        <a href="/jobs?job_type={{ current_job_type | urlencode }}&sort=deadline&q={{ query | urlencode }}"
+           class="sort-btn {% if current_sort == 'deadline' %}active{% endif %}">마감일순</a>
+        <a href="/jobs?job_type={{ current_job_type | urlencode }}&sort=views&q={{ query | urlencode }}"
+           class="sort-btn {% if current_sort == 'views' %}active{% endif %}">조회순</a>
+        <a href="/jobs?job_type={{ current_job_type | urlencode }}&sort=newest&q={{ query | urlencode }}"
+           class="sort-btn {% if current_sort == 'newest' %}active{% endif %}">최신순</a>
+        <span style="flex:1"></span>
+        {% if query %}
+        <span style="font-size:.8rem;color:var(--muted);padding-right:4px">
+          "<strong style="color:var(--text)">{{ query }}</strong>" · {{ total_count }}건
+        </span>
+        {% else %}
+        <span style="font-size:.8rem;color:var(--muted);padding-right:4px">전체 {{ total_count }}개</span>
+        {% endif %}
+      </div>
+    </div>
+
+    {% if postings %}
+    <div class="jobs-grid">
+      {% for p in postings %}
+      {% set jtype = p.job_type or '기타' %}
+      {% set grad_pair = type_grad.get(jtype, ('linear-gradient(135deg,#1e293b,#334155)', '#64748b')) %}
+      {% set accent = grad_pair[1] %}
+      {% set is_closed = p.deadline and p.deadline < today %}
+
+      {# 회사명 추출 #}
+      {% set company_name = p.company if p.company else '' %}
+      {% if not company_name and '[' in p.title and ']' in p.title %}
+        {% set company_name = p.title.split(']')[0].lstrip('[') %}
+      {% endif %}
+
+      <a href="/job/{{ p.id }}" target="_blank" rel="noopener"
+         class="job-card {% if is_closed %}job-card-closed{% endif %}"
+         style="--accent:{{ accent }}">
+
+        {# 상단 헤더 #}
+        <div class="job-card-head">
+          <div class="job-card-avatar" style="background:{{ accent }}18;border-color:{{ accent }}40;color:{{ accent }}">
+            {% if company_name %}{{ company_name[0] }}{% else %}{{ type_icons.get(jtype, '?') }}{% endif %}
+          </div>
+          <div style="flex:1;min-width:0">
+            <span class="job-type-chip" style="background:{{ accent }}15;color:{{ accent }}">
+              {{ type_icons.get(jtype, '📌') }} {{ jtype }}
+            </span>
+          </div>
+          <span class="job-source-chip">{{ p.source_label }}</span>
+        </div>
+
+        {# 본문 #}
+        <div class="job-card-body">
+          {% if company_name %}
+          <p class="job-card-company">{{ company_name }}</p>
+          {% endif %}
+          <h3 class="job-card-title">{{ p.title }}</h3>
+          {% if p.location %}
+          <p class="job-card-location">📍 {{ p.location }}</p>
+          {% endif %}
+        </div>
+
+        {# 하단 #}
+        <div class="job-card-footer">
+          {% if is_closed %}
+            <span class="deadline-badge closed">마감</span>
+          {% elif p.deadline %}
+            {% set days = (p.deadline - today).days %}
+            {% if days <= 3 %}
+              <span class="deadline-badge urgent">D-{{ days }}</span>
+            {% elif days <= 7 %}
+              <span class="deadline-badge soon">D-{{ days }}</span>
+            {% else %}
+              <span class="deadline-badge open">{{ p.deadline.strftime('%m/%d') }} 마감</span>
+            {% endif %}
+          {% else %}
+            <span class="deadline-badge open" style="background:rgba(59,130,246,.08);color:#3b82f6">상시 채용</span>
+          {% endif %}
+          <span class="view-count-sm">조회 {{ p.view_count }}</span>
+        </div>
+      </a>
+      {% endfor %}
+    </div>
+
+    {# ── 페이지네이션 ── #}
+    {% if total_pages > 1 %}
+    <nav class="pagination" aria-label="페이지 이동">
+      {% if page > 1 %}
+      <a href="/jobs?q={{ query | urlencode }}&job_type={{ current_job_type | urlencode }}&sort={{ current_sort | urlencode }}&page={{ page - 1 }}"
+         class="page-btn page-prev">‹</a>
+      {% else %}
+      <span class="page-btn page-prev disabled">‹</span>
+      {% endif %}
+
+      {% set start_page = [1, page - 3] | max %}
+      {% set end_page   = [total_pages, page + 3] | min %}
+      {% if start_page > 1 %}
+        <a href="/jobs?q={{ query | urlencode }}&job_type={{ current_job_type | urlencode }}&sort={{ current_sort | urlencode }}&page=1"
+           class="page-btn">1</a>
+        {% if start_page > 2 %}<span class="page-ellipsis">…</span>{% endif %}
+      {% endif %}
+
+      {% for p in range(start_page, end_page + 1) %}
+      <a href="/jobs?q={{ query | urlencode }}&job_type={{ current_job_type | urlencode }}&sort={{ current_sort | urlencode }}&page={{ p }}"
+         class="page-btn {% if p == page %}page-current{% endif %}">{{ p }}</a>
+      {% endfor %}
+
+      {% if end_page < total_pages %}
+        {% if end_page < total_pages - 1 %}<span class="page-ellipsis">…</span>{% endif %}
+        <a href="/jobs?q={{ query | urlencode }}&job_type={{ current_job_type | urlencode }}&sort={{ current_sort | urlencode }}&page={{ total_pages }}"
+           class="page-btn">{{ total_pages }}</a>
+      {% endif %}
+
+      {% if page < total_pages %}
+      <a href="/jobs?q={{ query | urlencode }}&job_type={{ current_job_type | urlencode }}&sort={{ current_sort | urlencode }}&page={{ page + 1 }}"
+         class="page-btn page-next">›</a>
+      {% else %}
+      <span class="page-btn page-next disabled">›</span>
+      {% endif %}
+    </nav>
     {% endif %}
+
+    {% else %}
+    <div class="empty-state">
+      <p class="empty-text">조건에 맞는 공고가 없습니다.</p>
+      {% if is_admin is defined and is_admin %}
+        <a href="/admin/jobs/crawl" class="btn btn-primary" style="margin-top:12px">크롤링 시작</a>
+      {% endif %}
+    </div>
+    {% endif %}
+
   </div>
-</div>
-{% endif %}
+</main>
 
 <style>
-/* ══════════════════════════════════════════
-   히어로
-   ══════════════════════════════════════════ */
-.jobs-hero {
-  background: linear-gradient(135deg, #1e3a5f 0%, #2563eb 60%, #1e40af 100%);
+/* ── 피처드 캐러셀 (공모전 페이지 fc-* 스타일 복사) ── */
+.featured-section {
   padding: 36px 0 28px;
+  background: linear-gradient(180deg, #f0f5ff 0%, var(--bg, #f8f9fc) 100%);
+  border-bottom: 1px solid var(--line);
 }
-.jobs-hero-inner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  flex-wrap: wrap;
+.fc-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 18px; gap: 12px;
 }
-.jobs-hero-search {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  flex-wrap: wrap;
+.fc-header-title {
+  font-family: var(--font-display);
+  font-size: clamp(1.1rem,2vw,1.45rem);
+  font-weight: 800; margin: 0 0 3px; color: var(--text);
 }
-.jobs-search-input {
-  min-width: 220px;
-  padding: 8px 14px;
-  border-radius: 8px;
-  border: 1.5px solid rgba(255,255,255,.25);
-  background: rgba(255,255,255,.15);
-  color: #fff;
-  font-size: .88rem;
-  outline: none;
-  transition: border-color .15s, background .15s;
-  backdrop-filter: blur(4px);
-}
-.jobs-search-input:focus {
-  border-color: rgba(255,255,255,.6);
-  background: rgba(255,255,255,.2);
-}
-.jobs-search-input::placeholder { color: rgba(255,255,255,.5); }
-.jobs-sort-select {
-  padding: 8px 12px;
-  border-radius: 8px;
-  border: 1.5px solid rgba(255,255,255,.25);
-  background: rgba(255,255,255,.15);
-  color: #fff;
-  font-size: .85rem;
-  cursor: pointer;
-  backdrop-filter: blur(4px);
-}
-.jobs-sort-select option { background: #1e3a5f; color: #fff; }
-
-/* ══════════════════════════════════════════
-   분야 탭 필터
-   ══════════════════════════════════════════ */
-.jobs-filter-bar {
-  background: #fff;
-  border-bottom: 1px solid #e2e8f0;
-  position: sticky;
-  top: 0;
-  z-index: 30;
-  box-shadow: 0 1px 6px rgba(0,0,0,.06);
-}
-.jobs-filter-tabs {
-  display: flex;
-  gap: 6px;
-  padding: 10px 0;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-.jobs-filter-tabs::-webkit-scrollbar { display: none; }
-.jobs-tab {
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 6px 16px;
-  border-radius: 999px;
-  border: 1.5px solid #e2e8f0;
-  background: #f8fafc;
-  color: #64748b;
-  font-size: .82rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all .15s;
-  white-space: nowrap;
-}
-.jobs-tab:hover {
-  border-color: var(--tab-color, #3b82f6);
-  color: var(--tab-color, #3b82f6);
-  background: var(--tab-bg, #eff6ff);
-}
-.jobs-tab-active {
-  background: var(--tab-color, #3b82f6) !important;
-  border-color: var(--tab-color, #3b82f6) !important;
-  color: #fff !important;
-}
-
-/* ══════════════════════════════════════════
-   결과 카운트
-   ══════════════════════════════════════════ */
-.jobs-result-count {
-  font-size: .82rem;
-  color: #94a3b8;
-  margin: 20px 0 4px;
-}
-.jobs-result-count strong { color: #1e293b; }
-
-/* ══════════════════════════════════════════
-   캐러셀 섹션
-   ══════════════════════════════════════════ */
-.jobs-carousel-section { padding: 0 0 48px; }
-
-.jc-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 16px;
-  gap: 12px;
-}
-.jc-header-title {
-  font-size: clamp(1rem, 2vw, 1.25rem);
-  font-weight: 800;
-  margin: 0 0 3px;
-  color: #1e293b;
-}
-.jc-header-sub { font-size: .8rem; color: #94a3b8; margin: 0; }
-
-/* ── 네비 버튼 ── */
-.jc-nav { display: flex; gap: 6px; flex-shrink: 0; }
-.jc-nav-btn {
-  width: 34px; height: 34px;
-  border-radius: 50%;
-  border: 1.5px solid #e2e8f0;
-  background: #fff;
-  color: #475569;
-  font-size: 1.2rem;
-  line-height: 1;
-  cursor: pointer;
+.fc-header-sub { font-size: .8rem; color: var(--muted); margin: 0; }
+.fc-nav { display: flex; gap: 6px; flex-shrink: 0; }
+.fc-nav-btn {
+  width: 34px; height: 34px; border-radius: 50%;
+  border: 1.5px solid var(--line); background: var(--surface);
+  color: var(--text); font-size: 1.2rem; line-height: 1; cursor: pointer;
   display: flex; align-items: center; justify-content: center;
-  transition: all .15s;
+  transition: background .15s, border-color .15s, color .15s;
   box-shadow: 0 1px 4px rgba(0,0,0,.06);
 }
-.jc-nav-btn:hover {
-  background: #3b82f6;
-  border-color: #3b82f6;
-  color: #fff;
-  box-shadow: 0 2px 8px rgba(59,130,246,.3);
-}
-
-/* ── 뷰포트 + 트랙 ── */
-.jc-viewport { overflow: hidden; border-radius: 16px; }
-.jc-track {
-  display: flex;
-  gap: 14px;
+.fc-nav-btn:hover { background: var(--cartel-blue); border-color: var(--cartel-blue); color: #fff; }
+.fc-viewport { overflow: hidden; border-radius: 16px; }
+.fc-track {
+  display: flex; gap: 14px;
   transition: transform .42s cubic-bezier(.4,0,.2,1);
   will-change: transform;
 }
-
-/* ══════════════════════════════════════════
-   카드
-   ══════════════════════════════════════════ */
-.jc-card {
+.fc-card {
   flex: 0 0 calc(20% - 12px);
-  min-width: 0;
-  border-radius: 14px;
-  overflow: hidden;
-  background: #fff;
-  border: 1.5px solid #e8edf3;
-  text-decoration: none;
-  color: #1e293b;
-  display: flex;
-  flex-direction: column;
+  min-width: 0; border-radius: 14px; overflow: hidden;
+  background: var(--surface); border: 1.5px solid var(--line);
+  text-decoration: none; color: var(--text);
   transition: transform .2s, box-shadow .2s, border-color .2s;
-  box-shadow: 0 2px 8px rgba(0,0,0,.05);
+  display: flex; flex-direction: column;
 }
-.jc-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 12px 32px rgba(0,0,0,.1);
-  border-color: var(--accent, #3b82f6);
+.fc-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 10px 36px rgba(37,99,235,.14);
+  border-color: rgba(37,99,235,.25);
 }
-.jc-card-closed { opacity: .55; }
-
-/* ── 상단 컬러 헤더 ── */
-.jc-card-top {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 14px;
-  background: var(--bg-light, #f8fafc);
-  border-bottom: 1.5px solid var(--accent-lt, #e2e8f0);
+.fc-card-closed { opacity: .55; }
+.fc-card-img {
+  position: relative; height: 148px;
+  background-size: cover; background-position: center; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
 }
-.jc-card-avatar {
-  width: 38px;
-  height: 38px;
-  border-radius: 10px;
-  background: var(--accent-lt, #e0e7ff);
-  border: 1.5px solid var(--accent, #6366f1);
-  color: var(--accent, #6366f1);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1.1rem;
-  font-weight: 900;
-  flex-shrink: 0;
+.fc-card-overlay {
+  position: absolute; inset: 0;
+  background: linear-gradient(0deg, rgba(0,0,0,.5) 0%, transparent 55%);
 }
-.jc-type-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  font-size: .7rem;
-  font-weight: 700;
-  padding: 3px 9px;
-  border-radius: 6px;
-  background: var(--accent-lt, #e0e7ff);
-  color: var(--accent, #6366f1);
+/* 잡 아바타 (공모전 이미지 영역 대체) */
+.fc-job-avatar {
+  position: relative; z-index: 1;
+  width: 60px; height: 60px; border-radius: 16px;
+  background: rgba(255,255,255,.15);
+  border: 2px solid rgba(255,255,255,.3);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.7rem; font-weight: 900; color: #fff;
+  backdrop-filter: blur(6px);
 }
-.jc-source-chip {
-  font-size: .65rem;
-  font-weight: 600;
-  padding: 2px 7px;
-  border-radius: 5px;
-  background: rgba(100,116,139,.1);
-  color: #94a3b8;
-  white-space: nowrap;
-  flex-shrink: 0;
+.fc-card-badges {
+  position: absolute; top: 9px; left: 9px;
+  display: flex; gap: 4px; flex-wrap: wrap; z-index: 2;
 }
-
-/* ── 카드 본문 ── */
-.jc-card-body {
-  padding: 12px 14px 8px;
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  background: #fff;
+.fc-badge {
+  font-size: .64rem; font-weight: 700; padding: 2px 8px;
+  border-radius: 999px; backdrop-filter: blur(6px);
+  border: 1px solid rgba(255,255,255,.25); color: #fff; letter-spacing: .02em;
 }
-.jc-card-company {
-  font-size: .72rem;
-  font-weight: 700;
-  color: #94a3b8;
-  margin: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.fc-badge-urgent { background: rgba(239,68,68,.8); }
+.fc-badge-soon   { background: rgba(234,179,8,.75); color: #1a1a00; }
+.fc-badge-open   { background: rgba(37,99,235,.7); }
+.fc-card-body {
+  padding: 12px 13px 13px; flex: 1;
+  display: flex; flex-direction: column; gap: 3px;
 }
-.jc-card-title {
-  font-size: .88rem;
-  font-weight: 700;
-  line-height: 1.45;
-  color: #1e293b;
-  margin: 0;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+.fc-card-tags { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 2px; }
+.fc-card-tag {
+  font-size: .62rem; font-weight: 600; padding: 2px 8px;
+  border-radius: 999px; border: 1px solid;
 }
-.jc-card-location {
-  font-size: .72rem;
-  color: #94a3b8;
-  margin: 0;
+.fc-card-title {
+  font-family: var(--font-display);
+  font-size: .84rem; font-weight: 700; line-height: 1.4; margin: 0;
+  color: var(--text);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
-
-/* ── 카드 푸터 ── */
-.jc-card-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 14px 12px;
-  border-top: 1px solid #f1f5f9;
-  background: #fff;
-  margin-top: auto;
+.fc-card-org   { font-size: .73rem; color: var(--muted); margin: 0; }
+.fc-card-prize { font-size: .72rem; color: var(--muted); margin: 0; }
+.fc-card-views { font-size: .7rem; color: var(--muted); margin-top: auto; padding-top: 4px; }
+.fc-footer {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 10px; margin-top: 18px;
 }
-.jc-deadline {
-  font-size: .72rem;
-  font-weight: 700;
-  padding: 3px 9px;
-  border-radius: 6px;
+.fc-progress-wrap {
+  width: 100%; height: 3px; border-radius: 2px;
+  background: var(--line); overflow: hidden;
 }
-.jc-deadline-closed { background:#f1f5f9; color:#94a3b8; }
-.jc-deadline-urgent { background:#fef2f2; color:#ef4444; }
-.jc-deadline-soon   { background:#fefce8; color:#d97706; }
-.jc-deadline-open   { background:#f0fdf4; color:#16a34a; }
-.jc-deadline-always { background:#eff6ff; color:#3b82f6; }
-.jc-views {
-  font-size: .72rem;
-  color: #cbd5e1;
+.fc-progress {
+  height: 100%; background: var(--cartel-blue);
+  width: 0%; border-radius: 2px; transition: width linear;
 }
-
-/* ── 프로그레스 + 도트 ── */
-.jc-footer {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  margin-top: 18px;
-}
-.jc-progress-wrap {
-  width: 100%;
-  height: 3px;
-  border-radius: 2px;
-  background: #e2e8f0;
-  overflow: hidden;
-}
-.jc-progress {
-  height: 100%;
-  background: #3b82f6;
-  width: 0%;
-  border-radius: 2px;
-  transition: width linear;
-}
-.jc-dots { display: flex; gap: 5px; }
-.jcdot {
-  width: 7px; height: 7px;
-  border-radius: 50%;
-  border: none;
-  background: #cbd5e1;
-  cursor: pointer;
-  padding: 0;
+.fc-dots { display: flex; gap: 5px; }
+.fcdot {
+  width: 7px; height: 7px; border-radius: 50%; border: none;
+  background: var(--line); cursor: pointer; padding: 0;
   transition: background .2s, width .2s;
 }
-.jcdot.is-active { background: #3b82f6; width: 20px; border-radius: 4px; }
+.fcdot.is-active { background: var(--cartel-blue); width: 20px; border-radius: 4px; }
+@media (max-width: 1100px) { .fc-card { flex: 0 0 calc(25% - 11px); } }
+@media (max-width: 800px)  { .fc-card { flex: 0 0 calc(33.33% - 10px); } }
+@media (max-width: 560px)  { .fc-card { flex: 0 0 calc(50% - 7px); } }
+@media (max-width: 380px)  { .fc-card { flex: 0 0 85vw; } }
 
-/* ── 반응형 ── */
-@media (max-width: 1100px) { .jc-card { flex: 0 0 calc(25% - 11px); } }
-@media (max-width: 800px)  { .jc-card { flex: 0 0 calc(33.33% - 10px); } }
-@media (max-width: 560px)  { .jc-card { flex: 0 0 calc(50% - 7px); } }
-@media (max-width: 380px)  { .jc-card { flex: 0 0 85vw; } }
+/* ── 메인 그리드 ── */
+.jobs-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin-bottom: 40px;
+}
+@media (max-width: 900px) { .jobs-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 560px) { .jobs-grid { grid-template-columns: 1fr; } }
+
+/* ── 그리드 카드 ── */
+.job-card {
+  display: flex; flex-direction: column;
+  border-radius: 14px;
+  border: 1.5px solid var(--line);
+  background: var(--surface);
+  text-decoration: none; color: var(--text);
+  transition: transform .18s, border-color .18s, box-shadow .18s;
+  overflow: hidden;
+}
+.job-card:hover {
+  transform: translateY(-3px);
+  border-color: var(--accent, var(--cartel-blue));
+  box-shadow: 0 8px 28px rgba(0,0,0,.1);
+}
+.job-card-closed { opacity: .55; }
+.job-card-head {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 14px;
+  background: rgba(0,0,0,.02);
+  border-bottom: 1px solid var(--line);
+}
+.job-card-avatar {
+  width: 36px; height: 36px; border-radius: 9px;
+  border: 1.5px solid;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1rem; font-weight: 800; flex-shrink: 0;
+}
+.job-type-chip {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-size: .7rem; font-weight: 700;
+  padding: 3px 8px; border-radius: 6px;
+}
+.job-source-chip {
+  font-size: .65rem; font-weight: 600;
+  padding: 2px 7px; border-radius: 5px;
+  background: rgba(100,116,139,.1);
+  color: var(--muted); white-space: nowrap; flex-shrink: 0;
+}
+.job-card-body { padding: 12px 14px 8px; flex: 1; }
+.job-card-company {
+  font-size: .74rem; font-weight: 700; color: var(--muted); margin: 0 0 4px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.job-card-title {
+  font-size: .9rem; font-weight: 700; line-height: 1.4;
+  color: var(--text); margin: 0 0 5px;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.job-card-location { font-size: .74rem; color: var(--muted); margin: 0; }
+.job-card-footer {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 9px 14px 13px;
+  border-top: 1px solid var(--line);
+  margin-top: auto;
+}
 </style>
 
 {% block scripts %}
@@ -575,16 +488,16 @@ function setJobType(type) {
   document.getElementById('jobsForm').submit();
 }
 
+/* ── 피처드 캐러셀 ── */
 (function () {
-  const track    = document.getElementById('jobsCarousel');
+  const track    = document.getElementById('featuredCarousel');
   if (!track) return;
-
-  const cards    = Array.from(track.querySelectorAll('.jc-card'));
-  const dots     = Array.from(document.querySelectorAll('.jcdot'));
-  const prevBtn  = document.getElementById('jcPrev');
-  const nextBtn  = document.getElementById('jcNext');
-  const pauseBtn = document.getElementById('jcPause');
-  const progEl   = document.getElementById('jcProgress');
+  const cards    = Array.from(track.querySelectorAll('.fc-card'));
+  const dots     = Array.from(document.querySelectorAll('.fcdot'));
+  const prevBtn  = document.getElementById('fcPrev');
+  const nextBtn  = document.getElementById('fcNext');
+  const pauseBtn = document.getElementById('fcPause');
+  const progEl   = document.getElementById('fcProgress');
   const viewport = track.parentElement;
   const total    = cards.length;
   if (total <= 1) return;
@@ -609,11 +522,9 @@ function setJobType(type) {
     dots.forEach((d, i) => d.classList.toggle('is-active', i === cur));
     startProgress();
   }
-
   function startProgress() {
     if (!progEl) return;
-    progEl.style.transition = 'none';
-    progEl.style.width = '0%';
+    progEl.style.transition = 'none'; progEl.style.width = '0%';
     requestAnimationFrame(() => requestAnimationFrame(() => {
       progEl.style.transition = `width ${INTERVAL}ms linear`;
       progEl.style.width = '100%';
@@ -621,10 +532,8 @@ function setJobType(type) {
   }
   function stopProgress() {
     if (!progEl) return;
-    progEl.style.transition = 'none';
-    progEl.style.width = '0%';
+    progEl.style.transition = 'none'; progEl.style.width = '0%';
   }
-
   function startAuto() {
     clearInterval(timer);
     timer = setInterval(() => { if (!paused) goTo(cur >= maxIdx() ? 0 : cur + 1); }, INTERVAL);
@@ -641,7 +550,6 @@ function setJobType(type) {
     paused ? stopAuto() : startAuto();
   });
   dots.forEach((d, i) => d.addEventListener('click', () => { goTo(i); resetAuto(); }));
-
   viewport.addEventListener('mouseenter', () => stopAuto());
   viewport.addEventListener('mouseleave', () => { if (!paused) startAuto(); });
 
@@ -653,8 +561,7 @@ function setJobType(type) {
   }, { passive: true });
 
   window.addEventListener('resize', () => goTo(cur));
-  goTo(0);
-  startAuto();
+  goTo(0); startAuto();
 })();
 </script>
 {% endblock %}

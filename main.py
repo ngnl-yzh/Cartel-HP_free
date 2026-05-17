@@ -4559,6 +4559,28 @@ async def jobs_page(
     db: Session = Depends(get_db),
 ):
     today = date.today()
+
+    # ── 피처드: 마감 임박 8개 + 조회수 높은 10개 → 최대 15개 ──
+    _by_deadline = (
+        db.query(JobPosting)
+        .filter(JobPosting.deadline != None, JobPosting.deadline >= today)  # noqa: E711
+        .order_by(JobPosting.deadline.asc())
+        .limit(8).all()
+    )
+    _by_views = (
+        db.query(JobPosting)
+        .filter(or_(JobPosting.deadline == None, JobPosting.deadline >= today))  # noqa: E711
+        .order_by(JobPosting.view_count.desc())
+        .limit(10).all()
+    )
+    _seen: set = set()
+    featured_jobs: list = []
+    for _j in _by_deadline + _by_views:
+        if _j.id not in _seen and len(featured_jobs) < 15:
+            _seen.add(_j.id)
+            featured_jobs.append(_j)
+
+    # ── 메인 그리드 쿼리 ──
     query = db.query(JobPosting)
 
     if q:
@@ -4595,6 +4617,7 @@ async def jobs_page(
     postings     = all_postings[(_JOB_PAGE_SIZE * (page - 1)):(_JOB_PAGE_SIZE * page)]
 
     return _render(request, "jobs.html", _ctx(request, db,
+        featured_jobs=featured_jobs,
         postings=postings,
         query=q,
         current_job_type=job_type,

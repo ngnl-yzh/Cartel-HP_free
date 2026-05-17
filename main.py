@@ -4578,8 +4578,8 @@ async def admin_jobs_list(
     request: Request,
     db: Session = Depends(get_db),
 ):
-    # 관리자 + 중간관리자 접근 허용
-    if r := _privileged_redirect(request, db):
+    # 관리자 전용
+    if r := _admin_redirect(request):
         return r
     today = date.today()
     postings = db.query(JobPosting).order_by(JobPosting.created_at.desc()).all()
@@ -4664,8 +4664,8 @@ async def admin_jobs_add_bulk(
 
 @app.post("/admin/jobs/delete/{job_id}")
 async def admin_jobs_delete(request: Request, job_id: int, db: Session = Depends(get_db)):
-    # 관리자 + 중간관리자 허용
-    if r := _privileged_redirect(request, db):
+    # 관리자 전용
+    if r := _admin_redirect(request):
         return r
     posting = db.query(JobPosting).filter(JobPosting.id == job_id).first()
     if posting:
@@ -4683,8 +4683,8 @@ async def admin_jobs_delete_bulk(
     job_ids: List[int] = Form(default=[]),
     db: Session = Depends(get_db),
 ):
-    # 관리자 + 중간관리자 허용
-    if r := _privileged_redirect(request, db):
+    # 관리자 전용
+    if r := _admin_redirect(request):
         return r
     count = 0
     if job_ids:

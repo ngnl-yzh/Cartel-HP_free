@@ -6,7 +6,7 @@
 """
 import asyncio
 import re
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Optional
 from urllib.parse import urljoin as _urljoin
 
@@ -143,7 +143,11 @@ def _parse_range_date(text: str) -> Optional[str]:
         mo, d = int(m.group(1)), int(m.group(2))
         y = _current_year()
         try:
-            return date(y, mo, d).isoformat()
+            dt = date(y, mo, d)
+            # 이미 14일 이상 지난 날짜면 내년도로 보정
+            if dt < date.today() - timedelta(days=14):
+                dt = date(y + 1, mo, d)
+            return dt.isoformat()
         except ValueError:
             pass
     return None
@@ -310,44 +314,147 @@ async def _crawl_contestkorea(client: httpx.AsyncClient) -> list:
 
 async def _crawl_dacon(client: httpx.AsyncClient) -> list:
     """데이콘(dacon.io) — 데이터·AI 공모전 플랫폼
-    HTML 구조: div.comp > a[href=/competitions/official/NNNN/overview/] > p.name (제목)
+    React SPA이므로 REST API → __NEXT_DATA__ → HTML fallback 순서로 시도.
     """
+    import json as _json
+
+    _BASE = "https://dacon.io"
     results = []
+    seen_links: set = set()
+
+    def _dacon_item(title, comp_id, deadline_raw):
+        title = title.strip()
+        if not title or len(title) < 4:
+            return None
+        link = (
+            f"{_BASE}/competitions/official/{comp_id}/overview/description"
+            if comp_id else f"{_BASE}/competitions"
+        )
+        if link in seen_links:
+            return None
+        seen_links.add(link)
+        deadline = _parse_date(str(deadline_raw)) if deadline_raw else None
+        if not _is_current_year(deadline):
+            return None
+        return _item("dacon", "데이콘", title, link, "", deadline, tags=["AI/SW"])
+
     try:
+        # ① REST API 시도 (여러 endpoint 순서대로)
+        api_candidates = [
+            f"{_BASE}/api/v1/competition/competition/list/?host_type=official&page=1&page_size=30",
+            f"{_BASE}/api/v1/competition/competition/list/?page=1&page_size=30",
+            f"{_BASE}/api/v1/competition/list/?page=1&page_size=30",
+        ]
+        for api_url in api_candidates:
+            try:
+                ar = await client.get(
+                    api_url,
+                    headers={**HEADERS, "Accept": "application/json"},
+                    timeout=10,
+                )
+                if ar.status_code == 200:
+                    data = ar.json()
+                    comps = (
+                        data.get("results") or data.get("data") or
+                        data.get("competitions") or data.get("list") or []
+                    )
+                    if isinstance(comps, dict):
+                        comps = comps.get("results") or comps.get("list") or []
+                    for comp in (comps if isinstance(comps, list) else []):
+                        title = (comp.get("title") or comp.get("name") or "").strip()
+                        comp_id = comp.get("id") or ""
+                        deadline_raw = (
+                            comp.get("submission_end_date") or
+                            comp.get("deadline") or
+                            comp.get("end_date") or ""
+                        )
+                        it = _dacon_item(title, comp_id, deadline_raw)
+                        if it:
+                            results.append(it)
+                    if results:
+                        return results
+            except Exception:
+                continue
+
+        # ② HTML 수집 + __NEXT_DATA__ 파싱
         r = await client.get(
-            "https://dacon.io/competitions",
+            f"{_BASE}/competitions",
             headers={**HEADERS, "Accept": "text/html,application/xhtml+xml,*/*"},
             timeout=25,
         )
         _check_response(r, "데이콘")
         soup = _soup(r.text)
 
-        seen_links: set = set()
-        # 실제 HTML 구조: div.comp 내부 a[href] + p.name
-        for item in soup.select(".comp"):
+        nxt = soup.find("script", {"id": "__NEXT_DATA__"})
+        if nxt and nxt.string:
             try:
-                a = item.select_one("a[href]")
-                if not a:
-                    continue
-                href = a.get("href", "")
-                if not href.startswith("http"):
-                    href = "https://dacon.io" + href
-                if href in seen_links:
-                    continue
-                seen_links.add(href)
-
-                name_el = item.select_one(".name") or item.select_one("p.ellipsis")
-                title = _norm(name_el.get_text() if name_el else a.get_text())
-                if len(title) < 4:
-                    continue
-
-                # dday: "참가신청중" / "연습" / "D-7" 등 → 날짜 파싱 불가, None 처리
-                results.append(_item("dacon", "데이콘", title, href, "", None, tags=["AI/SW"]))
+                page_data = _json.loads(nxt.string)
+                props = page_data.get("props", {}).get("pageProps", {})
+                comps: list = []
+                for key in ("competitions", "list", "data", "items", "results"):
+                    candidate = props.get(key)
+                    if isinstance(candidate, list) and candidate:
+                        comps = candidate
+                        break
+                    if isinstance(candidate, dict):
+                        inner = (
+                            candidate.get("results") or candidate.get("list") or
+                            candidate.get("data") or []
+                        )
+                        if inner:
+                            comps = inner
+                            break
+                for comp in comps:
+                    title = (comp.get("title") or comp.get("name") or "").strip()
+                    comp_id = comp.get("id") or ""
+                    deadline_raw = (
+                        comp.get("submission_end_date") or
+                        comp.get("deadline") or comp.get("end_date") or ""
+                    )
+                    it = _dacon_item(title, comp_id, deadline_raw)
+                    if it:
+                        results.append(it)
+                if results:
+                    return results
             except Exception:
-                continue
+                pass
+
+        # ③ HTML fallback — 여러 선택자 순서대로 시도
+        for sel, get_link_from_item in [
+            ("a[href*='/competitions/official/']", True),
+            (".comp", False),
+            ("div[class*='CompetitionCard']", False),
+            ("div[class*='competition-card']", False),
+        ]:
+            for el in soup.select(sel):
+                try:
+                    if get_link_from_item:
+                        a = el if el.name == "a" else el.select_one("a[href]")
+                    else:
+                        a = el.select_one("a[href*='/competitions/official/']") or el.select_one("a[href]")
+                    if not a:
+                        continue
+                    href = a.get("href", "")
+                    if not href.startswith("http"):
+                        href = _BASE + href
+                    if href in seen_links:
+                        continue
+                    seen_links.add(href)
+                    tit_el = (
+                        el.select_one("[class*='title'], [class*='name'], h2, h3, p")
+                        if not get_link_from_item else el
+                    )
+                    title = _norm(tit_el.get_text() if tit_el else a.get_text())
+                    if len(title) < 4 or "dacon" in title.lower():
+                        continue
+                    results.append(_item("dacon", "데이콘", title, href, "", None, tags=["AI/SW"]))
+                except Exception:
+                    continue
+            if results:
+                break
 
         if not results:
-            results.append({"_error": "데이콘: 공모전 파싱 실패 (.comp 요소 없음, 구조 변경 가능성)"})
+            results.append({"_error": "데이콘: 공모전 파싱 실패 (JavaScript 렌더링 필요 가능성)"})
 
     except Exception as e:
         results.append({"_error": f"데이콘 오류: {type(e).__name__}: {e}"})
@@ -554,69 +661,118 @@ async def _crawl_linkareer(client: httpx.AsyncClient) -> list:
 
 async def _crawl_allcon(client: httpx.AsyncClient) -> list:
     """올콘(all-con.co.kr) — 공모전 정보 포털
-    HTML 구조(메인 페이지):
-      .banner-d-inner  → p.title a[href=/hit/contest/NNNN] + .host + .dday
-      .banner-c-inner  → p.title a[href=/hit/contest/NNNN] + .host
-    목록 페이지는 JS 렌더링이므로 메인 배너 영역에서 파싱.
+    ① 목록 페이지 (/contest/total) 파싱 시도
+    ② 실패 시 메인 홈 배너 영역에서 파싱 (banner-d-inner / banner-c-inner)
     """
     _BASE = "https://www.all-con.co.kr"
     results = []
+    seen_links: set = set()
+
+    def _parse_allcon_item(item, soup_base=None):
+        """단일 항목(li/div)에서 공모전 정보 추출"""
+        a = (
+            item.select_one("p.title a[href]")
+            or item.select_one("a[href*='hit/contest']")
+            or item.select_one("a[href*='view/contest']")
+            or item.select_one("a[href*='/contest/']")
+            or item.select_one("a[href]")
+        )
+        if not a:
+            return None
+        href = a.get("href", "")
+        if not href.startswith("http"):
+            href = _BASE + (href if href.startswith("/") else "/" + href)
+        if href in seen_links:
+            return None
+        seen_links.add(href)
+
+        title_el = item.select_one("p.title") or item.select_one(".title") or item.select_one("h3, h4")
+        title = _norm(title_el.get_text() if title_el else a.get_text())
+        if not title or len(title) < 3:
+            return None
+
+        host_el = item.select_one(".host") or item.select_one(".organizer")
+        organizer = _norm(host_el.get_text()) if host_el else ""
+
+        # 마감일: .deadline / .dday / .date 순서로 시도
+        deadline = None
+        dday_el = item.select_one(".deadline") or item.select_one(".date")
+        if dday_el:
+            deadline = _parse_range_date(dday_el.get_text())
+
+        # D-n 형식이면 기간 확인 (종료된 것 제외)
+        dday_el2 = item.select_one(".dday")
+        if dday_el2:
+            dday_text = dday_el2.get_text(strip=True)
+            if not re.search(r"D-\d+", dday_text, re.I) and ("종료" in dday_text or "마감" in dday_text):
+                return None  # 이미 종료
+
+        tags = _classify_tags(title)
+        return _item("allcon", "올콘", title, href, organizer, deadline, tags=tags)
+
     try:
+        # ① 목록 페이지 시도 (여러 URL 순서대로)
+        list_urls = [
+            _BASE + "/contest/total",
+            _BASE + "/contest/list",
+            _BASE + "/contest",
+        ]
+        for list_url in list_urls:
+            try:
+                r = await client.get(
+                    list_url,
+                    headers={**HEADERS, "Accept": "text/html,application/xhtml+xml,*/*"},
+                    timeout=20,
+                )
+                if r.status_code >= 400:
+                    continue
+                soup = _soup(r.text)
+                # 목록 선택자: li.item, .contest-item, ul.list > li 등
+                items = (
+                    soup.select("ul.list > li")
+                    or soup.select(".contest-item")
+                    or soup.select("li.item")
+                    or soup.select(".list-item")
+                )
+                for item in items:
+                    it = _parse_allcon_item(item)
+                    if it:
+                        results.append(it)
+                if results:
+                    return results
+            except Exception:
+                continue
+
+        # ② 홈페이지 배너 영역 fallback
         r = await client.get(
             _BASE + "/",
-            headers={**HEADERS,
-                     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"},
+            headers={**HEADERS, "Accept": "text/html,application/xhtml+xml,*/*"},
             timeout=20,
         )
         _check_response(r, "올콘")
         soup = _soup(r.text)
 
-        seen_links: set = set()
-        # banner-d (대형 배너 3개) + banner-c (소형 배너 ~11개)
-        for item in soup.select(".banner-d-inner, .banner-c-inner"):
-            try:
-                # 링크: p.title > a 또는 임의 a[href*=hit/contest]
-                a = (
-                    item.select_one("p.title a[href]")
-                    or item.select_one("a[href*='hit/contest']")
-                    or item.select_one("a[href*='view/contest']")
-                    or item.select_one("a[href]")
-                )
-                if not a:
-                    continue
+        for item in soup.select(".banner-d-inner, .banner-c-inner, .contest-banner"):
+            it = _parse_allcon_item(item)
+            if it:
+                results.append(it)
+
+        # ③ 홈 전체에서 contest 링크 수집 (배너 실패 시)
+        if not results:
+            for a in soup.select("a[href*='hit/contest'], a[href*='view/contest'], a[href*='/contest/']"):
                 href = a.get("href", "")
                 if not href.startswith("http"):
                     href = _BASE + (href if href.startswith("/") else "/" + href)
-                if href in seen_links:
+                if href in seen_links or _BASE + "/contest" == href.rstrip("/"):
                     continue
                 seen_links.add(href)
-
-                # 제목: p.title 텍스트 (a 태그 안쪽)
-                title_el = item.select_one("p.title")
-                title = _norm(title_el.get_text() if title_el else a.get_text())
+                title = _norm(a.get_text())
                 if not title or len(title) < 3:
                     continue
-
-                # 주최: .host
-                host_el = item.select_one(".host")
-                organizer = _norm(host_el.get_text()) if host_el else ""
-
-                # 마감: .dday → "D-8" 형식 — 실제 날짜 알 수 없으므로 None
-                # D-0 이하(종료)는 스킵
-                dday_el = item.select_one(".dday")
-                if dday_el:
-                    dday_text = dday_el.get_text(strip=True)
-                    m = re.search(r"D-(\d+)", dday_text, re.I)
-                    if not m and ("종료" in dday_text or "마감" in dday_text):
-                        continue  # 이미 종료
-
-                tags = _classify_tags(title)
-                results.append(_item("allcon", "올콘", title, href, organizer, None, tags=tags))
-            except Exception:
-                continue
+                results.append(_item("allcon", "올콘", title, href, "", None, tags=_classify_tags(title)))
 
         if not results:
-            results.append({"_error": "올콘: 항목 파싱 실패 (banner-d-inner/banner-c-inner 없음)"})
+            results.append({"_error": "올콘: 항목 파싱 실패 (구조 변경 또는 JS 렌더링)"})
     except Exception as e:
         results.append({"_error": f"올콘 오류: {type(e).__name__}: {e}"})
     return results
@@ -816,123 +972,153 @@ def _job_item(source: str, source_label: str, title: str, company: str,
 
 
 async def crawl_linkareer(client: httpx.AsyncClient) -> list:
-    """링커리어(linkareer.com) — 인턴/대외활동/서포터즈 전문"""
+    """링커리어(linkareer.com) — 인턴/대외활동/서포터즈 전문
+    API → __NEXT_DATA__ → HTML fallback 순서로 시도.
+    """
+    import json as _json
+
+    _BASE = "https://linkareer.com"
     results = []
+    seen_links: set = set()
+
+    # 페이지 경로 → 기본 유형 매핑
+    _PAGE_TYPE = {
+        "/list/intern":   "인턴",
+        "/list/activity": "대외활동",
+        "/list/recruit":  "채용",
+    }
+
+    def _linkareer_job_type(comp: dict, default: str = "인턴") -> str:
+        t = (comp.get("type") or comp.get("activityType") or "").upper()
+        if "SUPPORTER" in t:
+            return "서포터즈"
+        if "ACTIVITY" in t:
+            return "대외활동"
+        if "RECRUIT" in t or "JOB" in t:
+            return "채용"
+        return default
+
+    def _extract_comps(data_obj, default_type="인턴"):
+        """API/pageProps 딕셔너리에서 공고 리스트를 추출해 results에 추가"""
+        comps: list = []
+        for key in ("activities", "list", "data", "items", "results", "edges"):
+            candidate = data_obj.get(key)
+            if isinstance(candidate, list) and candidate:
+                comps = candidate
+                break
+            if isinstance(candidate, dict):
+                inner = (
+                    candidate.get("edges") or candidate.get("results") or
+                    candidate.get("list") or candidate.get("data") or []
+                )
+                if inner:
+                    comps = inner
+                    break
+        # GraphQL edge 구조 해제
+        if comps and isinstance(comps[0], dict) and "node" in comps[0]:
+            comps = [c["node"] for c in comps]
+
+        added = 0
+        for comp in comps:
+            title = (comp.get("title") or comp.get("name") or "").strip()
+            if not title:
+                continue
+            comp_id = comp.get("id") or comp.get("slug") or ""
+            link = (
+                f"{_BASE}/activity/{comp_id}"
+                if comp_id else f"{_BASE}/list/intern"
+            )
+            if link in seen_links:
+                continue
+            seen_links.add(link)
+
+            deadline_raw = (
+                comp.get("dueDate") or comp.get("deadline") or
+                comp.get("endDate") or comp.get("end_date") or ""
+            )
+            deadline = _parse_date(str(deadline_raw)) if deadline_raw else None
+            company = (
+                comp.get("organization") or comp.get("organizer") or
+                comp.get("host") or comp.get("companyName") or ""
+            ).strip()
+            job_type = _linkareer_job_type(comp, default_type)
+
+            results.append(_job_item("linkareer", "링커리어", title, company, link, deadline, job_type))
+            added += 1
+        return added
+
     try:
-        # ① API 시도
-        api_urls = [
-            "https://linkareer.com/api/v1/activities?types=INTERN&orderBy=LATEST&first=40",
-            "https://linkareer.com/api/activity/list?type=intern&page=1&pageSize=40",
+        # ① REST API / GraphQL 시도
+        api_candidates = [
+            (f"{_BASE}/api/v1/activities?types=INTERN,ACTIVITY,RECRUIT&orderBy=LATEST&first=50", "인턴"),
+            (f"{_BASE}/api/v1/activities?types=INTERN&orderBy=LATEST&first=40", "인턴"),
+            (f"{_BASE}/api/activity/list?type=intern&page=1&pageSize=40", "인턴"),
+            (f"{_BASE}/api/v1/activities?types=ACTIVITY&orderBy=LATEST&first=30", "대외활동"),
         ]
-        for api_url in api_urls:
+        for api_url, default_type in api_candidates:
             try:
-                ar = await client.get(api_url, headers={**HEADERS, "Accept": "application/json"}, timeout=10)
+                ar = await client.get(
+                    api_url,
+                    headers={**HEADERS, "Accept": "application/json"},
+                    timeout=12,
+                )
                 if ar.status_code == 200:
-                    import json as _json
                     data = ar.json()
-                    comps = (data.get("data") or data.get("results") or
-                             data.get("activities") or data.get("list") or [])
-                    if isinstance(comps, dict):
-                        comps = comps.get("edges") or comps.get("results") or []
-                    if comps and isinstance(comps[0], dict) and "node" in comps[0]:
-                        comps = [c["node"] for c in comps]
-                    for comp in (comps if isinstance(comps, list) else []):
-                        title = (comp.get("title") or comp.get("name") or "").strip()
-                        if not title:
-                            continue
-                        comp_id = comp.get("id") or comp.get("slug") or ""
-                        link = f"https://linkareer.com/activity/{comp_id}" if comp_id else "https://linkareer.com/list/intern"
-                        deadline_raw = comp.get("dueDate") or comp.get("deadline") or comp.get("endDate") or ""
-                        deadline = _parse_date(str(deadline_raw)) if deadline_raw else None
-                        company = (comp.get("organization") or comp.get("organizer") or comp.get("host") or "").strip()
-                        activity_type = (comp.get("type") or "").upper()
-                        if "SUPPORTER" in activity_type:
-                            job_type = "서포터즈"
-                        elif "ACTIVITY" in activity_type:
-                            job_type = "대외활동"
-                        else:
-                            job_type = "인턴"
-                        if title:
-                            results.append(_job_item("linkareer", "링커리어", title, company, link, deadline, job_type))
-                    if results:
-                        return results
+                    if _extract_comps(data, default_type) > 0:
+                        break
             except Exception:
                 continue
+        if results:
+            return results
 
-        # ② Next.js __NEXT_DATA__ 파싱
-        for page_path in ["/list/intern", "/list/activity"]:
+        # ② __NEXT_DATA__ 파싱 (페이지 타입별)
+        for page_path, default_type in _PAGE_TYPE.items():
             try:
-                r = await client.get(f"https://linkareer.com{page_path}", headers=HEADERS, timeout=20)
-                _check_response(r, "링커리어")
+                r = await client.get(f"{_BASE}{page_path}", headers=HEADERS, timeout=20)
+                if r.status_code >= 400:
+                    continue
                 soup = _soup(r.text)
-                import json as _json
                 nxt = soup.find("script", {"id": "__NEXT_DATA__"})
-                if nxt and nxt.string:
-                    page_data = _json.loads(nxt.string)
-                    props = page_data.get("props", {}).get("pageProps", {})
-                    comps = []
-                    for key in ("activities", "list", "data", "items"):
-                        candidate = props.get(key)
-                        if isinstance(candidate, list) and candidate:
-                            comps = candidate
-                            break
-                        if isinstance(candidate, dict):
-                            inner = candidate.get("edges") or candidate.get("results") or candidate.get("data") or []
-                            if inner:
-                                comps = inner
-                                break
-                    if comps and isinstance(comps[0], dict) and "node" in comps[0]:
-                        comps = [c["node"] for c in comps]
-                    for comp in comps:
-                        title = (comp.get("title") or comp.get("name") or "").strip()
-                        if not title:
-                            continue
-                        comp_id = comp.get("id") or comp.get("slug") or ""
-                        link = f"https://linkareer.com/activity/{comp_id}" if comp_id else f"https://linkareer.com{page_path}"
-                        deadline_raw = comp.get("dueDate") or comp.get("deadline") or comp.get("endDate") or ""
-                        deadline = _parse_date(str(deadline_raw)) if deadline_raw else None
-                        company = (comp.get("organization") or comp.get("organizer") or "").strip()
-                        if "/activity" in page_path:
-                            job_type = "대외활동"
-                        else:
-                            job_type = "인턴"
-                        if title:
-                            results.append(_job_item("linkareer", "링커리어", title, company, link, deadline, job_type))
-                    if results:
-                        return results
+                if not nxt or not nxt.string:
+                    continue
+                page_data = _json.loads(nxt.string)
+                props = page_data.get("props", {}).get("pageProps", {})
+                if _extract_comps(props, default_type) > 0:
+                    continue  # 계속 다른 페이지도 수집
             except Exception:
                 continue
+        if results:
+            return results
 
-        # ③ HTML fallback
-        for page_path, job_type in [("/list/intern", "인턴"), ("/list/activity", "대외활동")]:
+        # ③ HTML fallback (a[href*='/activity/'] 링크 수집)
+        for page_path, default_type in _PAGE_TYPE.items():
             try:
-                r = await client.get(f"https://linkareer.com{page_path}", headers=HEADERS, timeout=20)
+                r = await client.get(f"{_BASE}{page_path}", headers=HEADERS, timeout=20)
                 if r.status_code >= 400:
                     continue
                 soup = _soup(r.text)
                 for card in soup.select("a[href*='/activity/']"):
                     href = card.get("href", "")
                     if not href.startswith("http"):
-                        href = "https://linkareer.com" + href
-                    tit_el = card.select_one("h2, h3, [class*='title'], [class*='name']") or card
+                        href = _BASE + href
+                    if href in seen_links:
+                        continue
+                    seen_links.add(href)
+                    tit_el = (
+                        card.select_one("h2, h3, [class*='title'], [class*='name']") or card
+                    )
                     title = _norm(tit_el.get_text())
                     if len(title) < 4 or "링커리어" in title:
                         continue
-                    org_el = card.select_one("[class*='org'], [class*='company'], [class*='organization']")
+                    org_el = card.select_one(
+                        "[class*='org'], [class*='company'], [class*='organization']"
+                    )
                     company = _norm(org_el.get_text()) if org_el else ""
-                    results.append(_job_item("linkareer", "링커리어", title, company, href, None, job_type))
+                    results.append(_job_item(
+                        "linkareer", "링커리어", title, company, href, None, default_type
+                    ))
             except Exception:
                 continue
-
-        # 중복 제거
-        seen: set = set()
-        dedup = []
-        for it in results:
-            k = it.get("link", it.get("title", ""))
-            if k not in seen:
-                seen.add(k)
-                dedup.append(it)
-        results = dedup
 
         if not results:
             results.append({"_error": "링커리어: 취업 공고 파싱 실패 (JavaScript 렌더링 필요 가능성)"})
@@ -942,28 +1128,60 @@ async def crawl_linkareer(client: httpx.AsyncClient) -> list:
 
 
 async def crawl_saramin_intern(client: httpx.AsyncClient) -> list:
-    """사람인(saramin.co.kr) — 인턴 공고"""
+    """사람인(saramin.co.kr) — 인턴 공고
+    cat_kewd=2232 (인턴사원), 지역 필터 없음(전국)
+    """
     results = []
-    try:
-        url = (
-            "https://www.saramin.co.kr/zf_user/jobs/list/job-category"
-            "?cat_kewd=2232&loc_mcd=101000&education=0"
-            "&panel_type=&search_optional_item=n&search_done=y"
-            "&panel_count=y&preview=y"
-        )
-        r = await client.get(url, headers=HEADERS, timeout=25)
-        _check_response(r, "사람인")
-        soup = _soup(r.text)
+    _SARAMIN_BASE = "https://www.saramin.co.kr"
 
-        _SARAMIN_BASE = "https://www.saramin.co.kr"
-        items = soup.select(".list_recruit .item_recruit")
-        if not items:
-            items = soup.select(".list-jobs .list-item")  # fallback 선택자
+    # 여러 URL 순서대로 시도 (지역 필터 없는 버전 우선)
+    candidate_urls = [
+        (
+            f"{_SARAMIN_BASE}/zf_user/jobs/list/job-category"
+            "?cat_kewd=2232&panel_type=&search_optional_item=n"
+            "&search_done=y&panel_count=y&preview=y"
+        ),
+        (
+            f"{_SARAMIN_BASE}/zf_user/jobs/list/job-category"
+            "?cat_kewd=2232&panel_type=&search_optional_item=n"
+            "&search_done=y&panel_count=y&preview=y&page=1"
+        ),
+        # 키워드 검색 fallback
+        f"{_SARAMIN_BASE}/zf_user/jobs/list/keyword-search?searchword=%EC%9D%B8%ED%84%B4&recruitPage=1",
+    ]
+
+    try:
+        soup = None
+        for url in candidate_urls:
+            try:
+                r = await client.get(url, headers=HEADERS, timeout=25)
+                if r.status_code < 400:
+                    soup = _soup(r.text)
+                    break
+            except Exception:
+                continue
+
+        if soup is None:
+            results.append({"_error": "사람인: 페이지 로드 실패"})
+            return results
+
+        # 항목 선택자 (여러 버전 대응)
+        items = (
+            soup.select(".list_recruit .item_recruit")
+            or soup.select(".list_item_wrap .item_recruit")
+            or soup.select(".jobs-list .list-item")
+            or soup.select(".area_list .item")
+        )
 
         for item in items:
             try:
-                # 제목
-                tit_el = item.select_one(".job_tit a") or item.select_one("a.job_tit") or item.select_one("h2 a")
+                # 제목 + 링크
+                tit_el = (
+                    item.select_one(".job_tit a")
+                    or item.select_one("a.job_tit")
+                    or item.select_one(".title a")
+                    or item.select_one("h2 a, h3 a")
+                )
                 if not tit_el:
                     continue
                 title = _norm(tit_el.get_text())
@@ -974,15 +1192,29 @@ async def crawl_saramin_intern(client: httpx.AsyncClient) -> list:
                     href = _SARAMIN_BASE + href
 
                 # 회사명
-                corp_el = item.select_one(".corp_name a") or item.select_one(".company_name a") or item.select_one(".company a")
+                corp_el = (
+                    item.select_one(".corp_name a")
+                    or item.select_one(".company_name a")
+                    or item.select_one(".corp_name")
+                    or item.select_one(".company")
+                )
                 company = _norm(corp_el.get_text()) if corp_el else ""
 
                 # 마감일
-                date_el = item.select_one(".job_date .date") or item.select_one(".deadline") or item.select_one(".date")
+                date_el = (
+                    item.select_one(".job_date .date")
+                    or item.select_one(".job_date")
+                    or item.select_one(".deadline")
+                    or item.select_one(".date")
+                )
                 deadline = _parse_date(date_el.get_text()) if date_el else None
 
                 # 근무지
-                loc_el = item.select_one(".work_place") or item.select_one(".location")
+                loc_el = (
+                    item.select_one(".work_place")
+                    or item.select_one(".location")
+                    or item.select_one(".job_condition span:first-child")
+                )
                 location = _norm(loc_el.get_text()) if loc_el else ""
 
                 if title and href:

@@ -4555,6 +4555,7 @@ async def jobs_page(
     q: str = Query(""),
     job_type: str = Query("all"),
     sort: str = Query("deadline"),
+    page: int = Query(1, ge=1),
     db: Session = Depends(get_db),
 ):
     today = date.today()
@@ -4574,7 +4575,6 @@ async def jobs_page(
     elif sort == "newest":
         query = query.order_by(JobPosting.created_at.desc())
     else:
-        # 마감일순: 마감 안 된 것 우선(오름차순), 마감된 것 나중(내림차순)
         query = query.order_by(
             case(
                 (JobPosting.deadline == None, 1),  # noqa: E711
@@ -4587,7 +4587,13 @@ async def jobs_page(
             JobPosting.created_at.desc(),
         )
 
-    postings = query.all()
+    all_postings = query.all()
+    _JOB_PAGE_SIZE = 12
+    total_count  = len(all_postings)
+    total_pages  = max(1, (total_count + _JOB_PAGE_SIZE - 1) // _JOB_PAGE_SIZE)
+    page         = max(1, min(page, total_pages))
+    postings     = all_postings[(_JOB_PAGE_SIZE * (page - 1)):(_JOB_PAGE_SIZE * page)]
+
     return _render(request, "jobs.html", _ctx(request, db,
         postings=postings,
         query=q,
@@ -4595,6 +4601,7 @@ async def jobs_page(
         current_sort=sort,
         job_types=active_job_types,
         today=today,
+        page=page, total_pages=total_pages, total_count=total_count,
     ))
 
 

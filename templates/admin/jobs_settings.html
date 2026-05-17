@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+{% block title %}Career 분야 설정 · 관리자{% endblock %}
+
+{% block content %}
+<main class="admin-page">
+  <div class="container" style="max-width:700px">
+
+    <div class="page-heading">
+      <div>
+        <p class="eyebrow">
+          <a href="/admin" style="color:inherit;text-decoration:none;opacity:.6">Admin</a> ›
+          <a href="/admin/jobs" style="color:inherit;text-decoration:none;opacity:.6">Career 관리</a> › 분야 설정
+        </p>
+        <h1>Career 분야 설정</h1>
+      </div>
+      <a href="/admin/jobs" class="btn btn-outline">← Career 관리</a>
+    </div>
+
+    <section class="card" style="padding:24px 28px;margin-bottom:24px">
+      <h2 style="font-size:1.05rem;font-weight:700;margin-bottom:4px">활성 분야 선택</h2>
+      <p class="muted" style="font-size:.85rem;margin-bottom:20px">
+        Career 게시판의 분야 필터와 크롤링 결과에 표시할 분야를 선택하세요.
+        체크 해제된 분야는 필터에서 숨겨집니다.
+      </p>
+
+      <form method="post" action="/admin/jobs/settings/types" id="saveTypesForm">
+        <input type="hidden" name="types_json" id="typesJsonField" value="{{ active_json }}">
+
+        <div class="cat-grid">
+          {% for jt in all_job_types %}
+          <label class="cat-check-item {% if jt in active_job_types %}checked{% endif %}" data-jt="{{ jt }}">
+            <input type="checkbox" class="jt-checkbox" value="{{ jt }}"
+                   {% if jt in active_job_types %}checked{% endif %}>
+            <span class="cat-label">{{ jt }}</span>
+          </label>
+          {% endfor %}
+        </div>
+
+        <div style="display:flex;gap:8px;margin-top:20px;align-items:center">
+          <button type="submit" class="btn btn-primary">저장</button>
+          <button type="button" class="btn btn-outline" id="selectAllBtn">전체 선택</button>
+          <button type="button" class="btn btn-outline" id="deselectAllBtn">전체 해제</button>
+        </div>
+      </form>
+    </section>
+
+  </div>
+</main>
+
+<style>
+.cat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 10px;
+}
+.cat-check-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border: 1.5px solid var(--line);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: border-color .15s, background .15s;
+  font-size: .9rem;
+  font-weight: 500;
+  user-select: none;
+}
+.cat-check-item:hover {
+  border-color: var(--primary);
+  background: var(--surface-soft);
+}
+.cat-check-item.checked {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+  color: var(--primary);
+}
+.cat-check-item input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--primary);
+  flex-shrink: 0;
+}
+</style>
+
+<div id="savedToast" style="
+  display:none;position:fixed;bottom:28px;left:50%;transform:translateX(-50%);
+  background:#18181b;color:#fff;padding:12px 24px;border-radius:10px;
+  font-size:.92rem;font-weight:500;z-index:9999;box-shadow:0 4px 20px rgba(0,0,0,.25);
+  animation:toastIn .25s ease;">
+  ✅ Career 분야 설정이 저장되었습니다.
+</div>
+<style>
+@keyframes toastIn { from { opacity:0; transform:translateX(-50%) translateY(12px); } to { opacity:1; transform:translateX(-50%) translateY(0); } }
+</style>
+
+<script>
+(function () {
+  if (new URLSearchParams(location.search).get('saved') === '1') {
+    var toast = document.getElementById('savedToast');
+    toast.style.display = 'block';
+    setTimeout(function () { toast.style.display = 'none'; }, 3000);
+    history.replaceState(null, '', location.pathname);
+  }
+
+  var form   = document.getElementById('saveTypesForm');
+  var hidden = document.getElementById('typesJsonField');
+  var items  = document.querySelectorAll('.cat-check-item');
+  var boxes  = document.querySelectorAll('.jt-checkbox');
+
+  function syncHidden() {
+    var selected = [];
+    boxes.forEach(function (cb) { if (cb.checked) selected.push(cb.value); });
+    hidden.value = JSON.stringify(selected);
+  }
+
+  items.forEach(function (label) {
+    label.addEventListener('click', function (e) {
+      if (e.target.tagName === 'INPUT') return;
+      var cb = label.querySelector('input[type="checkbox"]');
+      cb.checked = !cb.checked;
+      label.classList.toggle('checked', cb.checked);
+      syncHidden();
+    });
+  });
+
+  boxes.forEach(function (cb) {
+    cb.addEventListener('change', function () {
+      cb.closest('.cat-check-item').classList.toggle('checked', cb.checked);
+      syncHidden();
+    });
+  });
+
+  document.getElementById('selectAllBtn').addEventListener('click', function () {
+    boxes.forEach(function (cb) { cb.checked = true; cb.closest('.cat-check-item').classList.add('checked'); });
+    syncHidden();
+  });
+
+  document.getElementById('deselectAllBtn').addEventListener('click', function () {
+    boxes.forEach(function (cb) { cb.checked = false; cb.closest('.cat-check-item').classList.remove('checked'); });
+    syncHidden();
+  });
+
+  syncHidden();
+})();
+</script>
+{% endblock %}

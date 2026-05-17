@@ -19,8 +19,9 @@
         <p class="eyebrow"><a href="/admin" style="color:inherit;text-decoration:none;opacity:.6">Admin</a> › Career 관리</p>
         <h1>취업 공고 관리</h1>
       </div>
-      <div style="display:flex;gap:8px">
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
         <a href="/jobs" class="btn btn-outline">💼 Career 목록</a>
+        <a href="/admin/jobs/settings" class="btn btn-outline">⚙ 분야 설정</a>
         {% if is_admin %}
         <a href="/admin/jobs/crawl" class="btn btn-outline">🔍 크롤링</a>
         {% endif %}
@@ -34,10 +35,12 @@
         <span>전체</span>
         <strong>{{ postings | length }}</strong>
       </div>
+      {% for jt in job_types %}
       <div class="stat-card">
-        <span>마감 임박 (7일)</span>
-        <strong>{{ postings | selectattr('deadline') | list | length }}</strong>
+        <span>{{ jt }}</span>
+        <strong>{{ postings | selectattr('job_type', 'equalto', jt) | list | length }}</strong>
       </div>
+      {% endfor %}
       <div class="stat-card">
         <span>상시 채용</span>
         <strong>{{ postings | rejectattr('deadline') | list | length }}</strong>

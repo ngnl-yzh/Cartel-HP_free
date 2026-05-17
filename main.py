@@ -4522,7 +4522,22 @@ async def admin_settings_tags(
 #  취업 게시판
 # ════════════════════════════════════════════════════════════════════════════
 
-JOB_TYPES = ["인턴", "채용", "서포터즈", "대외활동"]
+# 선택 가능한 전체 분야 목록 (관리자가 이 중 활성화할 분야를 선택)
+_ALL_JOB_TYPES = ["인턴", "채용", "서포터즈", "대외활동", "봉사활동", "교육/강연", "기타"]
+JOB_TYPES = _ALL_JOB_TYPES  # fallback (DB 접근 전 사용)
+
+
+def _get_job_types(db: Session) -> list[str]:
+    """AppSetting에서 활성 취업 분야 목록을 로드. 설정 없으면 기본값 반환."""
+    try:
+        row = db.query(AppSetting).filter(AppSetting.key == "job_types").first()
+        if row and row.value:
+            parsed = json.loads(row.value)
+            if isinstance(parsed, list) and parsed:
+                return parsed
+    except Exception:
+        pass
+    return list(_ALL_JOB_TYPES)
 
 
 @app.get("/jobs", response_class=HTMLResponse)
@@ -4541,7 +4556,8 @@ async def jobs_page(
         query = query.filter(
             or_(JobPosting.title.ilike(q_like), JobPosting.company.ilike(q_like))
         )
-    if job_type != "all" and job_type in JOB_TYPES:
+    active_job_types = _get_job_types(db)
+    if job_type != "all" and job_type in active_job_types:
         query = query.filter(JobPosting.job_type == job_type)
 
     if sort == "views":
@@ -4568,7 +4584,7 @@ async def jobs_page(
         query=q,
         current_job_type=job_type,
         current_sort=sort,
-        job_types=JOB_TYPES,
+        job_types=active_job_types,
         today=today,
     ))
 
@@ -4681,8 +4697,47 @@ async def admin_jobs_list(
     return _render(request, "admin/jobs.html", _ctx(request, db,
         postings=postings,
         today=today,
+        job_types=_get_job_types(db),
         bulk_deleted=int(bulk_deleted) if bulk_deleted else None,
     ))
+
+
+# ── Career 분야 설정 ──────────────────────────────────────────────────────────
+
+@app.get("/admin/jobs/settings", response_class=HTMLResponse)
+async def admin_jobs_settings_page(request: Request, db: Session = Depends(get_db)):
+    if r := _admin_redirect(request):
+        return r
+    active = _get_job_types(db)
+    return _render(request, "admin/jobs_settings.html", _ctx(request, db,
+        active_job_types=active,
+        active_json=json.dumps(active, ensure_ascii=False),
+        all_job_types=_ALL_JOB_TYPES,
+    ))
+
+
+@app.post("/admin/jobs/settings/types")
+async def admin_jobs_settings_types(
+    request: Request,
+    types_json: str = Form("[]"),
+    db: Session = Depends(get_db),
+):
+    if r := _admin_redirect(request):
+        return r
+    try:
+        new_types = [t for t in json.loads(types_json) if isinstance(t, str) and t.strip()]
+    except Exception:
+        new_types = []
+    if not new_types:
+        raise HTTPException(status_code=400, detail="분야를 최소 1개 이상 선택하세요.")
+    row = db.query(AppSetting).filter(AppSetting.key == "job_types").first()
+    if row:
+        row.value = json.dumps(new_types, ensure_ascii=False)
+        row.updated_at = datetime.now()
+    else:
+        db.add(AppSetting(key="job_types", value=json.dumps(new_types, ensure_ascii=False)))
+    db.commit()
+    return RedirectResponse(url="/admin/jobs/settings?saved=1", status_code=303)
 
 
 @app.get("/admin/jobs/crawl", response_class=HTMLResponse)

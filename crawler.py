@@ -1128,132 +1128,138 @@ async def crawl_linkareer(client: httpx.AsyncClient) -> list:
 
 
 async def crawl_saramin_intern(client: httpx.AsyncClient) -> list:
-    """사람인(saramin.co.kr) — 인턴 공고
-    cat_kewd=2232 (인턴사원), 지역 필터 없음(전국)
+    """사람인 공식 오픈 API — 인턴 공고
+    ※ 사람인 페이지는 완전 JS 렌더링으로 전환되어 HTML 파싱 불가.
+      공식 Open API (https://oapi.saramin.co.kr/) 에서 무료 API 키를 발급받아
+      환경변수 SARAMIN_API_KEY 에 설정하세요.
+    """
+    import os
+    api_key = os.getenv("SARAMIN_API_KEY", "").strip()
+    if not api_key:
+        return [{
+            "_error": (
+                "사람인: API 키 미설정 — 사람인 사이트가 JS 렌더링으로 전환되어 "
+                "HTML 파싱이 불가합니다. 공식 Open API 키를 발급받아 "
+                "SARAMIN_API_KEY 환경변수에 등록하세요. "
+                "(발급: https://oapi.saramin.co.kr/)"
+            )
+        }]
+
+    results = []
+    try:
+        r = await client.get(
+            "https://oapi.saramin.co.kr/job/list",
+            params={
+                "access-key": api_key,
+                "job_type": "I",   # I = 인턴사원
+                "count": "40",
+                "start": "1",
+                "sort": "pd",      # 게재일 내림차순
+            },
+            headers={**HEADERS, "Accept": "application/json"},
+            timeout=20,
+        )
+        r.raise_for_status()
+        data = r.json()
+        jobs = data.get("jobs", {}).get("job", [])
+        for job in jobs:
+            try:
+                title    = job.get("position", {}).get("title", "")
+                company  = job.get("company", {}).get("detail", {}).get("name", "")
+                link     = job.get("url", "")
+                exp_str  = job.get("expiration-date", "") or ""
+                deadline = exp_str[:10] if len(exp_str) >= 10 else None
+                location = job.get("position", {}).get("location", {}).get("name", "")
+                if title and link:
+                    results.append(_job_item("saramin", "사람인", title, company, link, deadline, "인턴", location))
+            except Exception:
+                continue
+        if not results:
+            results.append({"_error": "사람인: API 응답에서 공고를 찾지 못했습니다."})
+    except Exception as e:
+        results.append({"_error": f"사람인 API 오류: {type(e).__name__}: {e}"})
+    return results
+
+
+async def crawl_wanted(client: httpx.AsyncClient) -> list:
+    """원티드(wanted.co.kr) — 신입/인턴 공고 (공개 REST JSON API, 키 불필요)
+    경력무관(years=-1) + 신입(years=0) 공고를 최대 60개 수집.
     """
     results = []
-    _SARAMIN_BASE = "https://www.saramin.co.kr"
-
-    # 여러 URL 순서대로 시도 (인턴 전용 페이지 우선)
-    candidate_urls = [
-        # ① 인턴 전용 리스트 페이지
-        f"{_SARAMIN_BASE}/zf_user/jobs/list/intern?recruitPage=1",
-        # ② 직종 카테고리 검색 (지역 필터 없음)
-        (
-            f"{_SARAMIN_BASE}/zf_user/jobs/list/job-category"
-            "?cat_kewd=2232&panel_type=&search_optional_item=n"
-            "&search_done=y&panel_count=y&preview=y"
-        ),
-        # ③ 키워드 검색 fallback
-        f"{_SARAMIN_BASE}/zf_user/jobs/list/keyword-search?searchword=%EC%9D%B8%ED%84%B4&recruitPage=1",
-    ]
+    API  = "https://www.wanted.co.kr/api/v4/jobs"
+    hdrs = {
+        **HEADERS,
+        "Accept": "application/json, */*; q=0.01",
+        "Referer": "https://www.wanted.co.kr/",
+    }
+    seen: set = set()
+    offset = 0
 
     try:
-        soup = None
-        for url in candidate_urls:
-            try:
-                r = await client.get(url, headers=HEADERS, timeout=25)
-                if r.status_code < 400:
-                    soup = _soup(r.text)
-                    break
-            except Exception:
-                continue
-
-        if soup is None:
-            results.append({"_error": "사람인: 페이지 로드 실패"})
-            return results
-
-        # 항목 선택자 — 사람인 HTML 버전별 대응
-        item_selectors = [
-            ".list_recruit .item_recruit",
-            ".list_item_wrap .item_recruit",
-            "[class*='item_recruit']",
-            ".recruit_list_wrap li",
-            ".list-job-items li",
-            ".jobs-list .list-item",
-            ".area_list .item",
-        ]
-        items = []
-        for sel in item_selectors:
-            items = soup.select(sel)
-            if items:
+        while offset < 60:
+            r = await client.get(
+                API,
+                params={
+                    "country":   "kr",
+                    "years":     "-1",   # 경력무관/신입 포함
+                    "locations": "all",
+                    "limit":     "20",
+                    "offset":    str(offset),
+                    "sort_by":   "job.latest_update_at",
+                },
+                headers=hdrs,
+                timeout=20,
+            )
+            if r.status_code >= 400:
+                break
+            data  = r.json()
+            batch = data.get("data", [])
+            if not batch:
                 break
 
-        # 전체 페이지에서 직접 공고 링크 탐색 (fallback)
-        if not items:
-            items = [
-                a.find_parent("li") or a.find_parent("div") or a
-                for a in soup.select("a[href*='zf_user/jobs/detail']")
-                if a.find_parent("li") or a.find_parent("div")
-            ]
-
-        seen_hrefs: set = set()
-        for item in items:
-            try:
-                # 제목 + 링크
-                tit_el = (
-                    item.select_one(".job_tit a")
-                    or item.select_one("a.job_tit")
-                    or item.select_one("a[href*='jobs/detail']")
-                    or item.select_one(".title a")
-                    or item.select_one("h2 a, h3 a")
-                )
-                if not tit_el:
+            for job in batch:
+                job_id = job.get("id")
+                if not job_id or job_id in seen:
                     continue
-                title = _norm(tit_el.get_text())
-                if not title or len(title) < 2:
-                    continue
-                href = tit_el.get("href", "")
-                if not href:
-                    continue
-                if not href.startswith("http"):
-                    href = _SARAMIN_BASE + href
-                if href in seen_hrefs:
-                    continue
-                seen_hrefs.add(href)
+                seen.add(job_id)
 
-                # 회사명
-                corp_el = (
-                    item.select_one(".corp_name a")
-                    or item.select_one(".company_name a")
-                    or item.select_one(".corp_name")
-                    or item.select_one("[class*='company']")
-                )
-                company = _norm(corp_el.get_text()) if corp_el else ""
+                title   = job.get("position", "")
+                company = job.get("company", {}).get("name", "")
+                link    = f"https://www.wanted.co.kr/wd/{job_id}"
+                due     = job.get("due_time") or ""
+                deadline = due[:10] if len(due) >= 10 else None
+                location = job.get("address", {}).get("location", "")
 
-                # 마감일
-                date_el = (
-                    item.select_one(".job_date .date")
-                    or item.select_one(".job_date")
-                    or item.select_one("[class*='deadline']")
-                    or item.select_one("[class*='date']")
-                )
-                deadline = _parse_date(date_el.get_text()) if date_el else None
+                # 직무 유형 추론 (제목 키워드 기반)
+                if "인턴" in title:
+                    jtype = "인턴"
+                elif "서포터즈" in title:
+                    jtype = "서포터즈"
+                elif any(k in title for k in ["대외활동", "봉사", "어시스턴트"]):
+                    jtype = "대외활동"
+                else:
+                    jtype = "채용"
 
-                # 근무지
-                loc_el = (
-                    item.select_one(".work_place")
-                    or item.select_one("[class*='location']")
-                    or item.select_one(".job_condition span")
-                )
-                location = _norm(loc_el.get_text()) if loc_el else ""
+                if title and link:
+                    results.append(_job_item("wanted", "원티드", title, company, link, deadline, jtype, location))
 
-                if title and href:
-                    results.append(_job_item("saramin", "사람인", title, company, href, deadline, "인턴", location))
-            except Exception:
-                continue
+            # 다음 페이지 없으면 종료
+            if not data.get("links", {}).get("next"):
+                break
+            offset += 20
 
         if not results:
-            results.append({"_error": "사람인: 인턴 공고 파싱 실패 (HTML 구조 변경 가능성 — JavaScript 렌더링 의심)"})
+            results.append({"_error": "원티드: 공고를 가져오지 못했습니다."})
     except Exception as e:
-        results.append({"_error": f"사람인 오류: {type(e).__name__}: {e}"})
+        results.append({"_error": f"원티드 오류: {type(e).__name__}: {e}"})
     return results
 
 
 # ── 취업 소스 목록 ──────────────────────────────────────────────────────────────
 JOB_SOURCES: dict = {
     "linkareer": ("링커리어", crawl_linkareer),
-    "saramin":   ("사람인",   crawl_saramin_intern),
+    "wanted":    ("원티드",   crawl_wanted),
+    "saramin":   ("사람인",   crawl_saramin_intern),   # API 키(SARAMIN_API_KEY) 필요
 }
 
 

@@ -22,7 +22,7 @@
             <label class="crawl-source-chip">
               <input type="checkbox" name="sources" value="{{ src_id }}"
                      checked class="crawl-source-chk">
-              <span>{{ src_info[0] }}</span>
+              <span>{{ src_info[0] }}{% if src_id == 'saramin' %} <span style="font-size:.7rem;opacity:.6">(API키)</span>{% endif %}</span>
             </label>
             {% endfor %}
           </div>
@@ -83,7 +83,18 @@
           {% if session.errors %}
           <details class="crawl-errors" style="margin-bottom:12px">
             <summary>⚠️ 오류 {{ session.errors | length }}건</summary>
-            <ul>{% for err in session.errors %}<li>{{ err }}</li>{% endfor %}</ul>
+            <ul>
+              {% for err in session.errors %}
+              <li>
+                {% if 'oapi.saramin.co.kr' in err %}
+                  {# 사람인 API 키 안내: 링크 클릭 가능하게 #}
+                  {{ err | replace('https://oapi.saramin.co.kr/', '<a href="https://oapi.saramin.co.kr/" target="_blank" rel="noopener" style="color:#60a5fa">https://oapi.saramin.co.kr/</a>') | safe }}
+                {% else %}
+                  {{ err }}
+                {% endif %}
+              </li>
+              {% endfor %}
+            </ul>
           </details>
           {% endif %}
 

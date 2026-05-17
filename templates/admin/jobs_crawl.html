@@ -1,165 +1,396 @@
 {% extends "base.html" %}
-{% block title %}취업 크롤링 · 관리자{% endblock %}
+{% block title %}Career 크롤링 · 관리자{% endblock %}
 
 {% block content %}
 <main class="admin-page">
   <div class="container">
 
-    {% if request.query_params.get('bulk_added') or request.query_params.get('bulk_errors') %}
-    <div style="margin-bottom:16px;padding:12px 18px;border-radius:12px;
-      background:{% if request.query_params.get('bulk_errors','0') != '0' %}rgba(234,179,8,.1){% else %}rgba(34,197,94,.1){% endif %};
-      border:1.5px solid {% if request.query_params.get('bulk_errors','0') != '0' %}rgba(234,179,8,.4){% else %}rgba(34,197,94,.35){% endif %};
-      display:flex;align-items:center;gap:10px">
-      <span style="font-size:1.2rem">{% if request.query_params.get('bulk_errors','0') != '0' %}⚠️{% else %}✅{% endif %}</span>
-      <div>
-        <strong>일괄 추가 완료</strong>
-        {% if request.query_params.get('bulk_added') %}
-          <span style="color:#16a34a"> · {{ request.query_params.get('bulk_added') }}개 등록됨</span>
-        {% endif %}
-        {% if request.query_params.get('bulk_errors','0') != '0' %}
-          <span style="color:#b45309"> · {{ request.query_params.get('bulk_errors') }}개 실패</span>
-        {% endif %}
-      </div>
-    </div>
-    {% endif %}
-
-    <div class="page-heading">
+    {# ── 헤더 + 소스 선택 폼 ── #}
+    <div class="page-heading" style="flex-wrap:wrap;gap:16px;align-items:flex-start">
       <div>
         <p class="eyebrow">Admin · Career</p>
         <h1>취업 크롤링</h1>
       </div>
-      <div style="display:flex;gap:8px">
+      <div style="display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap">
         <a href="/admin/jobs" class="btn btn-outline">📋 공고 관리</a>
         <a href="/jobs" class="btn btn-outline">💼 Career</a>
         <a href="/admin" class="btn btn-outline">← 관리자 패널</a>
-      </div>
-    </div>
 
-    {# ── 크롤링 시작 폼 ── #}
-    <section class="card" style="padding:24px;margin-bottom:28px">
-      <h2 style="font-size:1rem;font-weight:600;margin-bottom:14px">크롤링 소스 선택</h2>
-      <form method="post" action="/admin/jobs/crawl/run">
-        <div style="display:flex;flex-wrap:wrap;gap:12px;margin-bottom:18px">
-          {% for src_id, src_info in job_sources.items() %}
-          <label style="display:flex;align-items:center;gap:7px;cursor:pointer;
-                        padding:8px 14px;border-radius:8px;border:1.5px solid var(--c-border);
-                        background:var(--c-surface);transition:border-color .2s">
-            <input type="checkbox" name="sources" value="{{ src_id }}" checked>
-            <span style="font-weight:500">{{ src_info[0] }}</span>
-          </label>
-          {% endfor %}
-        </div>
-        <button type="submit" class="btn btn-primary">🔍 크롤링 시작</button>
-      </form>
-    </section>
-
-    {# ── 오류 메시지 ── #}
-    {% if crawl_errors %}
-    <div style="margin-bottom:18px;padding:12px 18px;border-radius:10px;
-                background:rgba(239,68,68,.08);border:1.5px solid rgba(239,68,68,.25)">
-      <strong style="color:#ef4444">오류 발생</strong>
-      <ul style="margin:6px 0 0;padding-left:18px;font-size:.85rem;color:var(--c-muted)">
-        {% for err in crawl_errors %}
-        <li>{{ err }}</li>
-        {% endfor %}
-      </ul>
-    </div>
-    {% endif %}
-
-    {# ── 수집 통계 ── #}
-    {% if crawl_counts %}
-    <div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:20px">
-      {% for label, cnt in crawl_counts.items() %}
-      <span style="padding:6px 14px;border-radius:20px;font-size:.83rem;font-weight:600;
-                   background:rgba(99,102,241,.12);color:#6366f1">{{ label }} {{ cnt }}개</span>
-      {% endfor %}
-    </div>
-    {% endif %}
-
-    {# ── 결과 테이블 ── #}
-    {% if crawl_items %}
-    <form method="post" action="/admin/jobs/add-bulk" id="bulkForm">
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
-          <input type="checkbox" id="checkAll" onchange="toggleAll(this.checked)">
-          <span style="font-size:.85rem">전체 선택</span>
-        </label>
-        <span style="font-size:.83rem;color:var(--c-muted)">총 {{ crawl_items | length }}개</span>
-        <button type="submit" class="btn btn-primary btn-sm" style="margin-left:auto">선택 항목 일괄 추가</button>
-      </div>
-
-      <section class="table-wrap">
-        <table class="admin-table">
-          <thead>
-            <tr>
-              <th style="width:36px;text-align:center"></th>
-              <th style="width:80px">출처</th>
-              <th>제목</th>
-              <th style="width:120px">회사</th>
-              <th style="width:80px">유형</th>
-              <th style="width:90px">마감일</th>
-              <th style="width:60px"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for item in crawl_items %}
-            <tr>
-              <td style="text-align:center">
-                <input type="checkbox" name="indices" value="{{ loop.index0 }}" class="row-check">
-              </td>
-              <td>
-                <span class="tag tag-sm" style="background:rgba(255,255,255,.07)">{{ item.source_label }}</span>
-              </td>
-              <td>
-                <a href="{{ item.link }}" target="_blank" rel="noopener"
-                   style="color:var(--c-text);text-decoration:none;font-size:.88rem">
-                  {{ item.title[:80] }}{% if item.title|length > 80 %}…{% endif %}
-                </a>
-              </td>
-              <td style="font-size:.82rem;color:var(--c-muted)">{{ item.company or '-' }}</td>
-              <td>
-                <span class="tag tag-sm" style="
-                  background:{% if item.job_type == '인턴' %}rgba(99,102,241,.15)
-                  {% elif item.job_type == '채용' %}rgba(34,197,94,.15)
-                  {% elif item.job_type == '서포터즈' %}rgba(249,115,22,.15)
-                  {% else %}rgba(168,85,247,.15){% endif %};
-                  color:{% if item.job_type == '인턴' %}#6366f1
-                  {% elif item.job_type == '채용' %}#16a34a
-                  {% elif item.job_type == '서포터즈' %}#ea580c
-                  {% else %}#9333ea{% endif %}">{{ item.job_type or '-' }}</span>
-              </td>
-              <td style="font-size:.82rem;color:var(--c-muted)">{{ item.deadline or '상시' }}</td>
-              <td>
-                <button type="submit" name="indices" value="{{ loop.index0 }}"
-                        form="singleForms_{{ loop.index0 }}"
-                        class="btn btn-outline btn-sm">추가</button>
-              </td>
-            </tr>
-            {# 단건 추가용 숨겨진 폼 #}
-            <form id="singleForms_{{ loop.index0 }}" method="post" action="/admin/jobs/add-bulk" style="display:none">
-              <input type="hidden" name="indices" value="{{ loop.index0 }}">
-            </form>
+        <form method="post" action="/admin/jobs/crawl/run" id="crawlForm"
+              onsubmit="return onCrawlSubmit(event)">
+          <div class="crawl-source-bar">
+            {% for src_id, src_info in job_sources.items() %}
+            <label class="crawl-source-chip">
+              <input type="checkbox" name="sources" value="{{ src_id }}"
+                     checked class="crawl-source-chk">
+              <span>{{ src_info[0] }}</span>
+            </label>
             {% endfor %}
-          </tbody>
-        </table>
-      </section>
-
-      <div style="margin-top:14px;display:flex;justify-content:flex-end">
-        <button type="submit" class="btn btn-primary">선택 항목 일괄 추가</button>
+          </div>
+          <button type="submit" class="btn btn-primary" id="crawlRunBtn"
+                  style="width:100%;margin-top:8px">
+            🔍 크롤링 시작
+          </button>
+        </form>
       </div>
-    </form>
-    {% elif not crawl_errors %}
-    <div class="empty-state">
-      <p>위에서 소스를 선택하고 크롤링을 시작하세요.</p>
     </div>
+
+    {# ── 알림 토스트 ── #}
+    {% set ba = request.query_params.get('bulk_added') %}
+    {% set be = request.query_params.get('bulk_errors') %}
+    {% set added1 = request.query_params.get('added') %}
+    {% if ba or be or added1 %}
+    <div style="margin-bottom:16px;padding:12px 18px;border-radius:12px;
+      background:{% if be and be != '0' %}rgba(234,179,8,.1){% else %}rgba(34,197,94,.1){% endif %};
+      border:1.5px solid {% if be and be != '0' %}rgba(234,179,8,.4){% else %}rgba(34,197,94,.35){% endif %};
+      display:flex;align-items:center;gap:10px">
+      <span style="font-size:1.2rem">{% if be and be != '0' %}⚠️{% else %}✅{% endif %}</span>
+      <div>
+        <strong>추가 완료</strong>
+        {% if ba %}<span style="color:#16a34a"> · {{ ba }}개 등록됨</span>{% endif %}
+        {% if added1 %}<span style="color:#16a34a"> · 1개 등록됨</span>{% endif %}
+        {% if be and be != '0' %}<span style="color:#b45309"> · {{ be }}개 실패</span>{% endif %}
+      </div>
+    </div>
+    {% endif %}
+
+    {# ── 크롤 히스토리 (날짜별 접기/펼치기) ── #}
+    {% if history %}
+      {% for session in history %}
+      {% set sess_idx = loop.index0 %}
+      <details class="crawl-session" {% if loop.first %}open{% endif %}>
+        <summary class="crawl-session-summary">
+          <span class="crawl-session-date">📅 {{ session.crawled_at }}</span>
+          <span class="crawl-session-meta">
+            <strong>{{ session.item_count }}건</strong> 수집
+            {% if session.errors %} &nbsp;·&nbsp; ⚠️ {{ session.errors | length }}개 오류{% endif %}
+          </span>
+          <span class="crawl-session-badges">
+            {% for label, cnt in session.counts.items() %}
+            <span class="crawl-site-badge">{{ label }} <strong>{{ cnt }}</strong></span>
+            {% endfor %}
+          </span>
+          <form method="post"
+                action="/admin/jobs/crawl/session/{{ session.id }}/delete"
+                class="crawl-delete-form"
+                onsubmit="return confirm('이 크롤 기록을 삭제할까요?')">
+            <button type="submit" class="crawl-delete-btn" title="기록 삭제">🗑</button>
+          </form>
+        </summary>
+
+        <div class="crawl-session-body">
+
+          {# 오류 #}
+          {% if session.errors %}
+          <details class="crawl-errors" style="margin-bottom:12px">
+            <summary>⚠️ 오류 {{ session.errors | length }}건</summary>
+            <ul>{% for err in session.errors %}<li>{{ err }}</li>{% endfor %}</ul>
+          </details>
+          {% endif %}
+
+          {% if not session['items'] %}
+          <p class="muted" style="padding:24px 0;text-align:center">수집된 공고가 없습니다.</p>
+
+          {% else %}
+
+          {# 유형 필터 바 #}
+          <div class="crawl-filter-bar" id="filterBar{{ sess_idx }}">
+            <button class="crawl-filter-btn active" data-tag="all" data-sess="{{ sess_idx }}">전체</button>
+            {% set job_types_seen = [] %}
+            {% for item in session['items'] %}
+              {% if item.job_type and item.job_type not in job_types_seen %}
+                {% set _ = job_types_seen.append(item.job_type) %}
+                <button class="crawl-filter-btn" data-tag="{{ item.job_type }}" data-sess="{{ sess_idx }}">{{ item.job_type }}</button>
+              {% endif %}
+            {% endfor %}
+            <span class="crawl-filter-count muted" id="filterCount{{ sess_idx }}"></span>
+          </div>
+
+          {# 일괄 액션 바 (최신 세션만) #}
+          {% if sess_idx == 0 %}
+          <div class="bulk-bar" id="bulkBar{{ sess_idx }}" style="display:none">
+            <span class="bulk-count" id="bulkCount{{ sess_idx }}">0개 선택됨</span>
+            <div style="display:flex;gap:6px">
+              <button type="button" class="btn btn-primary btn-sm"
+                      onclick="bulkAdd({{ sess_idx }})">선택 항목 추가</button>
+              <button type="button" class="btn btn-outline btn-sm"
+                      onclick="clearSelection({{ sess_idx }})">선택 해제</button>
+            </div>
+          </div>
+          {% endif %}
+
+          <section class="table-wrap">
+            <table class="admin-table crawl-table" id="crawlTable{{ sess_idx }}">
+              <thead>
+                <tr>
+                  {% if sess_idx == 0 %}
+                  <th style="width:32px;text-align:center">
+                    <input type="checkbox" id="checkAll{{ sess_idx }}"
+                           title="전체 선택"
+                           onchange="toggleAll({{ sess_idx }}, this.checked)">
+                  </th>
+                  {% endif %}
+                  <th style="width:70px">출처</th>
+                  <th>제목</th>
+                  <th style="width:130px">회사</th>
+                  <th style="width:70px">유형</th>
+                  <th style="width:90px">마감일</th>
+                  {% if sess_idx == 0 %}<th style="width:60px">추가</th>{% endif %}
+                </tr>
+              </thead>
+              <tbody>
+                {% for item in session['items'] %}
+                <tr data-tags="{{ item.job_type or '' }}" data-sess="{{ sess_idx }}"
+                    data-idx="{{ loop.index0 }}">
+                  {% if sess_idx == 0 %}
+                  <td style="text-align:center">
+                    <input type="checkbox" class="row-check-{{ sess_idx }}"
+                           value="{{ loop.index0 }}"
+                           onchange="updateBulkBar({{ sess_idx }})">
+                  </td>
+                  {% endif %}
+                  <td>
+                    <span class="crawl-site-badge" style="font-size:.72rem">{{ item.source_label }}</span>
+                  </td>
+                  <td>
+                    <a href="{{ item.link }}" target="_blank" rel="noopener" class="crawl-title">
+                      {{ item.title[:80] }}{% if item.title | length > 80 %}…{% endif %}
+                    </a>
+                  </td>
+                  <td class="muted" style="font-size:.82rem">{{ item.company or '-' }}</td>
+                  <td>
+                    <span class="tag tag-sm" style="
+                      background:{% if item.job_type == '인턴' %}rgba(99,102,241,.15)
+                      {% elif item.job_type == '채용' %}rgba(34,197,94,.15)
+                      {% elif item.job_type == '서포터즈' %}rgba(249,115,22,.15)
+                      {% else %}rgba(168,85,247,.15){% endif %};
+                      color:{% if item.job_type == '인턴' %}#6366f1
+                      {% elif item.job_type == '채용' %}#16a34a
+                      {% elif item.job_type == '서포터즈' %}#ea580c
+                      {% else %}#9333ea{% endif %}">{{ item.job_type or '-' }}</span>
+                  </td>
+                  <td class="muted" style="font-size:.82rem;white-space:nowrap">
+                    {{ item.deadline or '상시' }}
+                  </td>
+                  {% if sess_idx == 0 %}
+                  <td>
+                    <form method="post" action="/admin/jobs/add">
+                      <input type="hidden" name="idx" value="{{ loop.index0 }}">
+                      <button type="submit" class="btn btn-outline btn-sm">추가</button>
+                    </form>
+                  </td>
+                  {% endif %}
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </section>
+          {% endif %}
+
+        </div>{# /crawl-session-body #}
+      </details>
+      {% endfor %}
+
+    {% else %}
+    <section class="empty-state">
+      <p class="empty-title">아직 크롤링 결과가 없습니다.</p>
+      <p class="muted">소스를 선택하고 크롤링 시작 버튼을 눌러보세요.</p>
+    </section>
     {% endif %}
 
   </div>
 </main>
 
-<script>
-function toggleAll(checked) {
-  document.querySelectorAll('.row-check').forEach(cb => { cb.checked = checked; });
+<style>
+.crawl-source-bar {
+  display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 4px;
 }
+.crawl-source-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 12px; border: 1.5px solid var(--line); border-radius: 999px;
+  font-size: .82rem; font-weight: 600; cursor: pointer; user-select: none;
+  background: var(--surface); color: var(--muted);
+  transition: border-color .15s, color .15s, background .15s;
+}
+.crawl-source-chip:has(input:checked) {
+  border-color: var(--cartel-blue); color: var(--cartel-blue);
+  background: rgba(59,130,246,0.07);
+}
+.crawl-source-chip input { display: none; }
+
+.crawl-session {
+  border: 1.5px solid var(--line); border-radius: 14px;
+  overflow: hidden; margin-bottom: 16px; background: var(--surface);
+}
+.crawl-session-summary {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 14px 18px; cursor: pointer; list-style: none;
+  font-size: .9rem; background: var(--surface);
+  border-bottom: 1.5px solid transparent; transition: background .15s;
+}
+.crawl-session[open] > .crawl-session-summary {
+  border-bottom-color: var(--line); background: rgba(59,130,246,0.03);
+}
+.crawl-session-summary::-webkit-details-marker { display: none; }
+.crawl-session-summary::before {
+  content: '▶'; font-size: .7rem; color: var(--muted); flex-shrink: 0;
+  transition: transform .15s;
+}
+.crawl-session[open] > .crawl-session-summary::before { transform: rotate(90deg); }
+.crawl-session-date { font-weight: 700; color: var(--text); }
+.crawl-session-meta { color: var(--muted); font-size: .85rem; }
+.crawl-session-badges { display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto; }
+.crawl-delete-form { margin: 0; flex-shrink: 0; }
+.crawl-delete-btn {
+  background: none; border: 1px solid transparent; border-radius: 6px;
+  padding: 2px 6px; cursor: pointer; font-size: .9rem;
+  opacity: .5; transition: opacity .15s, border-color .15s;
+}
+.crawl-delete-btn:hover { opacity: 1; border-color: #ef4444; }
+.crawl-session-body { padding: 16px 18px; }
+
+.crawl-site-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 10px; border-radius: 999px;
+  background: rgba(59,130,246,0.08); border: 1px solid rgba(59,130,246,0.2);
+  font-size: .75rem; color: var(--cartel-blue);
+}
+.crawl-filter-bar {
+  display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px;
+  padding-bottom: 10px; border-bottom: 1px solid var(--line);
+  align-items: center;
+}
+.crawl-filter-btn {
+  font-size: .78rem; font-weight: 600; padding: 4px 12px;
+  border: 1.5px solid var(--line); border-radius: 999px;
+  background: var(--surface); color: var(--muted); cursor: pointer;
+  transition: border-color .12s, color .12s, background .12s;
+}
+.crawl-filter-btn.active, .crawl-filter-btn:hover {
+  border-color: var(--cartel-blue); color: var(--cartel-blue);
+  background: rgba(59,130,246,0.07);
+}
+.crawl-filter-count { font-size: .8rem; }
+
+.bulk-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; padding: 10px 14px; margin-bottom: 8px;
+  background: rgba(37,99,235,.07); border: 1.5px solid rgba(37,99,235,.2);
+  border-radius: 10px; flex-wrap: wrap;
+}
+.bulk-count { font-size: .85rem; font-weight: 700; color: var(--cartel-blue); }
+.crawl-errors summary { cursor: pointer; font-size: .85rem; color: var(--muted); }
+.crawl-errors ul { margin: 8px 0 0 16px; font-size: .82rem; }
+.crawl-title { color: var(--text); font-weight: 500; }
+.crawl-title:hover { color: var(--cartel-blue); }
+</style>
+
+<script>
+// ── 삭제 버튼이 <details> 토글 막기 ──────────────────────────────
+document.querySelectorAll('.crawl-delete-btn').forEach(function(btn) {
+  btn.addEventListener('click', function(e) { e.stopPropagation(); });
+});
+
+// ── 일괄 선택 ─────────────────────────────────────────────────────
+function getChecked(sessIdx) {
+  return Array.from(
+    document.querySelectorAll('.row-check-' + sessIdx + ':checked')
+  ).filter(function(c) { return c.closest('tr').style.display !== 'none'; });
+}
+
+function updateBulkBar(sessIdx) {
+  var checked = getChecked(sessIdx);
+  var bar   = document.getElementById('bulkBar'   + sessIdx);
+  var count = document.getElementById('bulkCount' + sessIdx);
+  if (!bar) return;
+  bar.style.display = checked.length > 0 ? 'flex' : 'none';
+  if (count) count.textContent = checked.length + '개 선택됨';
+  var allChk = document.getElementById('checkAll' + sessIdx);
+  if (!allChk) return;
+  var allVisible = Array.from(
+    document.querySelectorAll('.row-check-' + sessIdx)
+  ).filter(function(c) { return c.closest('tr').style.display !== 'none'; });
+  allChk.indeterminate = checked.length > 0 && checked.length < allVisible.length;
+  allChk.checked = allVisible.length > 0 && checked.length === allVisible.length;
+}
+
+function toggleAll(sessIdx, checked) {
+  Array.from(document.querySelectorAll('.row-check-' + sessIdx)).forEach(function(c) {
+    if (c.closest('tr').style.display !== 'none') c.checked = checked;
+  });
+  updateBulkBar(sessIdx);
+}
+
+function clearSelection(sessIdx) {
+  Array.from(document.querySelectorAll('.row-check-' + sessIdx)).forEach(function(c) {
+    c.checked = false;
+  });
+  var allChk = document.getElementById('checkAll' + sessIdx);
+  if (allChk) { allChk.checked = false; allChk.indeterminate = false; }
+  updateBulkBar(sessIdx);
+}
+
+function bulkAdd(sessIdx) {
+  var checked = getChecked(sessIdx);
+  if (checked.length === 0) { alert('항목을 선택해주세요.'); return; }
+  if (!confirm(checked.length + '개 공고를 추가합니다. 계속하시겠습니까?')) return;
+  var form = document.createElement('form');
+  form.method = 'post';
+  form.action = '/admin/jobs/add-bulk';
+  checked.forEach(function(c) {
+    var inp = document.createElement('input');
+    inp.type = 'hidden'; inp.name = 'indices'; inp.value = c.value;
+    form.appendChild(inp);
+  });
+  document.body.appendChild(form);
+  form.submit();
+}
+
+// ── 소스 선택 최소 1개 보장 ──────────────────────────────────────
+function onCrawlSubmit(e) {
+  var checked = document.querySelectorAll('.crawl-source-chk:checked');
+  if (checked.length === 0) {
+    alert('크롤링 소스를 하나 이상 선택해주세요.');
+    return false;
+  }
+  var btn = document.getElementById('crawlRunBtn');
+  btn.disabled = true;
+  btn.textContent = '크롤링 중…';
+  return true;
+}
+
+// ── 유형 필터 (세션별 독립) ──────────────────────────────────────
+(function() {
+  document.querySelectorAll('.crawl-filter-bar').forEach(function(bar) {
+    var sessIdx = bar.id.replace('filterBar', '');
+    var table   = document.getElementById('crawlTable' + sessIdx);
+    var countEl = document.getElementById('filterCount' + sessIdx);
+    if (!table) return;
+    var activeTag = 'all';
+
+    function applyFilter() {
+      var rows = table.querySelectorAll('tbody tr[data-sess="' + sessIdx + '"]');
+      var visible = 0;
+      rows.forEach(function(row) {
+        var tag  = (row.getAttribute('data-tags') || '').trim();
+        var show = activeTag === 'all' || tag === activeTag;
+        row.style.display = show ? '' : 'none';
+        if (show) visible++;
+      });
+      if (countEl) countEl.textContent = activeTag === 'all' ? '' : visible + '건';
+      updateBulkBar(sessIdx);
+    }
+
+    bar.addEventListener('click', function(e) {
+      var btn = e.target.closest('.crawl-filter-btn');
+      if (!btn) return;
+      activeTag = btn.getAttribute('data-tag') || 'all';
+      bar.querySelectorAll('.crawl-filter-btn').forEach(function(b) {
+        b.classList.toggle('active', b === btn);
+      });
+      applyFilter();
+    });
+  });
+})();
 </script>
 {% endblock %}

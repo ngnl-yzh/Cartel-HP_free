@@ -36,7 +36,8 @@ from models import (
     AppSetting,
     ChatMessage, ChatRoom, ChatRoomMember,
     Comment, CommentLike,
-    Competition, CompetitionScrap, CrawlSession, InviteCode, InviteCodeUseLog, JobPosting, Member,
+    Competition, CompetitionScrap, CrawlSession, InviteCode, InviteCodeUseLog,
+    JobCrawlSession, JobPosting, Member,
     DirectMessage, ExternalAchievement, Follow, Notification,
     Post, PostLike,
     GalleryPost, Team, TeamCompetitionEntry, TeamMember, TeamResult,
@@ -4569,8 +4570,87 @@ async def job_detail(job_id: int, db: Session = Depends(get_db)):
 
 # ── 관리자 취업 ──────────────────────────────────────────────────────────────
 
-# 세션 내 임시 크롤 결과 저장 (메모리)
-_latest_job_crawl_items: list = []
+# 메모리 캐시 (재배포 시 소멸 → DB로 복원)
+_job_crawl_cache: list = []
+
+
+def _latest_job_crawl_items(db: Session) -> list:
+    """메모리 캐시가 비어 있으면 DB 최신 JobCrawlSession에서 복원"""
+    if _job_crawl_cache:
+        return _job_crawl_cache
+    try:
+        sess = (
+            db.query(JobCrawlSession)
+            .order_by(JobCrawlSession.id.desc())
+            .first()
+        )
+        if sess:
+            return json.loads(sess.items or "[]")
+    except Exception:
+        pass
+    return []
+
+
+def _load_job_crawl_history(db: Session) -> list:
+    """DB에서 취업 크롤 히스토리 목록을 로드 (최신 20개)"""
+    try:
+        rows = (
+            db.query(JobCrawlSession)
+            .order_by(JobCrawlSession.id.desc())
+            .limit(20)
+            .all()
+        )
+        history = []
+        for row in rows:
+            history.append({
+                "id":         row.id,
+                "items":      json.loads(row.items  or "[]"),
+                "errors":     json.loads(row.errors or "[]"),
+                "counts":     json.loads(row.counts or "{}"),
+                "sources":    json.loads(row.sources or "[]"),
+                "item_count": row.item_count,
+                "crawled_at": (
+                    (row.crawled_at + timedelta(hours=9)).strftime("%Y년 %m월 %d일 %H:%M")
+                    if row.crawled_at else ""
+                ),
+            })
+        return history
+    except Exception:
+        return []
+
+
+def _save_job_crawl_session(db: Session, result: dict, sources: list) -> None:
+    """취업 크롤 결과를 DB에 저장"""
+    items = result.get("items", [])
+    sess = JobCrawlSession(
+        sources=json.dumps(sources, ensure_ascii=False),
+        items=json.dumps(items, ensure_ascii=False),
+        errors=json.dumps(result.get("errors", []), ensure_ascii=False),
+        counts=json.dumps(result.get("counts", {}), ensure_ascii=False),
+        item_count=len(items),
+    )
+    db.add(sess)
+    db.commit()
+
+
+def _job_item_to_posting(item: dict) -> JobPosting:
+    """크롤 결과 dict → JobPosting 모델"""
+    deadline_val = None
+    if item.get("deadline"):
+        try:
+            deadline_val = date.fromisoformat(item["deadline"])
+        except (ValueError, TypeError):
+            pass
+    return JobPosting(
+        title=item.get("title", "")[:500],
+        company=item.get("company", "")[:200],
+        job_type=item.get("job_type", "인턴")[:50],
+        location=item.get("location", "")[:200],
+        deadline=deadline_val,
+        link=item.get("link", "")[:1000],
+        source=item.get("source", "")[:50],
+        source_label=item.get("source_label", "")[:100],
+    )
 
 
 @app.get("/admin/jobs", response_class=HTMLResponse)
@@ -4578,7 +4658,6 @@ async def admin_jobs_list(
     request: Request,
     db: Session = Depends(get_db),
 ):
-    # 관리자 전용
     if r := _admin_redirect(request):
         return r
     today = date.today()
@@ -4595,11 +4674,10 @@ async def admin_jobs_list(
 async def admin_jobs_crawl_page(request: Request, db: Session = Depends(get_db)):
     if r := _admin_redirect(request):
         return r
+    history = _load_job_crawl_history(db)
     return _render(request, "admin/jobs_crawl.html", _ctx(request, db,
         job_sources=JOB_SOURCES,
-        crawl_items=_latest_job_crawl_items,
-        crawl_errors=[],
-        crawl_counts={},
+        history=history,
     ))
 
 
@@ -4609,17 +4687,42 @@ async def admin_jobs_crawl_run(
     sources: List[str] = Form(default=[]),
     db: Session = Depends(get_db),
 ):
-    global _latest_job_crawl_items
+    global _job_crawl_cache
     if r := _admin_redirect(request):
         return r
-    result = await _do_crawl_jobs(sources or list(JOB_SOURCES.keys()))
-    _latest_job_crawl_items = result.get("items", [])
+
+    selected = [s for s in sources if s in JOB_SOURCES] or list(JOB_SOURCES.keys())
+    result = await _do_crawl_jobs(selected)
+
+    items = result.get("items", [])
+    _job_crawl_cache = items
+    _save_job_crawl_session(db, result, selected)
+
+    history = _load_job_crawl_history(db)
     return _render(request, "admin/jobs_crawl.html", _ctx(request, db,
         job_sources=JOB_SOURCES,
-        crawl_items=_latest_job_crawl_items,
-        crawl_errors=result.get("errors", []),
-        crawl_counts=result.get("counts", {}),
+        history=history,
     ))
+
+
+@app.post("/admin/jobs/add")
+async def admin_jobs_add_single(
+    request: Request,
+    idx: int = Form(...),
+    db: Session = Depends(get_db),
+):
+    if r := _admin_redirect(request):
+        return r
+    items = _latest_job_crawl_items(db)
+    if idx < 0 or idx >= len(items):
+        return RedirectResponse(url="/admin/jobs/crawl?err=invalid_idx", status_code=303)
+    try:
+        posting = _job_item_to_posting(items[idx])
+        db.add(posting)
+        db.commit()
+    except Exception:
+        pass
+    return RedirectResponse(url="/admin/jobs/crawl?added=1", status_code=303)
 
 
 @app.post("/admin/jobs/add-bulk")
@@ -4630,30 +4733,14 @@ async def admin_jobs_add_bulk(
 ):
     if r := _admin_redirect(request):
         return r
-    added = 0
-    errors = 0
+    items = _latest_job_crawl_items(db)
+    added, errors = 0, 0
     for idx in indices:
-        if idx < 0 or idx >= len(_latest_job_crawl_items):
+        if idx < 0 or idx >= len(items):
             errors += 1
             continue
-        item = _latest_job_crawl_items[idx]
         try:
-            deadline_val = None
-            if item.get("deadline"):
-                try:
-                    deadline_val = date.fromisoformat(item["deadline"])
-                except (ValueError, TypeError):
-                    pass
-            posting = JobPosting(
-                title=item.get("title", "")[:500],
-                company=item.get("company", "")[:200],
-                job_type=item.get("job_type", "인턴")[:50],
-                location=item.get("location", "")[:200],
-                deadline=deadline_val,
-                link=item.get("link", "")[:1000],
-                source=item.get("source", "")[:50],
-                source_label=item.get("source_label", "")[:100],
-            )
+            posting = _job_item_to_posting(items[idx])
             db.add(posting)
             added += 1
         except Exception:
@@ -4662,9 +4749,23 @@ async def admin_jobs_add_bulk(
     return RedirectResponse(url=f"/admin/jobs/crawl?bulk_added={added}&bulk_errors={errors}", status_code=303)
 
 
+@app.post("/admin/jobs/crawl/session/{sess_id}/delete")
+async def admin_jobs_crawl_session_delete(
+    request: Request,
+    sess_id: int,
+    db: Session = Depends(get_db),
+):
+    if r := _admin_redirect(request):
+        return r
+    sess = db.query(JobCrawlSession).filter(JobCrawlSession.id == sess_id).first()
+    if sess:
+        db.delete(sess)
+        db.commit()
+    return RedirectResponse(url="/admin/jobs/crawl", status_code=303)
+
+
 @app.post("/admin/jobs/delete/{job_id}")
 async def admin_jobs_delete(request: Request, job_id: int, db: Session = Depends(get_db)):
-    # 관리자 전용
     if r := _admin_redirect(request):
         return r
     posting = db.query(JobPosting).filter(JobPosting.id == job_id).first()
@@ -4672,7 +4773,7 @@ async def admin_jobs_delete(request: Request, job_id: int, db: Session = Depends
         db.delete(posting)
         db.commit()
     referer = request.headers.get("referer", "")
-    if "/admin/jobs" in referer:
+    if "/admin/jobs" in referer and "crawl" not in referer:
         return RedirectResponse(url="/admin/jobs", status_code=303)
     return RedirectResponse(url="/jobs", status_code=303)
 
@@ -4683,7 +4784,6 @@ async def admin_jobs_delete_bulk(
     job_ids: List[int] = Form(default=[]),
     db: Session = Depends(get_db),
 ):
-    # 관리자 전용
     if r := _admin_redirect(request):
         return r
     count = 0

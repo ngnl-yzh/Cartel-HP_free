@@ -99,6 +99,7 @@ def init_db():
 
         # team_competition_entries — 신규 테이블이므로 create_all로 생성됨
         # gallery_posts — 신규 테이블이므로 create_all로 생성됨
+        # job_postings — 신규 테이블이므로 create_all로 생성됨 (추가 컬럼 없음)
 
         if "chat_rooms" in tables and "chat_room_members" in tables:
             rooms = conn.execute(_t(

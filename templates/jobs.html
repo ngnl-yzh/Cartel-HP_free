@@ -10,6 +10,12 @@
         <p class="eyebrow">Career</p>
         <h1>취업 공고</h1>
       </div>
+      {% if is_admin is defined and is_admin %}
+      <div style="display:flex;gap:8px">
+        <a href="/admin/jobs" class="btn btn-outline">📋 공고 관리</a>
+        <a href="/admin/jobs/crawl" class="btn btn-primary">🔍 크롤링</a>
+      </div>
+      {% endif %}
     </div>
 
     {# ── 검색 + 필터 바 ── #}

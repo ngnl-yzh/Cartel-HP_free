@@ -4567,10 +4567,27 @@ async def job_detail(job_id: int, db: Session = Depends(get_db)):
     return RedirectResponse(url=posting.link, status_code=302)
 
 
-# ── 관리자 취업 크롤링 ────────────────────────────────────────────────────────
+# ── 관리자 취업 ──────────────────────────────────────────────────────────────
 
 # 세션 내 임시 크롤 결과 저장 (메모리)
 _latest_job_crawl_items: list = []
+
+
+@app.get("/admin/jobs", response_class=HTMLResponse)
+async def admin_jobs_list(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    if r := _admin_redirect(request):
+        return r
+    today = date.today()
+    postings = db.query(JobPosting).order_by(JobPosting.created_at.desc()).all()
+    bulk_deleted = request.query_params.get("bulk_deleted")
+    return _render(request, "admin/jobs.html", _ctx(request, db,
+        postings=postings,
+        today=today,
+        bulk_deleted=int(bulk_deleted) if bulk_deleted else None,
+    ))
 
 
 @app.get("/admin/jobs/crawl", response_class=HTMLResponse)
@@ -4652,6 +4669,10 @@ async def admin_jobs_delete(request: Request, job_id: int, db: Session = Depends
     if posting:
         db.delete(posting)
         db.commit()
+    # Referer 기준으로 되돌아갈 위치 결정
+    referer = request.headers.get("referer", "")
+    if "/admin/jobs" in referer:
+        return RedirectResponse(url="/admin/jobs", status_code=303)
     return RedirectResponse(url="/jobs", status_code=303)
 
 
@@ -4663,7 +4684,8 @@ async def admin_jobs_delete_bulk(
 ):
     if r := _admin_redirect(request):
         return r
+    count = 0
     if job_ids:
-        db.query(JobPosting).filter(JobPosting.id.in_(job_ids)).delete(synchronize_session=False)
+        count = db.query(JobPosting).filter(JobPosting.id.in_(job_ids)).delete(synchronize_session=False)
         db.commit()
-    return RedirectResponse(url="/jobs", status_code=303)
+    return RedirectResponse(url=f"/admin/jobs?bulk_deleted={count}", status_code=303)

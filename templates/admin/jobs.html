@@ -1,0 +1,199 @@
+{% extends "base.html" %}
+{% block title %}취업 공고 관리 · 관리자{% endblock %}
+
+{% block content %}
+<main class="admin-page">
+  <div class="container">
+
+    {% if bulk_deleted %}
+    <div style="margin-bottom:16px;padding:12px 18px;border-radius:12px;
+      background:rgba(34,197,94,.1);border:1.5px solid rgba(34,197,94,.35);
+      display:flex;align-items:center;gap:10px">
+      <span style="font-size:1.2rem">✅</span>
+      <div><strong>삭제 완료</strong> <span style="color:#16a34a"> · {{ bulk_deleted }}개 삭제됨</span></div>
+    </div>
+    {% endif %}
+
+    <div class="page-heading">
+      <div>
+        <p class="eyebrow">Admin · Career</p>
+        <h1>취업 공고 관리</h1>
+      </div>
+      <div style="display:flex;gap:8px">
+        <a href="/jobs" class="btn btn-outline">💼 취업 목록</a>
+        <a href="/admin/jobs/crawl" class="btn btn-outline">🔍 크롤링</a>
+        <a href="/admin" class="btn btn-outline">← 관리자 패널</a>
+      </div>
+    </div>
+
+    {# ── 통계 ── #}
+    <div class="stat-grid" style="margin-bottom:20px">
+      <div class="stat-card">
+        <span>전체</span>
+        <strong>{{ postings | length }}</strong>
+      </div>
+      <div class="stat-card">
+        <span>마감 임박 (7일)</span>
+        <strong>{{ postings | selectattr('deadline') | list | length }}</strong>
+      </div>
+      <div class="stat-card">
+        <span>상시 채용</span>
+        <strong>{{ postings | rejectattr('deadline') | list | length }}</strong>
+      </div>
+    </div>
+
+    {% if postings %}
+
+    {# ── 일괄 삭제 바 ── #}
+    <div class="bulk-del-bar" id="bulkDelBar" style="display:none">
+      <span class="bulk-del-count" id="bulkDelCount">0개 선택됨</span>
+      <div style="display:flex;gap:6px">
+        <button type="button" class="btn btn-outline btn-sm"
+                onclick="clearSelection()">선택 해제</button>
+        <button type="button" class="btn btn-danger btn-sm"
+                onclick="submitBulkDelete()">선택 항목 삭제</button>
+      </div>
+    </div>
+
+    <section class="table-wrap">
+      <table class="admin-table" id="jobTable">
+        <thead>
+          <tr>
+            <th style="width:32px;text-align:center">
+              <input type="checkbox" id="checkAll" title="전체 선택"
+                     onchange="toggleAll(this.checked)">
+            </th>
+            <th style="width:80px">출처</th>
+            <th>제목</th>
+            <th style="width:140px">회사</th>
+            <th style="width:80px">유형</th>
+            <th style="width:100px">마감일</th>
+            <th style="width:60px">조회</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in postings %}
+          {% set is_closed = p.deadline and p.deadline < today %}
+          <tr {% if is_closed %}style="opacity:.55"{% endif %}>
+            <td style="text-align:center">
+              <input type="checkbox" class="job-chk" value="{{ p.id }}"
+                     onchange="updateBar()">
+            </td>
+            <td>
+              <span class="tag tag-sm" style="background:rgba(255,255,255,.07);font-size:.75rem">{{ p.source_label }}</span>
+            </td>
+            <td>
+              <a href="{{ p.link }}" target="_blank" rel="noopener"
+                 class="table-title" style="font-size:.88rem">
+                {{ p.title[:70] }}{% if p.title|length > 70 %}…{% endif %}
+              </a>
+            </td>
+            <td style="font-size:.82rem;color:var(--c-muted)">{{ p.company or '-' }}</td>
+            <td>
+              <span class="tag tag-sm" style="
+                background:{% if p.job_type == '인턴' %}rgba(99,102,241,.15)
+                {% elif p.job_type == '채용' %}rgba(34,197,94,.15)
+                {% elif p.job_type == '서포터즈' %}rgba(249,115,22,.15)
+                {% else %}rgba(168,85,247,.15){% endif %};
+                color:{% if p.job_type == '인턴' %}#6366f1
+                {% elif p.job_type == '채용' %}#16a34a
+                {% elif p.job_type == '서포터즈' %}#ea580c
+                {% else %}#9333ea{% endif %}">{{ p.job_type or '-' }}</span>
+            </td>
+            <td style="font-size:.82rem">
+              {% if p.deadline %}
+                {% if is_closed %}
+                  <span class="deadline-badge closed">마감</span>
+                {% else %}
+                  {% set days = (p.deadline - today).days %}
+                  {% if days <= 7 %}
+                    <span class="deadline-badge urgent">D-{{ days }}</span>
+                  {% else %}
+                    <span style="color:var(--c-muted)">{{ p.deadline.strftime('%Y.%m.%d') }}</span>
+                  {% endif %}
+                {% endif %}
+              {% else %}
+                <span style="color:var(--c-muted)">상시</span>
+              {% endif %}
+            </td>
+            <td style="font-size:.82rem;color:var(--c-muted);text-align:center">{{ p.view_count }}</td>
+            <td class="table-actions">
+              <form method="post" action="/admin/jobs/delete/{{ p.id }}"
+                    data-confirm="이 공고를 삭제하시겠습니까?">
+                <button type="submit" class="btn btn-danger btn-sm">삭제</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+
+    {% else %}
+    <section class="empty-state">
+      <p class="empty-title">등록된 취업 공고가 없습니다.</p>
+      <a href="/admin/jobs/crawl" class="btn btn-primary">크롤링으로 가져오기</a>
+    </section>
+    {% endif %}
+
+  </div>
+</main>
+
+<style>
+.bulk-del-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  margin-bottom: 8px;
+  background: rgba(239,68,68,.07);
+  border: 1.5px solid rgba(239,68,68,.25);
+  border-radius: 10px;
+  flex-wrap: wrap;
+}
+.bulk-del-count { font-size: .85rem; font-weight: 700; color: #dc2626; }
+</style>
+
+<script>
+function updateBar() {
+  var checked = document.querySelectorAll('.job-chk:checked');
+  var bar     = document.getElementById('bulkDelBar');
+  var count   = document.getElementById('bulkDelCount');
+  bar.style.display = checked.length > 0 ? 'flex' : 'none';
+  count.textContent = checked.length + '개 선택됨';
+  var all    = document.querySelectorAll('.job-chk');
+  var allChk = document.getElementById('checkAll');
+  if (allChk) {
+    allChk.indeterminate = checked.length > 0 && checked.length < all.length;
+    allChk.checked       = all.length > 0 && checked.length === all.length;
+  }
+}
+function toggleAll(checked) {
+  document.querySelectorAll('.job-chk').forEach(function(c){ c.checked = checked; });
+  updateBar();
+}
+function clearSelection() {
+  document.querySelectorAll('.job-chk').forEach(function(c){ c.checked = false; });
+  var allChk = document.getElementById('checkAll');
+  if (allChk) { allChk.checked = false; allChk.indeterminate = false; }
+  updateBar();
+}
+function submitBulkDelete() {
+  var ids = Array.from(document.querySelectorAll('.job-chk:checked')).map(function(c){ return c.value; });
+  if (!ids.length) return;
+  if (!confirm(ids.length + '개 공고를 삭제합니다. 계속하시겠습니까?')) return;
+  var form = document.createElement('form');
+  form.method = 'post';
+  form.action = '/admin/jobs/delete-bulk';
+  ids.forEach(function(id) {
+    var inp = document.createElement('input');
+    inp.type = 'hidden'; inp.name = 'job_ids'; inp.value = id;
+    form.appendChild(inp);
+  });
+  document.body.appendChild(form);
+  form.submit();
+}
+</script>
+{% endblock %}

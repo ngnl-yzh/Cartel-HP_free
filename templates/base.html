@@ -26,7 +26,7 @@
       <div class="c-nav-links" id="cNavLinks">
         <a href="/" class="c-nav-link {% if request.url.path == '/' %}is-active{% endif %}">Home</a>
         <a href="/competitions" class="c-nav-link {% if '/competitions' in request.url.path %}is-active{% endif %}">Competition</a>
-        <a href="/jobs" class="c-nav-link {% if '/jobs' in request.url.path or request.url.path.startswith('/job/') %}is-active{% endif %}">취업</a>
+        <a href="/jobs" class="c-nav-link {% if '/jobs' in request.url.path or request.url.path.startswith('/job/') %}is-active{% endif %}">Career</a>
 
         {# Board 드롭다운 #}
         <div class="c-dropdown" id="boardDropdown">
@@ -147,7 +147,7 @@
       <nav class="c-mobile-links">
         <a href="/" class="c-mobile-link {% if request.url.path == '/' %}is-active{% endif %}">🏠 Home</a>
         <a href="/competitions" class="c-mobile-link {% if '/competitions' in request.url.path %}is-active{% endif %}">🏆 Competition</a>
-        <a href="/jobs" class="c-mobile-link {% if '/jobs' in request.url.path or request.url.path.startswith('/job/') %}is-active{% endif %}">💼 취업</a>
+        <a href="/jobs" class="c-mobile-link {% if '/jobs' in request.url.path or request.url.path.startswith('/job/') %}is-active{% endif %}">💼 Career</a>
         <div class="c-mobile-group">
           <div class="c-mobile-group-title">Board</div>
           <a href="/board/free"    class="c-mobile-link c-mobile-sub {% if '/board/free'    in request.url.path %}is-active{% endif %}">✏️ 자유게시판</a>

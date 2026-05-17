@@ -10,10 +10,12 @@
         <p class="eyebrow">Career</p>
         <h1>취업 공고</h1>
       </div>
-      {% if is_admin is defined and is_admin %}
+      {% if is_privileged is defined and is_privileged %}
       <div style="display:flex;gap:8px">
         <a href="/admin/jobs" class="btn btn-outline">📋 공고 관리</a>
+        {% if is_admin is defined and is_admin %}
         <a href="/admin/jobs/crawl" class="btn btn-primary">🔍 크롤링</a>
+        {% endif %}
       </div>
       {% endif %}
     </div>

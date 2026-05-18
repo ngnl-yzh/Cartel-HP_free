@@ -8,7 +8,24 @@ import re
 import secrets
 import uuid
 from collections import defaultdict
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
+
+# 한국 표준시 (UTC+9) — Railway 서버는 UTC이므로 명시적으로 변환
+_KST = timezone(timedelta(hours=9))
+def _now() -> datetime:
+    """현재 KST 시각을 naive datetime으로 반환 (DB 저장용)"""
+    return datetime.now(_KST).replace(tzinfo=None)
+
+def _today() -> date:
+    """현재 KST 날짜 반환"""
+    return datetime.now(_KST).date()
+
+def _today() -> date:
+    """현재 KST 날짜 반환"""
+    return datetime.now(_KST).date()
+# PLACEHOLDER_REMOVE
+    """현재 KST 시각을 naive datetime으로 반환 (DB 저장용)"""
+    return datetime.now(_KST).replace(tzinfo=None)
 from pathlib import Path
 from typing import List, Optional
 from urllib.parse import urlparse
@@ -140,7 +157,7 @@ def _parse_expiry(valid_days: Optional[str], expires_at: Optional[str]) -> Optio
             raise HTTPException(status_code=400, detail="만료일 형식이 올바르지 않습니다.") from exc
     days = _optional_int(valid_days, "유효 기간")
     if days:
-        return datetime.now() + timedelta(days=days)
+        return _now() + timedelta(days=days)
     return None
 
 
@@ -210,7 +227,7 @@ _FAIL_TTL       = 3600        # 오래된 항목 청소 기준(초)
 
 def _prune_fail_counter(counter: dict) -> None:
     """1시간 이상 된 항목 제거 (메모리 누수 방지)"""
-    now = datetime.now()
+    now = _now()
     stale = [ip for ip, (_, last) in counter.items()
              if (now - last).total_seconds() > _FAIL_TTL]
     for ip in stale:
@@ -219,12 +236,12 @@ def _prune_fail_counter(counter: dict) -> None:
 
 def _is_locked(counter: dict, ip: str, max_fail: int = _LOGIN_MAX_FAIL) -> bool:
     count, last = counter.get(ip, (0, datetime.min))
-    return count >= max_fail and (datetime.now() - last).total_seconds() < _LOGIN_LOCKOUT
+    return count >= max_fail and (_now() - last).total_seconds() < _LOGIN_LOCKOUT
 
 
 def _record_fail(counter: dict, ip: str) -> None:
     count, _ = counter.get(ip, (0, datetime.min))
-    counter[ip] = (count + 1, datetime.now())
+    counter[ip] = (count + 1, _now())
     _prune_fail_counter(counter)
 
 
@@ -263,7 +280,7 @@ def startup():
 # ── 날짜 / 상태 헬퍼 ──────────────────────────────────────────────────────────
 
 def _days_left(deadline: date) -> int:
-    return (deadline - date.today()).days
+    return (deadline - _today()).days
 
 
 def _urgency(deadline: date) -> str:
@@ -293,7 +310,7 @@ _CSS_VER = str(int(_time.time()))
 def _next_upcoming_event(comp) -> Optional[tuple]:
     """7일 이내 또는 당일인 다음 이벤트. 없으면 None.
     반환: (stage_key, label, event_date, days_left)"""
-    today = date.today()
+    today = _today()
     candidates = []
 
     # 고정 단계 (announcement, award)
@@ -327,7 +344,7 @@ def _comp_stage(c) -> str:
     """접수중 / 심사중 / 발표준비중 / 마감 — 날짜 자동 + 수동 오버라이드"""
     if getattr(c, 'stage_override', None):
         return c.stage_override
-    today = date.today()
+    today = _today()
     if c.deadline >= today:
         return "접수중"
     ann = getattr(c, 'announcement_date', None)
@@ -405,7 +422,7 @@ def _ctx(request: Request, db: Session, **extra) -> dict:
         "current_member": cm,
         "is_privileged": is_admin or bool(cm and cm.role == "sub_admin"),
         "boards": BOARDS,
-        "now": datetime.now(),
+        "now": _now(),
         "css_version": _CSS_VER,
         "submission_doc_types": SUBMISSION_DOC_TYPES,
     }
@@ -586,7 +603,7 @@ def _can_manage_room(room_member: Optional[ChatRoomMember], request: Request, db
 
 
 def _is_comment_muted(member: Member) -> bool:
-    return bool(member.comment_muted_until and member.comment_muted_until > datetime.now())
+    return bool(member.comment_muted_until and member.comment_muted_until > _now())
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -595,7 +612,7 @@ def _is_comment_muted(member: Member) -> bool:
 
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request, db: Session = Depends(get_db)):
-    today = date.today()
+    today = _today()
 
     # 통계
     total_members = db.query(func.count(Member.id)).scalar() or 0
@@ -652,7 +669,7 @@ async def index(
     page: int = Query(1, ge=1),
     db: Session = Depends(get_db),
 ):
-    today = date.today()
+    today = _today()
     active_priority = case((Competition.deadline < today, 1), else_=0)
 
     _FEATURED_MAX = 18  # 캐러셀 최대 표시 개수
@@ -769,7 +786,7 @@ async def competitions_archive(
     page: int = Query(1, ge=1),
     db: Session = Depends(get_db),
 ):
-    today = date.today()
+    today = _today()
 
     query = db.query(Competition).filter(Competition.deadline < today)
     if tag and tag != "all":
@@ -858,7 +875,7 @@ async def detail(request: Request, comp_id: int, db: Session = Depends(get_db)):
     for t in teams:
         t.members = tm_by_team.get(t.id, [])
 
-    today = date.today()
+    today = _today()
     submission_window = comp.deadline < today <= comp.deadline + timedelta(days=7)
 
     # 스크랩 여부
@@ -985,7 +1002,7 @@ async def record_stage_result(
     if result:
         result.passed = passed_bool
         result.note = note.strip()
-        result.recorded_at = datetime.now()
+        result.recorded_at = _now()
         result.recorded_by_id = cm.id
     else:
         db.add(TeamResult(
@@ -1136,7 +1153,7 @@ async def achievement_save(
         (UPLOAD_DIR / fname).write_bytes(img_data)
         new_proof_path = fname
 
-    now_dt = datetime.now()
+    now_dt = _now()
 
     if entry is None:
         entry = TeamCompetitionEntry(
@@ -1183,7 +1200,7 @@ async def admin_approve_proof(
     if not entry:
         raise HTTPException(status_code=404, detail="실적 기록을 찾을 수 없습니다.")
     entry.proof_approved      = True
-    entry.proof_approved_at   = datetime.now()
+    entry.proof_approved_at   = _now()
     entry.proof_rejected_reason = ""
     db.commit()
     return RedirectResponse(
@@ -1427,7 +1444,7 @@ async def mypage(request: Request, db: Session = Depends(get_db)):
     if not cm:
         return RedirectResponse(url="/member/login?next=/my", status_code=303)
 
-    today = date.today()
+    today = _today()
 
     # 스크랩 공모전
     scrap_ids = [
@@ -1626,7 +1643,7 @@ async def admin_competitions(
     competitions = _annotate(db.query(Competition).order_by(Competition.deadline.asc()).all())
     return _render(request, "admin/competitions.html", _ctx(request, db,
         competitions=competitions,
-        today=date.today(),
+        today=_today(),
         bulk_added=bulk_added,
         bulk_errors=bulk_errors,
     ))
@@ -1972,7 +1989,7 @@ async def admin_members(request: Request, q: str = Query(default=""), db: Sessio
         })
 
     return _render(request, "admin/members.html", _ctx(request, db,
-        members=members, code_groups=code_groups, query=q, now=datetime.now()
+        members=members, code_groups=code_groups, query=q, now=_now()
     ))
 
 
@@ -2044,7 +2061,7 @@ async def admin_mute_member_comments(
     member = db.query(Member).filter(Member.id == member_id).first()
     if member:
         minutes = _optional_int(duration_minutes, "댓글 금지 시간")
-        member.comment_muted_until = (datetime.now() + timedelta(minutes=minutes)) if minutes and minutes > 0 else None
+        member.comment_muted_until = (_now() + timedelta(minutes=minutes)) if minutes and minutes > 0 else None
         db.commit()
     return RedirectResponse(url="/admin/members", status_code=303)
 
@@ -2073,7 +2090,7 @@ async def admin_invite_codes(request: Request, db: Session = Depends(get_db)):
             members_map[m.id] = m.activity_name
     return _render(request,
         "admin/invite_codes.html",
-        _ctx(request, db, codes=codes, logs_by_code=logs_by_code, members_map=members_map, now=datetime.now()),
+        _ctx(request, db, codes=codes, logs_by_code=logs_by_code, members_map=members_map, now=_now()),
     )
 
 
@@ -2131,7 +2148,7 @@ async def admin_kick_invite_member(request: Request, log_id: int, db: Session = 
     member = db.query(Member).filter(Member.id == log.member_id).first() if log.member_id else None
     if member:
         db.delete(member)
-    log.revoked_at = datetime.now()
+    log.revoked_at = _now()
     log.revoked_by = "admin"
     if code and code.code_type == "group" and (code.use_count or 0) > 0:
         code.use_count -= 1
@@ -2167,7 +2184,7 @@ async def register(
         return err("초대 코드가 올바르지 않습니다.")
     if not code_obj.is_active:
         return err("비활성화된 초대 코드입니다.")
-    if code_obj.expires_at and datetime.now() > code_obj.expires_at:
+    if code_obj.expires_at and _now() > code_obj.expires_at:
         return err("만료된 초대 코드입니다.")
     code_type = code_obj.code_type or "personal"
     if code_type == "personal" and code_obj.used_by_member_id:
@@ -2459,7 +2476,7 @@ async def approve_follow(request: Request, follow_id: int, db: Session = Depends
     if not follow:
         raise HTTPException(status_code=404)
     follow.status = "approved"
-    follow.approved_at = datetime.now()
+    follow.approved_at = _now()
     _create_notification(db, follow.follower_id, "follow_approved", cm.id, follow.id,
                           f"{cm.activity_name}님이 팔로우 요청을 수락했습니다.")
     db.commit()
@@ -2739,7 +2756,7 @@ async def create_team(
     comp = db.query(Competition).filter(Competition.id == comp_id).first()
     if not comp:
         raise HTTPException(status_code=404)
-    if date.today() > comp.deadline:
+    if _today() > comp.deadline:
         raise HTTPException(status_code=400, detail="마감된 공모전입니다.")
     team_name = team_name.strip()
     if not team_name:
@@ -2803,7 +2820,7 @@ async def team_join(
     comp = db.query(Competition).filter(Competition.id == comp_id).first()
     if not comp:
         raise HTTPException(status_code=404)
-    if date.today() > comp.deadline:
+    if _today() > comp.deadline:
         raise HTTPException(status_code=400, detail="마감된 공모전입니다.")
     team = db.query(Team).filter(Team.id == team_id, Team.competition_id == comp_id).first()
     if not team:
@@ -3113,7 +3130,7 @@ async def record_submission(
     if not team:
         raise HTTPException(status_code=404)
     comp = db.query(Competition).filter(Competition.id == comp_id).first()
-    today = date.today()
+    today = _today()
     if not (comp.deadline < today <= comp.deadline + timedelta(days=7)):
         raise HTTPException(status_code=400, detail="제출 기록 기간이 아닙니다.")
     db.query(TeamMember).filter(TeamMember.team_id == team_id).update({"is_participant": False})
@@ -3125,7 +3142,7 @@ async def record_submission(
         docs.append(custom_doc.strip())
     team.submitted_docs = json.dumps(docs, ensure_ascii=False)
     team.submitted = True
-    team.submitted_at = datetime.now()
+    team.submitted_at = _now()
     db.commit()
     return RedirectResponse(url=f"/competition/{comp_id}#team", status_code=303)
 
@@ -3339,7 +3356,7 @@ async def board_edit_post(
         raise HTTPException(status_code=400, detail="본문은 10,000자를 초과할 수 없습니다.")
     post.title = title.strip()
     post.content = content
-    post.updated_at = datetime.now()
+    post.updated_at = _now()
     db.commit()
     return RedirectResponse(url=f"/board/{board}/post/{post_id}", status_code=303)
 
@@ -3660,7 +3677,7 @@ async def chat_mute_member(
     if target.role == "owner" and not _is_privileged(request, db):
         raise HTTPException(status_code=403, detail="방장은 채팅 제한할 수 없습니다.")
     minutes = _optional_int(duration_minutes, "채팅 금지 시간")
-    target.muted_until = (datetime.now() + timedelta(minutes=minutes)) if minutes and minutes > 0 else None
+    target.muted_until = (_now() + timedelta(minutes=minutes)) if minutes and minutes > 0 else None
     db.commit()
     return RedirectResponse(url=f"/chat/{room_id}", status_code=303)
 
@@ -3795,7 +3812,7 @@ async def ws_chat(ws: WebSocket, room_id: int):
                 if not content:
                     continue
                 db.refresh(room_member)
-                if room_member.muted_until and room_member.muted_until > datetime.now():
+                if room_member.muted_until and room_member.muted_until > _now():
                     await ws.send_json({
                         "type": "error",
                         "message": f"{room_member.muted_until.strftime('%Y.%m.%d %H:%M')}까지 채팅이 제한되었습니다.",
@@ -3853,7 +3870,7 @@ def _save_enabled_sources(db: Session, sources: list) -> None:
     row = db.query(AppSetting).filter(AppSetting.key == "enabled_crawl_sources").first()
     if row:
         row.value = val
-        row.updated_at = datetime.now()
+        row.updated_at = _now()
     else:
         db.add(AppSetting(key="enabled_crawl_sources", value=val))
     db.commit()
@@ -4088,7 +4105,7 @@ async def admin_crawl_run(
     result["items"]             = filtered_items
     result["skipped"]           = skipped
     result["total_before_dedup"] = len(raw_items)
-    result["crawled_at"]        = datetime.now().strftime("%Y년 %m월 %d일 %H:%M")
+    result["crawled_at"]        = _now().strftime("%Y년 %m월 %d일 %H:%M")
 
     _crawl_cache = result
     # DB에 세션 저장 (영속)
@@ -4143,7 +4160,7 @@ async def admin_crawl_add(
     deadline_str = item.get("deadline")
     if not deadline_str:
         # 마감일 없는 경우 오늘+30일로 임시 설정
-        deadline_str = (date.today() + timedelta(days=30)).isoformat()
+        deadline_str = (_today() + timedelta(days=30)).isoformat()
 
     comp = Competition(
         title=item.get("title", ""),
@@ -4175,11 +4192,11 @@ async def admin_crawl_add_bulk(
         if idx < 0 or idx >= len(items):
             continue
         item = items[idx]
-        deadline_str = item.get("deadline") or (date.today() + timedelta(days=30)).isoformat()
+        deadline_str = item.get("deadline") or (_today() + timedelta(days=30)).isoformat()
         try:
             dl = date.fromisoformat(deadline_str)
         except (ValueError, TypeError):
-            dl = date.today() + timedelta(days=30)
+            dl = _today() + timedelta(days=30)
         comp = Competition(
             title=item.get("title", ""),
             organizer=item.get("organizer", ""),
@@ -4571,7 +4588,7 @@ async def _gpt_process_item(item: dict, db: Session) -> int:
         parsed["tags"] = item.get("tags", [])
 
     # ── 6. Competition 생성 ───────────────────────────────────────────────────
-    deadline_str = parsed.get("deadline") or (date.today() + timedelta(days=30)).isoformat()
+    deadline_str = parsed.get("deadline") or (_today() + timedelta(days=30)).isoformat()
 
     _rd = parsed.get("review_dates") or []
     if not isinstance(_rd, list):
@@ -4673,7 +4690,7 @@ async def admin_settings_tags(
     row = db.query(AppSetting).filter(AppSetting.key == "tags").first()
     if row:
         row.value = json.dumps(new_tags, ensure_ascii=False)
-        row.updated_at = datetime.now()
+        row.updated_at = _now()
     else:
         db.add(AppSetting(key="tags", value=json.dumps(new_tags, ensure_ascii=False)))
     db.commit()
@@ -4711,7 +4728,7 @@ async def jobs_page(
     page: int = Query(1, ge=1),
     db: Session = Depends(get_db),
 ):
-    today = date.today()
+    today = _today()
 
     # ── 피처드: 마감 임박 8개 + 조회수 높은 10개 → 최대 15개 ──
     _by_deadline = (
@@ -4901,7 +4918,7 @@ async def admin_jobs_list(
 ):
     if r := _admin_redirect(request):
         return r
-    today = date.today()
+    today = _today()
     postings = db.query(JobPosting).order_by(JobPosting.created_at.desc()).all()
     bulk_deleted = request.query_params.get("bulk_deleted")
     return _render(request, "admin/jobs.html", _ctx(request, db,
@@ -4943,7 +4960,7 @@ async def admin_jobs_settings_types(
     row = db.query(AppSetting).filter(AppSetting.key == "job_types").first()
     if row:
         row.value = json.dumps(new_types, ensure_ascii=False)
-        row.updated_at = datetime.now()
+        row.updated_at = _now()
     else:
         db.add(AppSetting(key="job_types", value=json.dumps(new_types, ensure_ascii=False)))
     db.commit()

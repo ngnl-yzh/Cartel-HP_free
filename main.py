@@ -2465,12 +2465,12 @@ async def approve_follow(request: Request, follow_id: int,
         raise HTTPException(status_code=404)
     follow.status = "approved"
     follow.approved_at = _now()
-    # 관련 알림도 읽음 처리
+    # 관련 알림 삭제 (버튼이 다시 나타나지 않도록)
     db.query(Notification).filter(
         Notification.member_id == cm.id,
         Notification.type == "follow_request",
         Notification.ref_id == follow_id,
-    ).update({"is_read": True})
+    ).delete(synchronize_session=False)
     _create_notification(db, follow.follower_id, "follow_approved", cm.id, follow.id,
                           f"{cm.activity_name}님이 팔로우 요청을 수락했습니다.")
     db.commit()
@@ -2489,12 +2489,12 @@ async def reject_follow(request: Request, follow_id: int,
         or_(Follow.following_id == cm.id, Follow.follower_id == cm.id)
     ).first()
     if follow:
-        # 관련 알림도 읽음 처리
+        # 관련 알림 삭제
         db.query(Notification).filter(
             Notification.member_id == cm.id,
             Notification.type == "follow_request",
             Notification.ref_id == follow_id,
-        ).update({"is_read": True})
+        ).delete(synchronize_session=False)
         db.delete(follow)
         db.commit()
     return RedirectResponse(url=next, status_code=303)

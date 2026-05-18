@@ -4735,6 +4735,54 @@ async def admin_settings_tags(
     return RedirectResponse(url="/admin/settings?saved=1", status_code=303)
 
 
+# ── 일회성 스토리지 마이그레이션 (Railway Volume → Supabase Storage) ───────────
+
+@app.get("/admin/migrate-storage")
+async def migrate_storage(request: Request):
+    """Railway Volume 파일들을 Supabase Storage로 일괄 업로드 (일회성 사용)"""
+    if not _is_admin(request):
+        raise HTTPException(status_code=403)
+    if not _USE_SUPABASE:
+        return {"error": "SUPABASE_URL / SUPABASE_SERVICE_KEY 환경변수가 설정되지 않았습니다."}
+
+    results = {"ok": [], "fail": [], "skipped": 0}
+    if not UPLOAD_DIR.exists():
+        return {"error": f"UPLOAD_DIR({UPLOAD_DIR}) 없음"}
+
+    import httpx as _hx
+    files = list(UPLOAD_DIR.iterdir())
+    for fp in files:
+        if not fp.is_file():
+            continue
+        try:
+            content = fp.read_bytes()
+            ext = fp.suffix.lower()
+            ctype = {
+                ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+                ".png": "image/png", ".gif": "image/gif",
+                ".webp": "image/webp", ".pdf": "application/pdf",
+            }.get(ext, "application/octet-stream")
+            resp = _hx.put(
+                f"{SUPABASE_URL}/storage/v1/object/{SUPABASE_BUCKET}/{fp.name}",
+                content=content,
+                headers={"Authorization": f"Bearer {SUPABASE_SERVICE_KEY}", "Content-Type": ctype},
+                timeout=60,
+            )
+            if resp.status_code in (200, 201):
+                results["ok"].append(fp.name)
+            else:
+                results["fail"].append({"file": fp.name, "status": resp.status_code, "body": resp.text[:200]})
+        except Exception as e:
+            results["fail"].append({"file": fp.name, "error": str(e)})
+
+    return {
+        "total": len(files),
+        "success": len(results["ok"]),
+        "failed": len(results["fail"]),
+        "failures": results["fail"],
+    }
+
+
 # ════════════════════════════════════════════════════════════════════════════
 #  취업 게시판
 # ════════════════════════════════════════════════════════════════════════════

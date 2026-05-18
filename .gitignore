@@ -27,3 +27,4 @@ Thumbs.db
 
 # Claude 설정
 .claude/
+migrate_db.py

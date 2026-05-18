@@ -62,28 +62,61 @@ from models import (
 
 app = FastAPI(title="공모전 보드")
 
-# UPLOAD_DIR 결정 우선순위:
-# 1) UPLOAD_DIR 환경변수 (명시 설정)
-# 2) RAILWAY_VOLUME_MOUNT_PATH (Railway Volume 자동 감지) + /uploads
-# 3) 기본값: BASE_DIR/uploads (로컬 개발)
-_upload_raw    = (os.getenv("UPLOAD_DIR") or "").strip()
-_volume_mount  = (os.getenv("RAILWAY_VOLUME_MOUNT_PATH") or "").strip()
+# ── 파일 저장소: Supabase Storage (운영) 또는 로컬 디렉토리 (개발) ──────────────
+SUPABASE_URL         = (os.getenv("SUPABASE_URL") or "").rstrip("/")
+SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "")
+SUPABASE_BUCKET      = "uploads"
+_USE_SUPABASE        = bool(SUPABASE_URL and SUPABASE_SERVICE_KEY)
 
-if _upload_raw:
-    UPLOAD_DIR = Path(_upload_raw)
-    if not UPLOAD_DIR.is_absolute():
-        UPLOAD_DIR = BASE_DIR / UPLOAD_DIR
-elif _volume_mount:
-    UPLOAD_DIR = Path(_volume_mount) / "uploads"
-else:
-    UPLOAD_DIR = BASE_DIR / "uploads"
-
+UPLOAD_DIR = BASE_DIR / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
-app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
+
+def _storage_upload(content: bytes, filename: str, content_type: str = "application/octet-stream") -> None:
+    if _USE_SUPABASE:
+        import httpx as _hx
+        _hx.put(
+            f"{SUPABASE_URL}/storage/v1/object/{SUPABASE_BUCKET}/{filename}",
+            content=content,
+            headers={"Authorization": f"Bearer {SUPABASE_SERVICE_KEY}", "Content-Type": content_type},
+            timeout=30,
+        )
+    else:
+        (UPLOAD_DIR / filename).write_bytes(content)
+
+def _storage_delete(filename: str) -> None:
+    if not filename:
+        return
+    if _USE_SUPABASE:
+        try:
+            import httpx as _hx
+            _hx.delete(
+                f"{SUPABASE_URL}/storage/v1/object/{SUPABASE_BUCKET}/{filename}",
+                headers={"Authorization": f"Bearer {SUPABASE_SERVICE_KEY}"},
+                timeout=10,
+            )
+        except Exception:
+            pass
+    else:
+        try:
+            (UPLOAD_DIR / filename).unlink(missing_ok=True)
+        except OSError:
+            pass
 
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
+
+
+@app.get("/uploads/{filename:path}")
+async def serve_upload(filename: str):
+    from fastapi.responses import FileResponse
+    if _USE_SUPABASE:
+        url = f"{SUPABASE_URL}/storage/v1/object/public/{SUPABASE_BUCKET}/{filename}"
+        return RedirectResponse(url=url, status_code=302)
+    filepath = UPLOAD_DIR / filename
+    if not filepath.exists():
+        raise HTTPException(status_code=404)
+    return FileResponse(filepath)
 
 
 @app.exception_handler(HTTPException)
@@ -480,7 +513,7 @@ async def _save_image(upload: Optional[UploadFile]) -> Optional[str]:
     if not _is_valid_image_bytes(content):
         raise HTTPException(status_code=400, detail="유효하지 않은 이미지 파일입니다.")
     name = f"{uuid.uuid4().hex}{ext}"
-    (UPLOAD_DIR / name).write_bytes(content)
+    _storage_upload(content, name, upload.content_type or "image/jpeg")
     return name
 
 
@@ -507,7 +540,7 @@ async def _save_files(files: List[UploadFile]) -> list:
         if len(content) > MAX_FILE_SIZE:
             raise HTTPException(status_code=413, detail=f"첨부 파일 크기는 {MAX_FILE_SIZE // 1024 // 1024}MB를 초과할 수 없습니다.")
         name = f"{uuid.uuid4().hex}{ext}"
-        (UPLOAD_DIR / name).write_bytes(content)
+        _storage_upload(content, name, f.content_type or "application/octet-stream")
         saved.append({"name": f.filename, "path": name})
     return saved
 
@@ -516,12 +549,7 @@ async def _save_files(files: List[UploadFile]) -> list:
 
 def _delete_upload(filename: Optional[str]) -> None:
     """업로드 파일 안전 삭제 (없거나 실패해도 무시)"""
-    if not filename:
-        return
-    try:
-        (UPLOAD_DIR / filename).unlink(missing_ok=True)
-    except OSError:
-        pass
+    _storage_delete(filename or "")
 
 
 # ── 리다이렉트 보안 헬퍼 ──────────────────────────────────────────────────────
@@ -1150,7 +1178,7 @@ async def achievement_save(
         if len(img_data) > 10 * 1024 * 1024:
             raise HTTPException(status_code=400, detail="파일 크기는 10MB 이하로 제한됩니다.")
         fname = f"{uuid.uuid4().hex}{ext}"
-        (UPLOAD_DIR / fname).write_bytes(img_data)
+        _storage_upload(img_data, fname, proof_image.content_type or "image/jpeg")
         new_proof_path = fname
 
     now_dt = _now()
@@ -1374,7 +1402,7 @@ async def gallery_new(
             if len(data) > 20 * 1024 * 1024:
                 continue
             fname = f"{uuid.uuid4().hex}{ext}"
-            (UPLOAD_DIR / fname).write_bytes(data)
+            _storage_upload(data, fname, img.content_type or "image/jpeg")
             saved_images.append(fname)
 
     parsed_date = None
@@ -1838,7 +1866,7 @@ async def admin_delete(request: Request, comp_id: int, db: Session = Depends(get
     if comp:
         for item in _from_json(comp.files):
             try:
-                (UPLOAD_DIR / item["path"]).unlink(missing_ok=True)
+                _storage_delete(item["path"])
             except OSError:
                 pass
         db.delete(comp)
@@ -1860,13 +1888,9 @@ async def admin_delete_bulk(
         if not comp:
             continue
         for item in _from_json(comp.files):
-            fp = UPLOAD_DIR / item.get("saved_name", "")
-            if fp.exists():
-                fp.unlink(missing_ok=True)
+            _storage_delete(item.get("path") or item.get("saved_name", ""))
         if comp.image:
-            ip = UPLOAD_DIR / comp.image
-            if ip.exists():
-                ip.unlink(missing_ok=True)
+            _storage_delete(comp.image)
         db.delete(comp)
     db.commit()
     return RedirectResponse(url="/admin/competitions", status_code=303)
@@ -1883,9 +1907,7 @@ async def delete_file(request: Request, comp_id: int, filename: str = Form(...),
         comp.files = json.dumps(updated, ensure_ascii=False)
         db.commit()
         try:
-            file_path = UPLOAD_DIR / safe_name
-            if file_path.is_relative_to(UPLOAD_DIR):
-                file_path.unlink(missing_ok=True)
+            _storage_delete(safe_name)
         except OSError:
             pass
     return RedirectResponse(url=f"/admin/edit/{comp_id}", status_code=303)
@@ -1919,7 +1941,7 @@ async def api_parse_image(request: Request, image: UploadFile = File(...), db: S
         if len(data) > MAX_IMAGE_SIZE:
             raise HTTPException(status_code=413, detail=f"이미지 크기가 {MAX_IMAGE_SIZE // 1024 // 1024}MB를 초과했습니다.")
         stored_name = f"{uuid.uuid4().hex}{ext}"
-        (UPLOAD_DIR / stored_name).write_bytes(data)
+        _storage_upload(data, stored_name, image.content_type or "image/jpeg")
         result = await parse_image_file(data, image.content_type)
         result["_image_path"] = stored_name
         return JSONResponse(result)
@@ -3389,7 +3411,7 @@ async def board_delete_post(request: Request, board: str, post_id: int, db: Sess
     # 이미지 파일 삭제
     for img in _from_json(post.images):
         try:
-            (UPLOAD_DIR / img).unlink(missing_ok=True)
+            _storage_delete(img)
         except OSError:
             pass
     db.delete(post)
@@ -4474,7 +4496,7 @@ async def _gpt_process_item(item: dict, db: Session) -> int:
                             _ie = og_image_url.split("?")[0].rsplit(".", 1)[-1].lower()
                             _ie = _ie if _ie in ("jpg", "jpeg", "png", "gif", "webp") else "jpg"
                             _ifn = f"{uuid.uuid4().hex}.{_ie}"
-                            (UPLOAD_DIR / _ifn).write_bytes(_ir.content)
+                            _storage_upload(_ir.content, _ifn, _ct or "image/jpeg")
                             saved_image = _ifn
                 except Exception as _e:
                     _log.warning("og:image 다운로드 실패: %s", _e)
@@ -4516,7 +4538,7 @@ async def _gpt_process_item(item: dict, db: Session) -> int:
                         _att["ext"] = _ct_map.get(_mime, _att.get("ext", "bin"))
 
                     _ffn = f"{uuid.uuid4().hex}.{_att['ext']}"
-                    (UPLOAD_DIR / _ffn).write_bytes(_fr.content)
+                    _storage_upload(_fr.content, _ffn, _fr.headers.get("content-type", "application/octet-stream"))
                     saved_files.append({"name": _att["name"], "path": _ffn})
 
                     # PDF·HWP 텍스트 추출

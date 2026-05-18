@@ -648,6 +648,7 @@ async def index(
     tag: str = "",
     sort: str = "deadline",
     q: str = "",
+    stage: str = "",
     page: int = Query(1, ge=1),
     db: Session = Depends(get_db),
 ):
@@ -716,6 +717,14 @@ async def index(
             return (2, 0)
         all_competitions.sort(key=_sort_key)
 
+    # 단계별 카운트 (필터 전)
+    _STAGES = ["접수중", "심사중", "발표준비중", "마감"]
+    stage_counts = {s: sum(1 for c in all_competitions if c.comp_stage == s) for s in _STAGES}
+
+    # 단계 필터
+    if stage and stage in _STAGES:
+        all_competitions = [c for c in all_competitions if c.comp_stage == stage]
+
     # 페이지네이션
     _PAGE_SIZE = 12
     total_count = len(all_competitions)
@@ -745,7 +754,9 @@ async def index(
              current_tag=tag or "all",
              current_sort=sort, query=q, today=today,
              page=page, total_pages=total_pages, total_count=total_count,
-             closed_count=closed_count),
+             closed_count=closed_count,
+             current_stage=stage,
+             stage_counts=stage_counts),
     )
 
 

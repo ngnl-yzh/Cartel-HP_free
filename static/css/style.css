@@ -3325,6 +3325,65 @@ select {
 .notif-actor { font-weight:600; color:var(--primary); }
 .notif-time { font-size:.78rem; margin-left:auto; white-space:nowrap; }
 
+/* ── 단계 필터 탭 바 ────────────────────────────────────────────── */
+.stage-tab-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+.stage-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: .83rem;
+  font-weight: 600;
+  color: var(--muted);
+  background: var(--surface);
+  border: 1.5px solid var(--line);
+  text-decoration: none;
+  transition: all .15s;
+  white-space: nowrap;
+}
+.stage-tab:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+.stage-tab.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+/* 접수중 */
+.stage-tab-1.active { background: #0f766e; border-color: #0f766e; }
+.stage-tab-1:not(.active):hover { border-color: #0f766e; color: #0f766e; }
+/* 심사중 */
+.stage-tab-2.active { background: #d97706; border-color: #d97706; }
+.stage-tab-2:not(.active):hover { border-color: #d97706; color: #d97706; }
+/* 발표준비중 */
+.stage-tab-3.active { background: #7c3aed; border-color: #7c3aed; }
+.stage-tab-3:not(.active):hover { border-color: #7c3aed; color: #7c3aed; }
+/* 마감 */
+.stage-tab-4.active { background: #64748b; border-color: #64748b; }
+.stage-tab-4:not(.active):hover { border-color: #64748b; color: #64748b; }
+
+.stage-tab-count {
+  font-size: .72rem;
+  font-weight: 700;
+  background: rgba(0,0,0,.08);
+  border-radius: 999px;
+  padding: 0 5px;
+  min-width: 18px;
+  text-align: center;
+  line-height: 16px;
+}
+.stage-tab.active .stage-tab-count {
+  background: rgba(255,255,255,.25);
+}
+
 /* ── 공모전 단계(comp_stage) 뱃지 ──────────────────────────────── */
 /* 카드 그리드용 — 작은 인라인 칩 */
 .stage-chip {

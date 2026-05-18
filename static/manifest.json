@@ -1,0 +1,23 @@
+{
+  "name": "CARTEL",
+  "short_name": "CARTEL",
+  "description": "AI · Competition · Together — 카르텔 공모전 플랫폼",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0f1e",
+  "theme_color": "#2563eb",
+  "icons": [
+    {
+      "src": "/static/images/cartel-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/static/images/cartel-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

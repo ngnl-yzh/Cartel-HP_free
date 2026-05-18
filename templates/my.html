@@ -47,11 +47,23 @@
             <span>{{ n.message }}</span>
             <span class="muted notif-time">{{ n.created_at.strftime('%m/%d %H:%M') }}</span>
           </div>
-          {% if not n.is_read %}
-          <form method="post" action="/notifications/{{ n.id }}/read">
-            <button type="submit" class="btn btn-ghost btn-sm">읽음</button>
-          </form>
-          {% endif %}
+          <div style="display:flex;gap:6px;align-items:center;flex-shrink:0">
+            {% if n.type == 'follow_request' and n.ref_id %}
+              {# 팔로우 요청 → 수락/거절 인라인 버튼 #}
+              <form method="post" action="/follow/{{ n.ref_id }}/approve" style="display:inline">
+                <input type="hidden" name="next" value="/my#notifications">
+                <button type="submit" class="btn btn-primary btn-sm">수락</button>
+              </form>
+              <form method="post" action="/follow/{{ n.ref_id }}/reject" style="display:inline">
+                <input type="hidden" name="next" value="/my#notifications">
+                <button type="submit" class="btn btn-ghost btn-sm" style="color:var(--danger)">거절</button>
+              </form>
+            {% elif not n.is_read %}
+              <form method="post" action="/notifications/{{ n.id }}/read">
+                <button type="submit" class="btn btn-ghost btn-sm">읽음</button>
+              </form>
+            {% endif %}
+          </div>
         </div>
         {% endfor %}
       </div>

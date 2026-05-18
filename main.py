@@ -2468,7 +2468,9 @@ async def send_follow_request(request: Request, target_id: int, db: Session = De
 
 
 @app.post("/follow/{follow_id}/approve")
-async def approve_follow(request: Request, follow_id: int, db: Session = Depends(get_db)):
+async def approve_follow(request: Request, follow_id: int,
+                         next: str = Form("/my/follows"),
+                         db: Session = Depends(get_db)):
     cm = _current_member(request, db)
     if not cm:
         raise HTTPException(status_code=401)
@@ -2477,14 +2479,22 @@ async def approve_follow(request: Request, follow_id: int, db: Session = Depends
         raise HTTPException(status_code=404)
     follow.status = "approved"
     follow.approved_at = _now()
+    # 관련 알림도 읽음 처리
+    db.query(Notification).filter(
+        Notification.member_id == cm.id,
+        Notification.type == "follow_request",
+        Notification.ref_id == follow_id,
+    ).update({"is_read": True})
     _create_notification(db, follow.follower_id, "follow_approved", cm.id, follow.id,
                           f"{cm.activity_name}님이 팔로우 요청을 수락했습니다.")
     db.commit()
-    return RedirectResponse(url="/my/follows", status_code=303)
+    return RedirectResponse(url=next, status_code=303)
 
 
 @app.post("/follow/{follow_id}/reject")
-async def reject_follow(request: Request, follow_id: int, db: Session = Depends(get_db)):
+async def reject_follow(request: Request, follow_id: int,
+                        next: str = Form("/my/follows"),
+                        db: Session = Depends(get_db)):
     cm = _current_member(request, db)
     if not cm:
         raise HTTPException(status_code=401)
@@ -2493,9 +2503,15 @@ async def reject_follow(request: Request, follow_id: int, db: Session = Depends(
         or_(Follow.following_id == cm.id, Follow.follower_id == cm.id)
     ).first()
     if follow:
+        # 관련 알림도 읽음 처리
+        db.query(Notification).filter(
+            Notification.member_id == cm.id,
+            Notification.type == "follow_request",
+            Notification.ref_id == follow_id,
+        ).update({"is_read": True})
         db.delete(follow)
         db.commit()
-    return RedirectResponse(url="/my/follows", status_code=303)
+    return RedirectResponse(url=next, status_code=303)
 
 
 @app.get("/my/follows", response_class=HTMLResponse)

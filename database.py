@@ -47,6 +47,8 @@ def init_db():
             _add_col(conn, inspector, "competitions", "review_dates",      "review_dates TEXT DEFAULT '[]'")
             _add_col(conn, inspector, "competitions", "is_featured",       "is_featured BOOLEAN DEFAULT FALSE")
             _add_col(conn, inspector, "competitions", "view_count",        "view_count INTEGER DEFAULT 0")
+            _add_col(conn, inspector, "competitions", "submission_docs",   "submission_docs TEXT DEFAULT '[]'")
+            _add_col(conn, inspector, "competitions", "stage_override",    "stage_override VARCHAR(20)")
 
         if "members" in tables:
             _add_col(conn, inspector, "members", "comment_muted_until", "comment_muted_until TIMESTAMP")
@@ -67,7 +69,8 @@ def init_db():
             _add_col(conn, inspector, "chat_room_members", "muted_until", "muted_until TIMESTAMP")
 
         if "teams" in tables:
-            _add_col(conn, inspector, "teams", "requirements", "requirements TEXT DEFAULT ''")
+            _add_col(conn, inspector, "teams", "requirements",   "requirements TEXT DEFAULT ''")
+            _add_col(conn, inspector, "teams", "submitted_docs", "submitted_docs TEXT DEFAULT '[]'")
 
         if "team_members" in tables:
             _add_col(conn, inspector, "team_members", "is_participant", "is_participant BOOLEAN DEFAULT FALSE")

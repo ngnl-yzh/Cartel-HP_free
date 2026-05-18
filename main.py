@@ -62,61 +62,25 @@ from models import (
 
 app = FastAPI(title="공모전 보드")
 
-# ── 파일 저장소: Supabase Storage (운영) 또는 로컬 디렉토리 (개발) ──────────────
-SUPABASE_URL         = (os.getenv("SUPABASE_URL") or "").rstrip("/")
-SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "")
-SUPABASE_BUCKET      = "uploads"
-_USE_SUPABASE        = bool(SUPABASE_URL and SUPABASE_SERVICE_KEY)
-
-UPLOAD_DIR = BASE_DIR / "uploads"
+# ── 파일 저장소 ────────────────────────────────────────────────────────────────
+UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", str(BASE_DIR / "uploads")))
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
+app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 def _storage_upload(content: bytes, filename: str, content_type: str = "application/octet-stream") -> None:
-    if _USE_SUPABASE:
-        import httpx as _hx
-        _hx.put(
-            f"{SUPABASE_URL}/storage/v1/object/{SUPABASE_BUCKET}/{filename}",
-            content=content,
-            headers={"Authorization": f"Bearer {SUPABASE_SERVICE_KEY}", "Content-Type": content_type},
-            timeout=30,
-        )
-    else:
-        (UPLOAD_DIR / filename).write_bytes(content)
+    (UPLOAD_DIR / filename).write_bytes(content)
 
 def _storage_delete(filename: str) -> None:
     if not filename:
         return
-    if _USE_SUPABASE:
-        try:
-            import httpx as _hx
-            _hx.delete(
-                f"{SUPABASE_URL}/storage/v1/object/{SUPABASE_BUCKET}/{filename}",
-                headers={"Authorization": f"Bearer {SUPABASE_SERVICE_KEY}"},
-                timeout=10,
-            )
-        except Exception:
-            pass
-    else:
-        try:
-            (UPLOAD_DIR / filename).unlink(missing_ok=True)
-        except OSError:
-            pass
+    try:
+        (UPLOAD_DIR / filename).unlink(missing_ok=True)
+    except OSError:
+        pass
 
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
-
-
-@app.get("/uploads/{filename:path}")
-async def serve_upload(filename: str):
-    from fastapi.responses import FileResponse
-    if _USE_SUPABASE:
-        url = f"{SUPABASE_URL}/storage/v1/object/public/{SUPABASE_BUCKET}/{filename}"
-        return RedirectResponse(url=url, status_code=302)
-    filepath = UPLOAD_DIR / filename
-    if not filepath.exists():
-        raise HTTPException(status_code=404)
-    return FileResponse(filepath)
 
 
 @app.exception_handler(HTTPException)
@@ -4733,192 +4697,6 @@ async def admin_settings_tags(
         db.add(AppSetting(key="tags", value=json.dumps(new_tags, ensure_ascii=False)))
     db.commit()
     return RedirectResponse(url="/admin/settings?saved=1", status_code=303)
-
-
-# ── 일회성 스토리지 마이그레이션 (Railway Volume → Supabase Storage) ───────────
-
-@app.get("/admin/migrate-storage")
-async def migrate_storage(request: Request):
-    """Railway Volume 파일들을 Supabase Storage로 일괄 업로드 (일회성 사용)"""
-    if not _is_admin(request):
-        raise HTTPException(status_code=403)
-    if not _USE_SUPABASE:
-        return {"error": "SUPABASE_URL / SUPABASE_SERVICE_KEY 환경변수가 설정되지 않았습니다."}
-
-    results = {"ok": [], "fail": [], "skipped": 0}
-    if not UPLOAD_DIR.exists():
-        return {"error": f"UPLOAD_DIR({UPLOAD_DIR}) 없음"}
-
-    import httpx as _hx
-    files = list(UPLOAD_DIR.iterdir())
-    for fp in files:
-        if not fp.is_file():
-            continue
-        try:
-            content = fp.read_bytes()
-            ext = fp.suffix.lower()
-            ctype = {
-                ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
-                ".png": "image/png", ".gif": "image/gif",
-                ".webp": "image/webp", ".pdf": "application/pdf",
-            }.get(ext, "application/octet-stream")
-            resp = _hx.put(
-                f"{SUPABASE_URL}/storage/v1/object/{SUPABASE_BUCKET}/{fp.name}",
-                content=content,
-                headers={"Authorization": f"Bearer {SUPABASE_SERVICE_KEY}", "Content-Type": ctype},
-                timeout=60,
-            )
-            if resp.status_code in (200, 201):
-                results["ok"].append(fp.name)
-            else:
-                results["fail"].append({"file": fp.name, "status": resp.status_code, "body": resp.text[:200]})
-        except Exception as e:
-            results["fail"].append({"file": fp.name, "error": str(e)})
-
-    return {
-        "total": len(files),
-        "success": len(results["ok"]),
-        "failed": len(results["fail"]),
-        "failures": results["fail"],
-    }
-
-
-# ── 일회성 DB 마이그레이션 (Railway PostgreSQL → Supabase PostgreSQL) ────────
-
-@app.post("/admin/migrate-db")
-async def migrate_db_to_supabase(
-    request: Request,
-    target_db_url: str = Form(...),
-):
-    """Railway DB 데이터를 Supabase DB로 이전 (서버 측 실행, 일회성 사용)"""
-    if not _is_admin(request):
-        raise HTTPException(status_code=403)
-
-    _TABLE_ORDER = [
-        "members", "admin_sessions", "invite_codes",
-        "competitions", "teams", "team_members", "team_competition_entries",
-        "board_posts", "board_comments",
-        "chat_rooms", "chat_room_members", "chat_messages",
-        "follows", "notifications", "direct_messages",
-        "gallery_posts", "job_postings", "external_achievements", "scraps",
-    ]
-
-    from sqlalchemy import create_engine, text, inspect as sa_inspect
-    results = {"ok": {}, "fail": {}, "errors": []}
-
-    try:
-        dst_engine = create_engine(target_db_url, pool_pre_ping=True, connect_args={"connect_timeout": 15})
-        with dst_engine.connect() as _c:
-            _c.execute(text("SELECT 1"))
-    except Exception as e:
-        return {"error": f"Supabase 연결 실패: {e}"}
-
-    # 스키마 생성
-    try:
-        from models import Base as _Base
-        _Base.metadata.create_all(dst_engine)
-        from sqlalchemy.orm import sessionmaker as _SM
-        import database as _db2
-        _saved_url = _db2.DATABASE_URL
-        _saved_engine = _db2.engine
-        _saved_session = _db2.SessionLocal
-        _db2.DATABASE_URL = target_db_url
-        _db2.engine = dst_engine
-        _db2.SessionLocal = _SM(bind=dst_engine)
-        _db2.init_db()
-        _db2.DATABASE_URL = _saved_url
-        _db2.engine = _saved_engine
-        _db2.SessionLocal = _saved_session
-    except Exception as e:
-        results["errors"].append(f"스키마 생성 오류: {e}")
-
-    src_engine = engine  # 현재 Railway DB
-    src_inspector = sa_inspect(src_engine)
-    src_tables = src_inspector.get_table_names()
-
-    with src_engine.connect() as src_conn, dst_engine.connect() as dst_conn:
-        try:
-            dst_conn.execute(text("SET session_replication_role = replica"))
-        except Exception:
-            pass
-
-        for tname in _TABLE_ORDER:
-            if tname not in src_tables:
-                results["ok"][tname] = "없음(스킵)"
-                continue
-            try:
-                cols = [c["name"] for c in src_inspector.get_columns(tname)]
-                rows = src_conn.execute(text(f'SELECT * FROM "{tname}"')).fetchall()
-                if not rows:
-                    results["ok"][tname] = "0건"
-                    continue
-
-                col_list = ", ".join(f'"{c}"' for c in cols)
-                placeholders = ", ".join(f":{c}" for c in cols)
-
-                dst_conn.execute(text(f'DELETE FROM "{tname}"'))
-                for row in rows:
-                    rd = {c: v for c, v in zip(cols, row)}
-                    dst_conn.execute(
-                        text(f'INSERT INTO "{tname}" ({col_list}) VALUES ({placeholders})'),
-                        rd,
-                    )
-
-                if "id" in cols:
-                    try:
-                        max_id = max(r[cols.index("id")] for r in rows if r[cols.index("id")] is not None)
-                        dst_conn.execute(text(
-                            f"SELECT setval(pg_get_serial_sequence('{tname}', 'id'), {max_id})"
-                        ))
-                    except Exception:
-                        pass
-
-                dst_conn.commit()
-                results["ok"][tname] = f"{len(rows)}건"
-            except Exception as e:
-                results["fail"][tname] = str(e)
-                try:
-                    dst_conn.rollback()
-                except Exception:
-                    pass
-
-        try:
-            dst_conn.execute(text("SET session_replication_role = DEFAULT"))
-            dst_conn.commit()
-        except Exception:
-            pass
-
-    return {
-        "success": len(results["ok"]),
-        "failed": len(results["fail"]),
-        "tables": results["ok"],
-        "errors": results["fail"],
-        "misc_errors": results["errors"],
-    }
-
-
-@app.get("/admin/migrate-db")
-async def migrate_db_form(request: Request):
-    """DB 마이그레이션 폼 (일회성 사용)"""
-    if not _is_admin(request):
-        raise HTTPException(status_code=403)
-    html = """
-    <html><body style="font-family:monospace;padding:2rem;max-width:700px">
-    <h2>🗃️ DB Migration: Railway → Supabase</h2>
-    <p>Supabase DB URL을 입력하면 이 서버에서 직접 마이그레이션합니다.</p>
-    <form method="post">
-      <label>Supabase DB URL<br>
-        <input name="target_db_url" type="text" style="width:100%;padding:8px;margin:8px 0"
-          placeholder="postgresql://postgres.xxx:password@aws-0-ap-northeast-1.pooler.supabase.com:5432/postgres">
-      </label><br>
-      <button type="submit" style="padding:10px 24px;background:#4f46e5;color:#fff;border:none;border-radius:8px;cursor:pointer">
-        마이그레이션 시작
-      </button>
-    </form>
-    </body></html>
-    """
-    from fastapi.responses import HTMLResponse
-    return HTMLResponse(html)
 
 
 # ════════════════════════════════════════════════════════════════════════════

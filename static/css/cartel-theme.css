@@ -982,9 +982,14 @@ body {
   .c-search { display: none; }
   .c-nav-action:not(.c-hamburger) { display: none; }
   .c-icon-btn { display: none; }
-  .c-user-btn { display: none; }
+  /* 아바타만 남기고 이름·화살표 숨김 */
+  .c-user-btn { padding: 3px; gap: 0; background: transparent; border-color: transparent; }
+  .c-user-btn .c-username { display: none; }
+  .c-user-btn .c-dropdown-caret { display: none; }
+  .c-user-btn .c-avatar { width: 30px; height: 30px; font-size: .85rem; }
+  .c-user-btn .c-avatar-letter { width: 30px; height: 30px; font-size: .85rem; }
   .c-hamburger { display: flex; }
-  .c-nav-right { gap: 4px; }
+  .c-nav-right { gap: 6px; }
 }
 
 @media (max-width: 600px) {

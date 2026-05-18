@@ -328,31 +328,80 @@
         </div>
         {% endif %}
 
-        {# 제출 현황 기록 #}
-        {% if is_privileged and submission_window %}
+        {# ── 제출 서류 현황 ── #}
         {% set all_approved = team.members | selectattr('status', 'equalto', 'approved') | list %}
+        {% set req_docs = comp.submission_docs | fromjson if comp.submission_docs else [] %}
+        {% set done_docs = team.submitted_docs | fromjson if team.submitted_docs else [] %}
+
+        {% if is_privileged and submission_window %}
         <div class="submission-box" style="margin-top:12px">
+
+          {# 제출 완료 상태 표시 #}
           {% if team.submitted %}
-          <div class="submission-done">
-            <span class="submit-check">✅</span>
-            <div>
-              <strong>제출 완료</strong> — {{ team.submitted_at.strftime('%Y년 %m월 %d일 %H:%M') }} 기록
-              <div class="participant-list">
-                참여 팀원:
-                {% for m in all_approved if m.is_participant %}
-                  <span class="part-chip">{{ m.nickname }}</span>
-                {% else %}
-                  <span class="muted">기록 없음</span>
-                {% endfor %}
+          <div class="submission-done" id="subDone_{{ team.id }}">
+            <div style="display:flex;align-items:flex-start;gap:10px">
+              <span class="submit-check">✅</span>
+              <div style="flex:1;min-width:0">
+                <strong style="font-size:.9rem">공모전 참여 완료</strong>
+                <span style="font-size:.78rem;color:var(--muted);margin-left:6px">{{ team.submitted_at.strftime('%m/%d %H:%M') }} 기록</span>
+                {# 제출 서류 칩 #}
+                {% if done_docs %}
+                <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px">
+                  {% for doc in done_docs %}
+                  <span class="doc-chip doc-chip-done">✓ {{ doc }}</span>
+                  {% endfor %}
+                </div>
+                {% endif %}
+                <div class="participant-list" style="margin-top:6px">
+                  참여 팀원:
+                  {% for m in all_approved if m.is_participant %}
+                    <span class="part-chip">{{ m.nickname }}</span>
+                  {% else %}
+                    <span style="color:var(--muted);font-size:.8rem">기록 없음</span>
+                  {% endfor %}
+                </div>
               </div>
+              <a href="#" class="btn btn-ghost btn-sm"
+                 onclick="document.getElementById('subDone_{{ team.id }}').style.display='none';document.getElementById('subForm_{{ team.id }}').style.display='block';return false;">수정</a>
             </div>
-            <a href="#" class="btn btn-ghost btn-sm"
-               onclick="this.closest('.submission-done').nextElementSibling.style.display='block';return false;">수정</a>
           </div>
           {% endif %}
-          <div {% if team.submitted %}style="display:none;margin-top:1rem"{% endif %}>
-            <h4 class="submission-title">📋 제출 현황 기록</h4>
+
+          {# 제출 기록 폼 #}
+          <div id="subForm_{{ team.id }}" {% if team.submitted %}style="display:none;margin-top:1rem"{% endif %}>
+            <h4 class="submission-title">📋 공모전 참여 · 제출 서류 기록</h4>
             <form method="post" action="/competition/{{ comp.id }}/team/{{ team.id }}/submit">
+
+              {# 1. 제출 서류 체크 #}
+              <p style="font-size:.8rem;font-weight:600;color:var(--muted);margin:0 0 8px">제출한 서류를 모두 선택하세요</p>
+              <div class="participant-check-grid" style="margin-bottom:12px">
+                {# 공모전에 지정된 필수 서류 먼저 #}
+                {% if req_docs %}
+                  {% for doc in req_docs %}
+                  <label class="check-pill check-pill-doc">
+                    <input type="checkbox" name="submitted_docs" value="{{ doc }}"
+                      {% if doc in done_docs %}checked{% endif %}>
+                    <span>📄 {{ doc }}</span>
+                  </label>
+                  {% endfor %}
+                {% endif %}
+                {# 기본 목록에서 아직 추가 안된 것들 #}
+                {% for doc in submission_doc_types %}
+                  {% if doc not in req_docs %}
+                  <label class="check-pill check-pill-doc">
+                    <input type="checkbox" name="submitted_docs" value="{{ doc }}"
+                      {% if doc in done_docs %}checked{% endif %}>
+                    <span>{{ doc }}</span>
+                  </label>
+                  {% endif %}
+                {% endfor %}
+              </div>
+              {# 기타 직접 입력 #}
+              <input type="text" name="custom_doc" placeholder="기타 서류 직접 입력 (선택)"
+                     class="form-control" style="font-size:.83rem;margin-bottom:12px">
+
+              {# 2. 참여 팀원 #}
+              <p style="font-size:.8rem;font-weight:600;color:var(--muted);margin:0 0 8px">참여 팀원을 선택하세요</p>
               <div class="participant-check-grid">
                 {% for m in all_approved %}
                 <label class="check-pill">
@@ -362,17 +411,26 @@
                 </label>
                 {% endfor %}
               </div>
-              <button type="submit" class="btn btn-primary" style="margin-top:.75rem">제출 완료로 기록</button>
+              <button type="submit" class="btn btn-primary" style="margin-top:.75rem;width:100%">✅ 참여 완료로 기록</button>
             </form>
           </div>
         </div>
+
         {% elif team.submitted %}
-        {% set all_approved = team.members | selectattr('status', 'equalto', 'approved') | list %}
+        {# 일반 멤버용 — 읽기 전용 #}
         <div class="submission-done" style="margin-top:10px">
           <span class="submit-check">✅</span>
           <div>
-            <strong>제출 완료</strong> — {{ team.submitted_at.strftime('%Y년 %m월 %d일') }}
-            <div class="participant-list">
+            <strong>공모전 참여 완료</strong>
+            <span style="font-size:.78rem;color:var(--muted);margin-left:4px">{{ team.submitted_at.strftime('%m/%d') }}</span>
+            {% if done_docs %}
+            <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:5px">
+              {% for doc in done_docs %}
+              <span class="doc-chip doc-chip-done">✓ {{ doc }}</span>
+              {% endfor %}
+            </div>
+            {% endif %}
+            <div class="participant-list" style="margin-top:5px">
               참여:
               {% for m in all_approved if m.is_participant %}
                 <span class="part-chip">{{ m.nickname }}</span>

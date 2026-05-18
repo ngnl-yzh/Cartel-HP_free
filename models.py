@@ -36,6 +36,8 @@ class Competition(Base):
     is_featured = Column(Boolean, default=False)
     submitted = Column(Boolean, default=False)
     submitted_at = Column(DateTime, nullable=True)
+    submission_docs = Column(Text, default="[]")   # JSON: ["활동계획서","기획서",...] 제출 서류 목록
+    stage_override  = Column(String(20), nullable=True)  # 수동 단계 지정: 접수중/심사중/발표준비중/마감
     created_at = Column(DateTime, default=datetime.now)
 
 
@@ -48,6 +50,7 @@ class Team(Base):
     requirements   = Column(Text, default="")   # 팀 참여 요건 (연락처, 지원 조건 등)
     submitted      = Column(Boolean, default=False)
     submitted_at   = Column(DateTime, nullable=True)
+    submitted_docs = Column(Text, default="[]")   # JSON: 실제 제출한 서류 목록
     created_at     = Column(DateTime, default=datetime.now)
 
 

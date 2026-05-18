@@ -2000,6 +2000,32 @@ select {
   gap: 8px;
 }
 
+/* 제출 서류 칩 */
+.doc-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: .75rem;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 6px;
+}
+.doc-chip-done {
+  background: rgba(34,197,94,.12);
+  color: #16a34a;
+  border: 1px solid rgba(34,197,94,.2);
+}
+/* 서류 체크필 — 기본 체크필보다 좀 더 강조 */
+.check-pill-doc {
+  background: rgba(37,99,235,.05);
+  border: 1.5px solid rgba(37,99,235,.12);
+}
+.check-pill-doc:has(input:checked) {
+  background: rgba(34,197,94,.08);
+  border-color: rgba(34,197,94,.3);
+  color: #16a34a;
+}
+
 /* ════════════════════════════════════════════════════════════
    Phase 2 — 게시판 / 채팅 / 공통
    ════════════════════════════════════════════════════════════ */

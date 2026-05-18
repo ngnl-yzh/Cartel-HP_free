@@ -282,6 +282,13 @@ COMP_STAGES = [
     ("award",        "award_date",        "시상식"),
 ]
 
+# 제출 서류 미리 정해진 목록
+SUBMISSION_DOC_TYPES = ["활동계획서", "기획서", "포트폴리오", "발표자료(PPT)", "영상", "결과보고서"]
+
+# CSS 캐시 버스팅 버전
+import time as _time
+_CSS_VER = str(int(_time.time()))
+
 
 def _next_upcoming_event(comp) -> Optional[tuple]:
     """7일 이내 또는 당일인 다음 이벤트. 없으면 None.
@@ -316,6 +323,22 @@ def _next_upcoming_event(comp) -> Optional[tuple]:
     return min(candidates, key=lambda x: x[3])
 
 
+def _comp_stage(c) -> str:
+    """접수중 / 심사중 / 발표준비중 / 마감 — 날짜 자동 + 수동 오버라이드"""
+    if getattr(c, 'stage_override', None):
+        return c.stage_override
+    today = date.today()
+    if c.deadline >= today:
+        return "접수중"
+    ann = getattr(c, 'announcement_date', None)
+    if ann is None or ann > today:
+        return "심사중"
+    award = getattr(c, 'award_date', None)
+    if award is None or award > today:
+        return "발표준비중"
+    return "마감"
+
+
 def _annotate(competitions: list) -> list:
     for c in competitions:
         c.upcoming_event = _next_upcoming_event(c)
@@ -329,6 +352,7 @@ def _annotate(competitions: list) -> list:
             c.status = "soon"
         else:
             c.status = "open"
+        c.comp_stage = _comp_stage(c)
     return competitions
 
 
@@ -382,6 +406,8 @@ def _ctx(request: Request, db: Session, **extra) -> dict:
         "is_privileged": is_admin or bool(cm and cm.role == "sub_admin"),
         "boards": BOARDS,
         "now": datetime.now(),
+        "css_version": _CSS_VER,
+        "submission_doc_types": SUBMISSION_DOC_TYPES,
     }
     # 알림 / DM 미읽음 뱃지
     notif_count = 0
@@ -3025,6 +3051,8 @@ async def admin_set_award(
 async def record_submission(
     request: Request, comp_id: int, team_id: int,
     participant_ids: List[int] = Form(default=[]),
+    submitted_docs: List[str] = Form(default=[]),
+    custom_doc: str = Form(""),
     db: Session = Depends(get_db),
 ):
     if not _is_privileged(request, db):
@@ -3039,6 +3067,11 @@ async def record_submission(
     db.query(TeamMember).filter(TeamMember.team_id == team_id).update({"is_participant": False})
     if participant_ids:
         db.query(TeamMember).filter(TeamMember.team_id == team_id, TeamMember.id.in_(participant_ids)).update({"is_participant": True})
+    # 제출 서류 기록
+    docs = list(submitted_docs)
+    if custom_doc.strip():
+        docs.append(custom_doc.strip())
+    team.submitted_docs = json.dumps(docs, ensure_ascii=False)
     team.submitted = True
     team.submitted_at = datetime.now()
     db.commit()

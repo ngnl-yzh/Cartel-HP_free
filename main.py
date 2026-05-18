@@ -4783,6 +4783,144 @@ async def migrate_storage(request: Request):
     }
 
 
+# ── 일회성 DB 마이그레이션 (Railway PostgreSQL → Supabase PostgreSQL) ────────
+
+@app.post("/admin/migrate-db")
+async def migrate_db_to_supabase(
+    request: Request,
+    target_db_url: str = Form(...),
+):
+    """Railway DB 데이터를 Supabase DB로 이전 (서버 측 실행, 일회성 사용)"""
+    if not _is_admin(request):
+        raise HTTPException(status_code=403)
+
+    _TABLE_ORDER = [
+        "members", "admin_sessions", "invite_codes",
+        "competitions", "teams", "team_members", "team_competition_entries",
+        "board_posts", "board_comments",
+        "chat_rooms", "chat_room_members", "chat_messages",
+        "follows", "notifications", "direct_messages",
+        "gallery_posts", "job_postings", "external_achievements", "scraps",
+    ]
+
+    from sqlalchemy import create_engine, text, inspect as sa_inspect
+    results = {"ok": {}, "fail": {}, "errors": []}
+
+    try:
+        dst_engine = create_engine(target_db_url, pool_pre_ping=True, connect_args={"connect_timeout": 15})
+        with dst_engine.connect() as _c:
+            _c.execute(text("SELECT 1"))
+    except Exception as e:
+        return {"error": f"Supabase 연결 실패: {e}"}
+
+    # 스키마 생성
+    try:
+        from models import Base as _Base
+        _Base.metadata.create_all(dst_engine)
+        from sqlalchemy.orm import sessionmaker as _SM
+        import database as _db2
+        _saved_url = _db2.DATABASE_URL
+        _saved_engine = _db2.engine
+        _saved_session = _db2.SessionLocal
+        _db2.DATABASE_URL = target_db_url
+        _db2.engine = dst_engine
+        _db2.SessionLocal = _SM(bind=dst_engine)
+        _db2.init_db()
+        _db2.DATABASE_URL = _saved_url
+        _db2.engine = _saved_engine
+        _db2.SessionLocal = _saved_session
+    except Exception as e:
+        results["errors"].append(f"스키마 생성 오류: {e}")
+
+    src_engine = engine  # 현재 Railway DB
+    src_inspector = sa_inspect(src_engine)
+    src_tables = src_inspector.get_table_names()
+
+    with src_engine.connect() as src_conn, dst_engine.connect() as dst_conn:
+        try:
+            dst_conn.execute(text("SET session_replication_role = replica"))
+        except Exception:
+            pass
+
+        for tname in _TABLE_ORDER:
+            if tname not in src_tables:
+                results["ok"][tname] = "없음(스킵)"
+                continue
+            try:
+                cols = [c["name"] for c in src_inspector.get_columns(tname)]
+                rows = src_conn.execute(text(f'SELECT * FROM "{tname}"')).fetchall()
+                if not rows:
+                    results["ok"][tname] = "0건"
+                    continue
+
+                col_list = ", ".join(f'"{c}"' for c in cols)
+                placeholders = ", ".join(f":{c}" for c in cols)
+
+                dst_conn.execute(text(f'DELETE FROM "{tname}"'))
+                for row in rows:
+                    rd = {c: v for c, v in zip(cols, row)}
+                    dst_conn.execute(
+                        text(f'INSERT INTO "{tname}" ({col_list}) VALUES ({placeholders})'),
+                        rd,
+                    )
+
+                if "id" in cols:
+                    try:
+                        max_id = max(r[cols.index("id")] for r in rows if r[cols.index("id")] is not None)
+                        dst_conn.execute(text(
+                            f"SELECT setval(pg_get_serial_sequence('{tname}', 'id'), {max_id})"
+                        ))
+                    except Exception:
+                        pass
+
+                dst_conn.commit()
+                results["ok"][tname] = f"{len(rows)}건"
+            except Exception as e:
+                results["fail"][tname] = str(e)
+                try:
+                    dst_conn.rollback()
+                except Exception:
+                    pass
+
+        try:
+            dst_conn.execute(text("SET session_replication_role = DEFAULT"))
+            dst_conn.commit()
+        except Exception:
+            pass
+
+    return {
+        "success": len(results["ok"]),
+        "failed": len(results["fail"]),
+        "tables": results["ok"],
+        "errors": results["fail"],
+        "misc_errors": results["errors"],
+    }
+
+
+@app.get("/admin/migrate-db")
+async def migrate_db_form(request: Request):
+    """DB 마이그레이션 폼 (일회성 사용)"""
+    if not _is_admin(request):
+        raise HTTPException(status_code=403)
+    html = """
+    <html><body style="font-family:monospace;padding:2rem;max-width:700px">
+    <h2>🗃️ DB Migration: Railway → Supabase</h2>
+    <p>Supabase DB URL을 입력하면 이 서버에서 직접 마이그레이션합니다.</p>
+    <form method="post">
+      <label>Supabase DB URL<br>
+        <input name="target_db_url" type="text" style="width:100%;padding:8px;margin:8px 0"
+          placeholder="postgresql://postgres.xxx:password@aws-0-ap-northeast-1.pooler.supabase.com:5432/postgres">
+      </label><br>
+      <button type="submit" style="padding:10px 24px;background:#4f46e5;color:#fff;border:none;border-radius:8px;cursor:pointer">
+        마이그레이션 시작
+      </button>
+    </form>
+    </body></html>
+    """
+    from fastapi.responses import HTMLResponse
+    return HTMLResponse(html)
+
+
 # ════════════════════════════════════════════════════════════════════════════
 #  취업 게시판
 # ════════════════════════════════════════════════════════════════════════════

@@ -655,7 +655,11 @@ async def index(
         )
     _annotate(featured)
 
-    query = db.query(Competition)
+    # ── 마감 공모전 수 (아카이브 링크용) ──
+    closed_count = db.query(func.count(Competition.id)).filter(Competition.deadline < today).scalar() or 0
+
+    # ── 메인 그리드: 마감된 공모전 제외 ──
+    query = db.query(Competition).filter(Competition.deadline >= today)
     if tag and tag != "all":
         query = query.filter(Competition.tags.like(f'%"{tag}"%'))
     if q:
@@ -668,14 +672,14 @@ async def index(
         )
 
     if sort == "views":
-        query = query.order_by(Competition.view_count.desc(), active_priority.asc(), Competition.deadline.asc())
+        query = query.order_by(Competition.view_count.desc(), Competition.deadline.asc())
     elif sort == "newest":
         query = query.order_by(Competition.created_at.desc())
     else:
-        query = query.order_by(active_priority.asc(), Competition.deadline.asc())
+        query = query.order_by(Competition.deadline.asc())
 
     all_competitions = _annotate(query.all())
-    # upcoming(이벤트 임박) 공모전을 closed 앞에, active 뒤에 배치
+    # upcoming(이벤트 임박) 공모전을 active 뒤에 배치
     if sort == "deadline":
         def _sort_key(c):
             if c.status in ("urgent", "soon", "open"):
@@ -683,7 +687,7 @@ async def index(
             if c.status == "upcoming":
                 ev = c.upcoming_event
                 return (1, ev[3] if ev else 99)
-            return (2, -c.days_left)
+            return (2, 0)
         all_competitions.sort(key=_sort_key)
 
     # 페이지네이션
@@ -694,7 +698,6 @@ async def index(
     competitions = all_competitions[(_PAGE_SIZE * (page - 1)):(_PAGE_SIZE * page)]
 
     all_ids = [c.id for c in all_competitions] + [c.id for c in featured]
-    # 팀장(is_leader=True)은 팀원 수에 포함하지 않음; 승인된 팀원만 카운트
     counts = dict(
         db.query(TeamMember.competition_id, func.count(TeamMember.id))
         .filter(
@@ -712,6 +715,71 @@ async def index(
         "index.html",
         _ctx(request, db,
              featured=featured, competitions=competitions,
+             tags=list(_CONTESTKOREA_CATS),
+             current_tag=tag or "all",
+             current_sort=sort, query=q, today=today,
+             page=page, total_pages=total_pages, total_count=total_count,
+             closed_count=closed_count),
+    )
+
+
+@app.get("/competitions/archive", response_class=HTMLResponse)
+async def competitions_archive(
+    request: Request,
+    tag: str = "",
+    sort: str = "deadline",
+    q: str = "",
+    page: int = Query(1, ge=1),
+    db: Session = Depends(get_db),
+):
+    today = date.today()
+
+    query = db.query(Competition).filter(Competition.deadline < today)
+    if tag and tag != "all":
+        query = query.filter(Competition.tags.like(f'%"{tag}"%'))
+    if q:
+        compact_q = _compact_text(q)
+        query = query.filter(
+            or_(
+                _compact_column(Competition.title).contains(compact_q),
+                _compact_column(Competition.organizer).contains(compact_q),
+            )
+        )
+
+    if sort == "views":
+        query = query.order_by(Competition.view_count.desc())
+    elif sort == "newest":
+        query = query.order_by(Competition.created_at.desc())
+    else:
+        # 기본: 최근 마감일 순
+        query = query.order_by(Competition.deadline.desc())
+
+    all_competitions = _annotate(query.all())
+
+    _PAGE_SIZE = 12
+    total_count = len(all_competitions)
+    total_pages = max(1, (total_count + _PAGE_SIZE - 1) // _PAGE_SIZE)
+    page = max(1, min(page, total_pages))
+    competitions = all_competitions[(_PAGE_SIZE * (page - 1)):(_PAGE_SIZE * page)]
+
+    all_ids = [c.id for c in all_competitions]
+    counts = dict(
+        db.query(TeamMember.competition_id, func.count(TeamMember.id))
+        .filter(
+            TeamMember.competition_id.in_(all_ids),
+            TeamMember.is_leader.is_(False),
+            TeamMember.status == "approved",
+        )
+        .group_by(TeamMember.competition_id)
+        .all()
+    ) if all_ids else {}
+    for c in all_competitions:
+        c.member_count = counts.get(c.id, 0)
+
+    return _render(request,
+        "archive.html",
+        _ctx(request, db,
+             competitions=competitions,
              tags=list(_CONTESTKOREA_CATS),
              current_tag=tag or "all",
              current_sort=sort, query=q, today=today,

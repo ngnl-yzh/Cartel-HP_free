@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% block title %}마감 공모전 아카이브 · CARTEL{% endblock %}
+
+{% block content %}
+<div class="c-hero" style="padding:36px 0 28px">
+  <div class="c-hero-inner" style="display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap">
+    <div>
+      <p class="c-hero-eyebrow">CARTEL</p>
+      <h1 class="c-hero-title" style="font-size:clamp(1.4rem,3vw,2rem)">📁 마감 공모전 아카이브</h1>
+      <p style="font-size:.88rem;color:rgba(255,255,255,.5);margin:4px 0 0">지금까지 진행된 공모전 기록</p>
+    </div>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <a href="/competitions" class="btn btn-outline" style="border-color:rgba(255,255,255,.25);color:rgba(255,255,255,.8)">
+        ← 진행 중인 공모전
+      </a>
+      <form class="comp-search-form" action="/competitions/archive" method="get">
+        {% if current_tag and current_tag != 'all' %}
+          <input type="hidden" name="tag" value="{{ current_tag }}">
+        {% endif %}
+        <input type="search" name="q" class="form-control"
+               placeholder="공모전명, 주최기관 검색…"
+               value="{{ query }}"
+               style="min-width:200px">
+        <button type="submit" class="btn btn-primary">검색</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<main class="main-content">
+  <div class="container">
+
+    <div class="toolbar">
+      <div class="filter-bar">
+        <a href="/competitions/archive?sort={{ current_sort | urlencode }}&q={{ query | urlencode }}"
+           class="filter-btn {% if current_tag == 'all' %}active{% endif %}">전체</a>
+        {% for t in tags %}
+        <a href="/competitions/archive?tag={{ t | urlencode }}&sort={{ current_sort | urlencode }}&q={{ query | urlencode }}"
+           class="filter-btn {% if current_tag == t %}active{% endif %}">{{ t }}</a>
+        {% endfor %}
+      </div>
+      <div class="sort-bar">
+        <span class="sort-label">정렬</span>
+        <a href="/competitions/archive?tag={{ current_tag | urlencode }}&sort=deadline&q={{ query | urlencode }}"
+           class="sort-btn {% if current_sort == 'deadline' %}active{% endif %}">최근 마감순</a>
+        <a href="/competitions/archive?tag={{ current_tag | urlencode }}&sort=views&q={{ query | urlencode }}"
+           class="sort-btn {% if current_sort == 'views' %}active{% endif %}">조회순</a>
+        <a href="/competitions/archive?tag={{ current_tag | urlencode }}&sort=newest&q={{ query | urlencode }}"
+           class="sort-btn {% if current_sort == 'newest' %}active{% endif %}">등록순</a>
+        <span style="flex:1"></span>
+        <span style="font-size:.8rem;color:var(--muted);padding-right:4px">
+          {% if query %}"<strong style="color:var(--text)">{{ query }}</strong>" · {% endif %}
+          총 {{ total_count }}개
+        </span>
+      </div>
+    </div>
+
+    {% if competitions %}
+    <div class="competition-grid">
+      {% for comp in competitions %}
+      <a href="/competition/{{ comp.id }}" class="comp-card status-closed" style="opacity:.75">
+        {% if comp.image %}
+        <div class="card-thumb" style="background-image:url('/uploads/{{ comp.image }}');filter:grayscale(30%)"></div>
+        {% endif %}
+        <div class="comp-card-tags">
+          {% for tag in comp.tags | fromjson %}
+            <span class="tag-chip tag-small">{{ tag }}</span>
+          {% endfor %}
+        </div>
+        <h2 class="comp-card-title">{{ comp.title }}</h2>
+        <p class="comp-card-org">{{ comp.organizer }}</p>
+        {% if comp.prize %}
+          <p class="comp-card-prize">시상 {{ comp.prize }}</p>
+        {% endif %}
+        <div class="comp-card-footer">
+          <div class="comp-dates">
+            {% if comp.start_date %}
+              <span class="date-info">접수 {{ comp.start_date.strftime('%m/%d') }}</span>
+              <span class="date-sep">~</span>
+            {% endif %}
+            <span class="date-deadline">마감 {{ comp.deadline.strftime('%Y.%m.%d') }}</span>
+          </div>
+          <div class="comp-meta">
+            <span class="deadline-badge closed">마감</span>
+            <span class="member-badge">👥 {{ comp.member_count }}</span>
+            <span class="view-count-sm">조회 {{ comp.view_count }}</span>
+          </div>
+        </div>
+      </a>
+      {% endfor %}
+    </div>
+
+    {# ── 페이지네이션 ── #}
+    {% if total_pages > 1 %}
+    <nav class="pagination" aria-label="페이지 이동">
+      {% if page > 1 %}
+      <a href="/competitions/archive?tag={{ current_tag | urlencode }}&sort={{ current_sort | urlencode }}&q={{ query | urlencode }}&page={{ page - 1 }}"
+         class="page-btn page-prev">‹</a>
+      {% else %}
+      <span class="page-btn page-prev disabled">‹</span>
+      {% endif %}
+
+      {% set start_page = [1, page - 3] | max %}
+      {% set end_page   = [total_pages, page + 3] | min %}
+      {% if start_page > 1 %}
+        <a href="/competitions/archive?tag={{ current_tag | urlencode }}&sort={{ current_sort | urlencode }}&q={{ query | urlencode }}&page=1"
+           class="page-btn">1</a>
+        {% if start_page > 2 %}<span class="page-ellipsis">…</span>{% endif %}
+      {% endif %}
+
+      {% for p in range(start_page, end_page + 1) %}
+      <a href="/competitions/archive?tag={{ current_tag | urlencode }}&sort={{ current_sort | urlencode }}&q={{ query | urlencode }}&page={{ p }}"
+         class="page-btn {% if p == page %}page-current{% endif %}">{{ p }}</a>
+      {% endfor %}
+
+      {% if end_page < total_pages %}
+        {% if end_page < total_pages - 1 %}<span class="page-ellipsis">…</span>{% endif %}
+        <a href="/competitions/archive?tag={{ current_tag | urlencode }}&sort={{ current_sort | urlencode }}&q={{ query | urlencode }}&page={{ total_pages }}"
+           class="page-btn">{{ total_pages }}</a>
+      {% endif %}
+
+      {% if page < total_pages %}
+      <a href="/competitions/archive?tag={{ current_tag | urlencode }}&sort={{ current_sort | urlencode }}&q={{ query | urlencode }}&page={{ page + 1 }}"
+         class="page-btn page-next">›</a>
+      {% else %}
+      <span class="page-btn page-next disabled">›</span>
+      {% endif %}
+    </nav>
+    {% endif %}
+
+    {% else %}
+    <div class="empty-state">
+      <p class="empty-text">
+        {% if query %}검색 결과가 없습니다.{% else %}마감된 공모전이 없습니다.{% endif %}
+      </p>
+      <a href="/competitions/archive" class="btn btn-outline" style="margin-top:12px">전체 보기</a>
+    </div>
+    {% endif %}
+
+  </div>
+</main>
+{% endblock %}

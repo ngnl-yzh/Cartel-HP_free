@@ -238,6 +238,15 @@
     </nav>
     {% endif %}
 
+    {# ── 마감 공모전 아카이브 링크 ── #}
+    {% if closed_count %}
+    <a href="/competitions/archive" class="archive-banner">
+      <span class="archive-banner-icon">📁</span>
+      <span>마감된 공모전 <strong>{{ closed_count }}개</strong> 보기</span>
+      <span class="archive-banner-arrow">→</span>
+    </a>
+    {% endif %}
+
   </div>
 </main>
 
@@ -246,6 +255,30 @@
 {% endif %}
 
 <style>
+/* ── 마감 아카이브 배너 ── */
+.archive-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 20px;
+  margin: 8px 0 32px;
+  border-radius: 12px;
+  border: 1.5px dashed var(--line);
+  background: rgba(100,116,139,.04);
+  color: var(--muted);
+  text-decoration: none;
+  font-size: .88rem;
+  transition: border-color .15s, background .15s, color .15s;
+}
+.archive-banner:hover {
+  border-color: var(--cartel-blue);
+  background: rgba(37,99,235,.04);
+  color: var(--cartel-blue);
+}
+.archive-banner strong { color: var(--text); }
+.archive-banner-icon { font-size: 1.1rem; }
+.archive-banner-arrow { margin-left: auto; font-size: 1rem; }
+
 /* ══════════════════════════════════════════════
    Featured – 5카드 슬라이드 캐러셀
    ══════════════════════════════════════════════ */

@@ -429,8 +429,9 @@ body {
 .c-hamburger:hover { background: rgba(255,255,255,0.08); }
 .c-hamburger span {
   display: block;
-  height: 2px;
-  background: rgba(255,255,255,0.8);
+  width: 20px;
+  height: 2.5px;
+  background: #ffffff;
   border-radius: 2px;
   transition: transform 0.22s, opacity 0.22s;
 }
@@ -983,13 +984,14 @@ body {
   .c-nav-action:not(.c-hamburger) { display: none; }
   .c-icon-btn { display: none; }
   /* 아바타만 남기고 이름·화살표 숨김 */
-  .c-user-btn { padding: 3px; gap: 0; background: transparent; border-color: transparent; }
+  .c-user-btn { padding: 3px; gap: 0; background: transparent; border-color: rgba(255,255,255,.25); }
   .c-user-btn .c-username { display: none; }
   .c-user-btn .c-dropdown-caret { display: none; }
-  .c-user-btn .c-avatar { width: 30px; height: 30px; font-size: .85rem; }
-  .c-user-btn .c-avatar-letter { width: 30px; height: 30px; font-size: .85rem; }
-  .c-hamburger { display: flex; }
-  .c-nav-right { gap: 6px; }
+  .c-user-btn .c-avatar { width: 32px; height: 32px; border: 2px solid rgba(255,255,255,.5); }
+  .c-user-btn .c-avatar-letter { width: 32px; height: 32px; font-size: .9rem; border: 2px solid rgba(255,255,255,.5); background: #2563eb; color: #fff; }
+  /* 햄버거: 명시적 크기와 흰색 선 보장 */
+  .c-hamburger { display: flex; background: rgba(255,255,255,.08); border-radius: 8px; }
+  .c-nav-right { gap: 8px; }
 }
 
 @media (max-width: 600px) {

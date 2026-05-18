@@ -127,6 +127,45 @@
               </label>
             </label>
           </div>
+
+          {# ── 공모전 단계 수동 설정 ── #}
+          <div class="form-grid two-col" style="margin-top:.75rem">
+            <label class="field">
+              <span>공모전 단계 <small class="muted">(비워두면 날짜 기준 자동)</small></span>
+              <select name="stage_override">
+                <option value="">자동 (날짜 기준)</option>
+                {% for stage in ['접수중', '심사중', '발표준비중', '마감'] %}
+                <option value="{{ stage }}"
+                  {% if comp and comp.stage_override == stage %}selected{% endif %}>
+                  {{ stage }}
+                </option>
+                {% endfor %}
+              </select>
+            </label>
+          </div>
+        </section>
+
+        {# ── 필수 제출 서류 ── #}
+        <section class="form-section">
+          <h2>필수 제출 서류 <small class="muted" style="font-size:.8rem;font-weight:400">팀장이 참여 완료 기록 시 체크할 서류 목록</small></h2>
+          {% set saved_docs = (comp.submission_docs | fromjson) if comp and comp.submission_docs else [] %}
+          <div class="check-grid" style="margin-bottom:.75rem">
+            {% for doc in submission_doc_types %}
+            <label class="check-pill check-pill-doc">
+              <input type="checkbox" name="submission_docs" value="{{ doc }}"
+                {% if doc in saved_docs %}checked{% endif %}>
+              <span>{{ doc }}</span>
+            </label>
+            {% endfor %}
+          </div>
+          <label class="field">
+            <span>기타 서류 직접 추가 <small>(쉼표로 구분)</small></span>
+            {% set extra_docs = saved_docs | reject('in', submission_doc_types) | list %}
+            <input type="text" name="submission_docs_extra"
+                   value="{{ extra_docs | join(', ') }}"
+                   placeholder="예) 사업계획서, 추천서">
+          </label>
+          <p class="field-hint">체크한 서류가 팀장의 제출 기록 폼에 우선 표시됩니다. 비워두면 기본 목록 전체가 표시됩니다.</p>
         </section>
 
         <section class="form-section">

@@ -27,6 +27,17 @@
       {% else %}
         <span class="deadline-badge open lg">D-{{ comp.days_left }}</span>
       {% endif %}
+      {% if comp.comp_stage %}
+        {% if comp.comp_stage == '접수중' %}
+          <span class="stage-hero-badge stage-receiving">📝 접수중</span>
+        {% elif comp.comp_stage == '심사중' %}
+          <span class="stage-hero-badge stage-reviewing">🔍 심사중</span>
+        {% elif comp.comp_stage == '발표준비중' %}
+          <span class="stage-hero-badge stage-preparing">📢 발표준비중</span>
+        {% elif comp.comp_stage == '마감' %}
+          <span class="stage-hero-badge stage-ended">🏁 마감</span>
+        {% endif %}
+      {% endif %}
       <span class="view-count">조회 {{ comp.view_count }}회</span>
       {% if current_member %}
       <button class="scrap-btn {% if user_scrapped %}scrapped{% endif %}" data-comp-id="{{ comp.id }}" title="스크랩">

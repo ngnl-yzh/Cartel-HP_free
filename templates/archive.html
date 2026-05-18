@@ -82,6 +82,9 @@
           </div>
           <div class="comp-meta">
             <span class="deadline-badge closed">마감</span>
+            {% if comp.comp_stage and comp.comp_stage != '마감' %}
+              <span class="stage-chip stage-chip-심사">{{ comp.comp_stage }}</span>
+            {% endif %}
             <span class="member-badge">👥 {{ comp.member_count }}</span>
             <span class="view-count-sm">조회 {{ comp.view_count }}</span>
           </div>

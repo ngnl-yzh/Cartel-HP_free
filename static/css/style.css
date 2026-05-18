@@ -3324,3 +3324,36 @@ select {
 .notif-content { display:flex; align-items:center; gap:.4rem; flex-wrap:wrap; flex:1; }
 .notif-actor { font-weight:600; color:var(--primary); }
 .notif-time { font-size:.78rem; margin-left:auto; white-space:nowrap; }
+
+/* ── 공모전 단계(comp_stage) 뱃지 ──────────────────────────────── */
+/* 카드 그리드용 — 작은 인라인 칩 */
+.stage-chip {
+  display: inline-flex;
+  align-items: center;
+  font-size: .7rem;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 999px;
+  white-space: nowrap;
+  letter-spacing: .01em;
+}
+.stage-chip-심사 { background: rgba(245,158,11,.12); color: #92400e; border: 1px solid rgba(245,158,11,.25); }
+.stage-chip-발표prep { background: rgba(139,92,246,.12); color: #5b21b6; border: 1px solid rgba(139,92,246,.25); }
+.stage-chip-end { background: rgba(100,116,139,.1); color: #475569; border: 1px solid rgba(100,116,139,.2); }
+
+/* 상세 페이지 히어로용 — 조금 더 큰 뱃지 */
+.stage-hero-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: .8rem;
+  font-weight: 700;
+  padding: 4px 12px;
+  border-radius: 999px;
+  white-space: nowrap;
+  backdrop-filter: blur(6px);
+}
+.stage-receiving  { background: rgba(255,255,255,.18); color: #fff; border: 1px solid rgba(255,255,255,.3); }
+.stage-reviewing  { background: rgba(245,158,11,.25); color: #fef3c7; border: 1px solid rgba(245,158,11,.4); }
+.stage-preparing  { background: rgba(139,92,246,.25); color: #ede9fe; border: 1px solid rgba(139,92,246,.4); }
+.stage-ended      { background: rgba(100,116,139,.25); color: #e2e8f0; border: 1px solid rgba(100,116,139,.4); }

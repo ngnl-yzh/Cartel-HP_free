@@ -1666,6 +1666,9 @@ async def admin_add(
     description: str = Form(""),
     is_featured: bool = Form(False),
     max_members: Optional[str] = Form(None),
+    stage_override: Optional[str] = Form(None),
+    submission_docs: List[str] = Form(default=[]),
+    submission_docs_extra: str = Form(""),
     comp_image_path: Optional[str] = Form(None),
     comp_image: Optional[UploadFile] = File(None),
     files: List[UploadFile] = File(default=[]),
@@ -1681,6 +1684,8 @@ async def admin_add(
             _review_dates = []
     except Exception:
         _review_dates = []
+    _extra_docs = [d.strip() for d in submission_docs_extra.split(",") if d.strip()]
+    _all_docs = list(submission_docs) + [d for d in _extra_docs if d not in submission_docs]
     comp = Competition(
         title=title, organizer=organizer,
         tags=json.dumps(tags, ensure_ascii=False),
@@ -1691,11 +1696,13 @@ async def admin_add(
         award_date=date.fromisoformat(award_date) if award_date else None,
         prize=prize, link=link, description=description,
         image=image, max_members=_optional_int(max_members, "최대 팀 인원"), is_featured=is_featured,
+        stage_override=stage_override.strip() if stage_override and stage_override.strip() else None,
+        submission_docs=json.dumps(_all_docs, ensure_ascii=False),
         files=json.dumps(await _save_files(files), ensure_ascii=False),
     )
     db.add(comp)
     db.commit()
-    return RedirectResponse(url="/admin/competitions", status_code=303)
+    return RedirectResponse(url=f"/admin/edit/{comp.id}", status_code=303)
 
 
 @app.get("/admin/edit/{comp_id}", response_class=HTMLResponse)
@@ -1733,6 +1740,9 @@ async def admin_edit(
     review_dates_json: str = Form("[]"),
     prize: str = Form(""), link: str = Form(""), description: str = Form(""),
     is_featured: bool = Form(False), max_members: Optional[str] = Form(None),
+    stage_override: Optional[str] = Form(None),
+    submission_docs: List[str] = Form(default=[]),
+    submission_docs_extra: str = Form(""),
     comp_image_path: Optional[str] = Form(None),
     comp_image: Optional[UploadFile] = File(None),
     # image_changed="yes" 일 때만 GPT 파싱 이미지 반영 (기본: 기존 이미지 보존)
@@ -1765,6 +1775,11 @@ async def admin_edit(
     comp.review_dates = json.dumps(_review_dates, ensure_ascii=False)
     comp.prize = prize; comp.link = link; comp.description = description
     comp.is_featured = is_featured; comp.max_members = _optional_int(max_members, "최대 팀 인원")
+    comp.stage_override = stage_override.strip() if stage_override and stage_override.strip() else None
+    # 필수 제출 서류: 체크박스 목록 + 직접 입력 합산
+    _extra_docs = [d.strip() for d in submission_docs_extra.split(",") if d.strip()]
+    _all_docs = list(submission_docs) + [d for d in _extra_docs if d not in submission_docs]
+    comp.submission_docs = json.dumps(_all_docs, ensure_ascii=False)
 
     # ── 이미지 처리 우선순위 ────────────────────────────────────────────────
     # 1) 새 파일 직접 업로드 → 교체

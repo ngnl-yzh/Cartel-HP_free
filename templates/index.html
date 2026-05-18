@@ -124,15 +124,19 @@
         전체
         <span class="stage-tab-count">{{ stage_counts.values() | sum }}</span>
       </a>
-      {% for s, icon in [('접수중','📝'), ('심사중','🔍'), ('발표준비중','📢'), ('마감','🏁')] %}
+      {% for s, icon, idx in [('접수중','📝',1), ('심사중','🔍',2), ('발표준비중','📢',3)] %}
       <a href="/competitions?tag={{ current_tag | urlencode }}&sort={{ current_sort | urlencode }}&q={{ query | urlencode }}&stage={{ s | urlencode }}"
-         class="stage-tab stage-tab-{{ loop.index }} {% if current_stage == s %}active{% endif %}">
+         class="stage-tab stage-tab-{{ idx }} {% if current_stage == s %}active{% endif %}">
         {{ icon }} {{ s }}
         {% if stage_counts[s] %}
         <span class="stage-tab-count">{{ stage_counts[s] }}</span>
         {% endif %}
       </a>
       {% endfor %}
+      <a href="/competitions/archive" class="stage-tab stage-tab-4">
+        🏁 마감
+        {% if closed_count %}<span class="stage-tab-count">{{ closed_count }}</span>{% endif %}
+      </a>
     </div>
 
     <div class="toolbar">
@@ -264,14 +268,6 @@
     </nav>
     {% endif %}
 
-    {# ── 마감 공모전 아카이브 링크 ── #}
-    {% if closed_count %}
-    <a href="/competitions/archive" class="archive-banner">
-      <span class="archive-banner-icon">📁</span>
-      <span>마감된 공모전 <strong>{{ closed_count }}개</strong> 보기</span>
-      <span class="archive-banner-arrow">→</span>
-    </a>
-    {% endif %}
 
   </div>
 </main>

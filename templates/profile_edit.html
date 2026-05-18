@@ -16,9 +16,10 @@
       <h2>기본 정보</h2>
       <form method="post" action="/profile/edit/me" enctype="multipart/form-data" id="basicForm">
         <label class="field">
-          <span>활동명</span>
-          <input type="text" value="{{ member.activity_name }}" disabled class="input-disabled">
-          <small class="field-hint">변경 불가</small>
+          <span>활동명 (ID)</span>
+          <input type="text" name="activity_name" value="{{ member.activity_name }}" required maxlength="30"
+                 pattern="[A-Za-z0-9가-힣_\-.]+" title="영문·한글·숫자·_-. 만 사용 가능">
+          <small class="field-hint">다른 사람이 사용 중인 이름은 사용할 수 없습니다</small>
         </label>
         <div class="form-grid two-col">
           <label class="field">

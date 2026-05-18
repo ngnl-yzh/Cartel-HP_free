@@ -2005,6 +2005,21 @@ async def admin_set_role(request: Request, member_id: int, role: str = Form(...)
     return RedirectResponse(url="/admin/members", status_code=303)
 
 
+@app.post("/admin/members/{member_id}/edit-name")
+async def admin_edit_member_name(
+    request: Request, member_id: int,
+    real_name: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    if r := _privileged_redirect(request, db):
+        return r
+    m = db.query(Member).filter(Member.id == member_id).first()
+    if m:
+        m.real_name = real_name.strip()
+        db.commit()
+    return RedirectResponse(url="/admin/members", status_code=303)
+
+
 @app.post("/admin/members/{member_id}/delete")
 async def admin_delete_member(request: Request, member_id: int, db: Session = Depends(get_db)):
     # 회원 삭제는 최고 관리자만 가능 (sub_admin 제외)
@@ -2341,6 +2356,7 @@ async def profile_edit_page(request: Request, db: Session = Depends(get_db)):
 async def profile_edit(
     request: Request,
     bio: str = Form(""), real_name: str = Form(...), phone: str = Form(""),
+    activity_name: str = Form(...),
     new_password: str = Form(""), current_password: str = Form(...),
     profile_image: Optional[UploadFile] = File(None),
     intro_text: str = Form(""),
@@ -2353,6 +2369,16 @@ async def profile_edit(
         return RedirectResponse(url="/member/login", status_code=303)
     if not verify_password(current_password, cm.password_hash):
         return _render(request, "profile_edit.html", _ctx(request, db, member=cm, error="현재 비밀번호가 올바르지 않습니다."), status_code=400)
+
+    # 활동명 변경 처리
+    new_name = activity_name.strip()
+    if new_name != cm.activity_name:
+        if not new_name:
+            return _render(request, "profile_edit.html", _ctx(request, db, member=cm, error="활동명을 입력해주세요."), status_code=400)
+        duplicate = db.query(Member).filter(Member.activity_name == new_name, Member.id != cm.id).first()
+        if duplicate:
+            return _render(request, "profile_edit.html", _ctx(request, db, member=cm, error=f"'{new_name}'은(는) 이미 사용 중인 활동명입니다."), status_code=400)
+        cm.activity_name = new_name
 
     cm.bio = bio.strip(); cm.real_name = real_name.strip(); cm.phone = phone.strip()
     cm.intro_text = intro_text.strip()
